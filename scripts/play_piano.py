@@ -65,6 +65,13 @@ def export_played_midi(sounded_per_step, control_dt, path):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     pm.write(path)
     print(f"[play_piano] exported what it played -> {path} ({len(inst.notes)} notes)")
+    # always also render a .wav so you can hear it
+    try:
+        from midi_to_wav import midi_to_wav
+        wav = midi_to_wav(path)
+        print(f"[play_piano] rendered audio -> {wav}")
+    except Exception as e:
+        print(f"[play_piano] (wav render skipped: {e})")
 
 
 def main():
