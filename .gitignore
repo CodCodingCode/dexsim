@@ -1,0 +1,29 @@
+# --- large / regenerable: never commit ---
+.venv/
+IsaacLab/
+# 769MB staged NVIDIA driver (regenerate via scripts/setup_nvidia_gl.sh)
+.nvidia-gl/
+logs/
+
+# datasets + user media (re-download / regenerate; song.mid may be copyrighted)
+data/bodex/
+data/dexgraspnet/
+data/midi/*.mid
+data/reference/
+data/robopianist_ref/
+!data/**/.gitkeep
+
+# generated USDs (rebuild via scripts/build_*.py)
+assets/*.usd
+assets/*.usda
+
+# python / editor / media
+__pycache__/
+*.pyc
+*.egg-info/
+.vscode/
+*.mp4
+*.png
+
+# hydra run outputs
+outputs/

@@ -1,0 +1,59 @@
+"""ArticulationCfg for the generated 88-key piano.
+
+The piano is ONE articulation: a kinematic base with 88 keys, each hinged by a
+revolute joint (``joint_0``..``joint_87``, index = MIDI-21). The keys are
+*passive* and spring-loaded -- the policy never commands them. We register an
+actuator group over all key joints with the return-spring stiffness/damping and
+leave the target at 0, so PhysX holds each key up until a finger presses it down.
+
+A key "sounds" when its joint angle drops below ``KEY_SOUND_ANGLE`` (radians,
+negative = pressed down).
+"""
+
+from __future__ import annotations
+
+import isaaclab.sim as sim_utils
+from isaaclab.actuators import ImplicitActuatorCfg
+from isaaclab.assets import ArticulationCfg
+
+from dexsim import ASSETS_DIR
+
+PIANO_USD_PATH = str(ASSETS_DIR / "piano88.usd")
+
+# A key counts as "pressed enough to sound" past this hinge angle (rad, negative).
+KEY_SOUND_ANGLE = -0.10
+KEY_SPRING_STIFFNESS = 8.0
+KEY_SPRING_DAMPING = 0.5
+
+PIANO_CFG = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=PIANO_USD_PATH,
+        activate_contact_sensors=True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            max_depenetration_velocity=2.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False,   # keys never touch each other
+            solver_position_iteration_count=16,
+            solver_velocity_iteration_count=1,
+            # base is already kinematic in the USD, so no root-fixing joint
+            # needed (fix_root_link would require RigidBodyAPI on the root prim).
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.0),
+        joint_pos={"joint_.*": 0.0},
+    ),
+    actuators={
+        # passive return springs: never commanded, just hold keys up.
+        "keys": ImplicitActuatorCfg(
+            joint_names_expr=["joint_.*"],
+            effort_limit=50.0,
+            stiffness=KEY_SPRING_STIFFNESS,
+            damping=KEY_SPRING_DAMPING,
+        ),
+    },
+)
+"""88-key spring-loaded piano. Read key angles from ``data.joint_pos``;
+angle < KEY_SOUND_ANGLE => that key is sounding."""

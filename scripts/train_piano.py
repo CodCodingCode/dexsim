@@ -1,0 +1,73 @@
+"""Train the bimanual piano policy (rsl_rl PPO).
+
+  python scripts/train_piano.py --headless --num_envs 1024 --midi data/midi/twinkle.mid
+  python scripts/train_piano.py --headless --num_envs 2048 --max_iterations 5000
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+
+from isaaclab.app import AppLauncher
+
+parser = argparse.ArgumentParser(description="Train bimanual piano policy.")
+parser.add_argument("--num_envs", type=int, default=1024)
+parser.add_argument("--midi", default=None, help="path to the song .mid (default: cfg's)")
+parser.add_argument("--max_iterations", type=int, default=None)
+parser.add_argument("--seed", type=int, default=0)
+parser.add_argument("--bc_init", default=None, help="BC warm-start checkpoint (scripts/bc_pretrain.py)")
+AppLauncher.add_app_launcher_args(parser)
+args = parser.parse_args()
+
+app_launcher = AppLauncher(args)
+simulation_app = app_launcher.app
+
+import gymnasium as gym
+from rsl_rl.runners import OnPolicyRunner
+
+from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
+from isaaclab.utils.io import dump_yaml
+
+import dexsim.tasks  # noqa: F401
+from dexsim.tasks.piano import PianoEnvCfg
+from dexsim.tasks.piano.agents.rsl_rl_ppo_cfg import PianoPPORunnerCfg
+
+TASK = "Dexsim-Piano-Bimanual-v0"
+
+
+def main():
+    env_cfg = PianoEnvCfg()
+    env_cfg.scene.num_envs = args.num_envs
+    env_cfg.seed = args.seed
+    if args.midi:
+        env_cfg.midi_path = args.midi
+
+    agent_cfg = PianoPPORunnerCfg()
+    agent_cfg.seed = args.seed
+    if args.max_iterations is not None:
+        agent_cfg.max_iterations = args.max_iterations
+
+    log_dir = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name, f"seed{args.seed}")
+    os.makedirs(os.path.join(log_dir, "params"), exist_ok=True)
+
+    env = gym.make(TASK, cfg=env_cfg, render_mode=None)
+    env = RslRlVecEnvWrapper(env)
+
+    runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
+    if args.bc_init:
+        import torch
+        ckpt = torch.load(args.bc_init, map_location=agent_cfg.device)
+        runner.alg.actor_critic.load_state_dict(ckpt["model_state_dict"], strict=False)
+        print(f"[train_piano] warm-started actor-critic from {args.bc_init}")
+    dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
+    dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
+
+    print(f"[train_piano] task={TASK} num_envs={args.num_envs} "
+          f"song={env_cfg.midi_path} log_dir={log_dir}")
+    runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+    env.close()
+
+
+main()
+simulation_app.close()

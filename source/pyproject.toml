@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dexsim"
+version = "0.1.0"
+description = "UR10e + Shadow Hand dexterous manipulation tasks for Isaac Lab (RL reorientation + BODex imitation)"
+requires-python = ">=3.10"
+# Isaac Sim / Isaac Lab / torch are provided by the environment install
+# (see SETUP.md); only the lightweight extras live here.
+dependencies = [
+    "numpy",
+    "huggingface_hub>=0.23",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dexsim*"]
