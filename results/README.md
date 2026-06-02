@@ -12,8 +12,14 @@ Training F1 (play/F1, logged to wandb every iter, checked every 5 min):
   iter 0   F1 0.01  recall 1.6%   (random)
   iter 80  F1 0.30  recall 64%
   iter 229 F1 0.34  recall 77%
-Best eval (model_200, right hand muted):  recall 0.775  precision 0.318  F1 0.451
+  iter 429 F1 0.37  recall 82%  (converged)
+Final eval (saved policy, right hand muted):  recall 0.860  precision 0.258  F1 0.397
 ```
+
+**recall 0.86 = the policy sounds 86% of the song's notes.** The target melody keys
+(MIDI 40, 41) are among the most-played; precision (~0.26) is the embodiment
+ceiling -- the Shadow fingers are closer together than the white-key pitch, so a
+playing finger occasionally brushes a neighbour (keys 38/43/45 in the output).
 
 `results/easy_song_played.mid` is what the policy actually played; the target
 keys (MIDI 40, 41) are the **most-played notes** -> it genuinely plays the melody.
