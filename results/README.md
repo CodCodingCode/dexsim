@@ -30,7 +30,18 @@ finger occasionally brushes a neighbouring key.
 ## Files
 - `easy_song_policy.pt`  — the trained rsl_rl policy (PPO, log-std).
 - `easy_song_target.mid` — the song it was trained on.
-- `easy_song_played.mid` — the notes it actually sounded (export from the policy).
+- `easy_song_played.mid` / `.wav` — the notes it actually sounded (export from the policy).
+- `easy_song_video.mp4` — path-traced film of the policy playing (1280x720, 20fps, 42s).
+- `easy_song_video_audio.mp4` — same video, with the played audio muxed in (watch + hear).
+
+## Film it yourself
+```bash
+python scripts/record_rollout.py --headless --checkpoint results/easy_song_policy.pt --midi data/midi/easy.mid
+python scripts/render_rollout.py --headless --rollout logs/rollout.npz --out results/easy_song_video.mp4
+```
+The real-time RTX renderer is black on this RT-core-less H100, so the film uses
+PathTracing with the OptiX denoiser off (same recipe as `render_scene.py`),
+driving the arms/keys kinematically along the recorded trajectory.
 
 ## Reproduce
 ```bash

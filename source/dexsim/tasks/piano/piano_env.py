@@ -37,7 +37,8 @@ from dexsim.piano import (
     load_song, plan_fingering, geometry, FINGERTIP_BODIES, NUM_FINGERS, NUM_KEYS,
 )
 from dexsim.piano.reward import (
-    piano_reward, fingering_reward, onset_reward, PianoRewardCfg,
+    piano_reward, fingering_reward, onset_reward, arm_position_reward,
+    PianoRewardCfg,
 )
 from dexsim.piano.goal_encoding import nearest_active_distance
 from dexsim.assets import KEY_SOUND_ANGLE
@@ -95,6 +96,11 @@ class PianoEnv(DirectRLEnv):
         rtips, _ = self.right_robot.find_bodies(FINGERTIP_BODIES, preserve_order=True)
         self.ltip_ids = torch.tensor(ltips, device=self.device)
         self.rtip_ids = torch.tensor(rtips, device=self.device)
+        # hand-base (palm) bodies, for the arm gross-positioning reward
+        lpalm, _ = self.left_robot.find_bodies([self.cfg.hand_base_body], preserve_order=True)
+        rpalm, _ = self.right_robot.find_bodies([self.cfg.hand_base_body], preserve_order=True)
+        self.lpalm_id = torch.tensor(lpalm, device=self.device)
+        self.rpalm_id = torch.tensor(rpalm, device=self.device)
 
         # --- reference trajectory (residual base) ---
         self.q_ref = self._load_reference()                         # (T+L, 2, 30)
@@ -111,6 +117,9 @@ class PianoEnv(DirectRLEnv):
             energy_weight=self.cfg.energy_weight,
             fingering_weight=self.cfg.fingering_weight,
             onset_weight=self.cfg.onset_weight,
+            arm_base_weight=self.cfg.arm_base_weight,
+            arm_close_enough=self.cfg.arm_close_enough,
+            arm_margin_mult=self.cfg.arm_margin_mult,
         )
         print(f"[PianoEnv] song '{song.name}': {self.song_len} steps "
               f"({song.duration_s:.1f}s @ {1/self.cfg.control_dt:.0f}Hz); "
@@ -217,6 +226,42 @@ class PianoEnv(DirectRLEnv):
         press[..., 2] += dz
         return surface, press, fa
 
+    def _palms_world(self) -> torch.Tensor:
+        """(E, 2, 3) world position of each hand base [left, right]."""
+        l = self.left_robot.data.body_pos_w[:, self.lpalm_id, :]        # (E,1,3)
+        r = self.right_robot.data.body_pos_w[:, self.rpalm_id, :]
+        return torch.cat([l, r], dim=1)                                 # (E,2,3)
+
+    def _hand_note_centroids(self):
+        """Per-hand gross-positioning target for the arm reward.
+
+        Returns (centroid, active):
+          centroid (E,2,3): world centroid of the keys each hand [left,right] must
+                            play over the next ``arm_lookahead`` steps.
+          active   (E,2)   : whether that hand has any upcoming notes in the window
+                            (a hand with none contributes nothing to the reward).
+        """
+        H = self.cfg.arm_lookahead
+        key_top = self._key_top_world()                                 # (E,88,3)
+        idx = self.song_step.unsqueeze(1) + torch.arange(H, device=self.device).unsqueeze(0)
+        idx = idx.clamp(max=self.finger_key.shape[0] - 1)              # (E,H)
+        fk = self.finger_key[idx]                                       # (E,H,10)
+        fa = self.finger_active[idx]                                    # (E,H,10)
+        half = NUM_FINGERS // 2
+        centroids, actives = [], []
+        for sl in (slice(0, half), slice(half, NUM_FINGERS)):          # left, then right
+            fk_h = fk[..., sl].clamp(min=0)        # (E,H,5); idle=-1 -> 0 (masked out below)
+            fa_h = fa[..., sl]                     # (E,H,5)
+            flat = fk_h.reshape(self.num_envs, -1)                      # (E,H*5)
+            gidx = flat.unsqueeze(-1).expand(-1, -1, 3)                # (E,H*5,3)
+            pos = torch.gather(key_top, 1, gidx).reshape(self.num_envs, H, half, 3)
+            m = fa_h.float().unsqueeze(-1)                              # (E,H,5,1)
+            num = (pos * m).sum(dim=(1, 2))                             # (E,3)
+            den = m.sum(dim=(1, 2)).clamp(min=1e-6)                     # (E,1)
+            centroids.append(num / den)                                # (E,3)
+            actives.append(fa_h.reshape(self.num_envs, -1).any(dim=1)) # (E,)
+        return torch.stack(centroids, dim=1), torch.stack(actives, dim=1)
+
     # ----------------------------------------------------------- observations
     def _goal_lookahead(self) -> torch.Tensor:
         L = self.cfg.goal_lookahead
@@ -265,6 +310,16 @@ class PianoEnv(DirectRLEnv):
         r_finger = fingering_reward(tips, surface, active, self.reward_cfg)
         r_onset = onset_reward(pressed, self._onset_now(), self.reward_cfg)
 
+        # arm gross-positioning: aim each hand base over its upcoming notes (the
+        # 60-DoF extra over RoboPianist's slider-mounted hands). Skip the work when
+        # the term is off.
+        if self.reward_cfg.arm_base_weight > 0.0:
+            centroid, hand_active = self._hand_note_centroids()
+            r_arm = arm_position_reward(self._palms_world(), centroid, hand_active,
+                                        self.reward_cfg)
+        else:
+            r_arm = torch.zeros_like(r_key)
+
         # --- log the REAL metric to wandb: is it actually sounding notes (F1)? ---
         # (reward can be high while F1=0; F1 is the truth.)
         from dexsim.piano.reward import press_accuracy
@@ -286,8 +341,9 @@ class PianoEnv(DirectRLEnv):
             "reward/key": float(r_key.mean()),
             "reward/finger": float(r_finger.mean()),
             "reward/onset": float(r_onset.mean()),
+            "reward/arm": float(r_arm.mean()),
         }
-        return r_key + r_finger + r_onset
+        return r_key + r_finger + r_onset + r_arm
 
     # ----------------------------------------------------------------- dones
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:

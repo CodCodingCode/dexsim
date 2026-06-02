@@ -101,12 +101,28 @@ class PianoEnvCfg(DirectRLEnvCfg):
 
     # reward weights (PianoMime/RoboPianist composite)
     key_press_weight: float = 1.0
-    # 0.5 gave the best F1 (0.29, recall 54%); 1.5 over-suppressed pressing
-    # (recall 8%). Keep 0.5 -- the crash that stopped it is now fixed (NaN guard).
-    false_press_weight: float = 0.5
+    # NOTE: the old tuning (0.5 best, 1.5 over-suppressed) was under the BUGGED
+    # penalty that averaged misclicks over all 88 keys. reward.py now counts wrong
+    # keys PER INTENDED NOTE, which is ~40-80x stronger at the same weight, so 0.75
+    # here ≈ "one wrong note nearly cancels one right note". Retune off wandb
+    # play/precision; drop toward 0.5 if recall collapses.
+    false_press_weight: float = 0.75
     energy_weight: float = 0.0005
     fingering_weight: float = 1.0     # finger->target-key shaping (CRITICAL term)
     onset_weight: float = 0.5         # crisp attack on note onsets
+
+    # --- arm gross-positioning shaping (60-DoF only; RoboPianist skips it) ---
+    # The arms must place each hand over the right span of keys before the fingers
+    # can reach them. This pulls each hand base toward the horizontal centroid of
+    # that hand's upcoming notes, layered UNDER the (fingertip-only) fingering term
+    # so the arm coarsely positions while the fingers do the fine reach. Keep it
+    # well below fingering_weight or it dominates. Set 0.0 to disable. Retune off
+    # wandb reward/arm vs reward/finger.
+    arm_base_weight: float = 0.3
+    arm_close_enough: float = 0.05    # m; within 5 cm of the note span -> full reward
+    arm_margin_mult: float = 6.0      # gaussian falloff ~0.1 at 6x bound (~30 cm)
+    arm_lookahead: int = 5            # steps of upcoming notes used for the centroid
+    hand_base_body: str = "robot0_palm"  # Shadow-hand base body (the "hand center")
 
     # Piano "ready" pose: from the raised (z=1.05) bases each hand drapes DOWN so
     # the fingertips rest ~2 cm above the white keys (key top z=0.722), centered
