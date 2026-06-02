@@ -17,6 +17,9 @@ class PianoPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     save_interval = 100
     experiment_name = "piano_bimanual"
     empirical_normalization = True
+    # --- logging: Weights & Biases (key in ~/.netrc via `wandb login`) ---
+    logger = "wandb"
+    wandb_project = "dexsim-piano"
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
         actor_hidden_dims=[512, 256, 128],

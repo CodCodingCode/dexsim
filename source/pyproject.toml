@@ -12,6 +12,10 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "huggingface_hub>=0.23",
+    "pretty_midi",
+    "mido",
+    "wandb>=0.18",
+    "protobuf>=4.25,<5",  # keep <5 for Isaac Lab; wandb works with 4.25
 ]
 
 [tool.setuptools.packages.find]
