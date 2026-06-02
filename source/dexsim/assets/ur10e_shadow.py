@@ -167,12 +167,15 @@ UR10E_SHADOW_CFG = ArticulationCfg(
         },
     ),
     actuators={
+        # stiff/high-effort so the arm HOLDS the hand at key height against
+        # gravity (stiffness 800/effort 330 sagged it ~29cm below the keys). The
+        # arm just holds a pose while the fingers play, so high gains are fine.
         "arm": ImplicitActuatorCfg(
             joint_names_expr=UR10E_ARM_JOINTS,
             velocity_limit=120.0,
-            effort_limit=330.0,
-            stiffness=800.0,
-            damping=40.0,
+            effort_limit=2000.0,
+            stiffness=6000.0,
+            damping=300.0,
         ),
         "hand": ImplicitActuatorCfg(
             joint_names_expr=["robot0_.*"],  # all 24 hand joints, no arm joints

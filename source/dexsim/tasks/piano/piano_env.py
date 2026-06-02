@@ -55,6 +55,16 @@ class PianoEnv(DirectRLEnv):
         self.left_default = self.left_robot.data.default_joint_pos.clone()
         self.right_default = self.right_robot.data.default_joint_pos.clone()
 
+        # The policy only drives the HAND (finger) joints; the arm rigidly holds
+        # its ready pose. Driving the arm with the residual blew it up (NaN obs ->
+        # NaN policy -> "std>=0" crash) and is wrong for piano anyway (the arm
+        # positions the hand, the fingers play). Mask: 1.0 on robot0_* joints.
+        hand_mask = torch.tensor(
+            [1.0 if "robot0_" in n else 0.0 for n in self.left_robot.data.joint_names],
+            device=self.device,
+        )
+        self.hand_mask = hand_mask.unsqueeze(0)        # (1, 30)
+
         # --- song -> goal / onset tensors ---
         song = load_song(self.cfg.midi_path, control_dt=self.cfg.control_dt)
         self.song_len = song.num_steps
@@ -150,12 +160,22 @@ class PianoEnv(DirectRLEnv):
 
     # ------------------------------------------------------------------ step
     def _pre_physics_step(self, actions: torch.Tensor):
-        self.actions = actions.clone().clamp(-1.0, 1.0)
+        self.actions = torch.nan_to_num(actions, nan=0.0).clamp(-1.0, 1.0)
         a_left = self.actions[:, : self.per_arm_dof]
         a_right = self.actions[:, self.per_arm_dof :]
         ref = self.q_ref[self.song_step]                            # (E, 2, 30)
-        self._left_target = ref[:, 0] + self.cfg.action_scale * a_left
-        self._right_target = ref[:, 1] + self.cfg.action_scale * a_right
+        # full residual on all joints (the arm repositions the hand per note ->
+        # this is what reached F1=0.29). Targets are clamped to joint limits and
+        # obs are NaN-guarded, so a transient blow-up can't crash PPO.
+        scale = self.cfg.action_scale
+        lo = self.left_robot.data.soft_joint_pos_limits[..., 0]
+        hi = self.left_robot.data.soft_joint_pos_limits[..., 1]
+        # mute_right_hand: for left-hand-only songs, hold the right arm at its
+        # ref pose so it can't mash idle keys (kills the false-press noise).
+        if getattr(self.cfg, "mute_right_hand", False):
+            a_right = a_right * 0.0
+        self._left_target = torch.clamp(ref[:, 0] + scale * a_left, lo, hi)
+        self._right_target = torch.clamp(ref[:, 1] + scale * a_right, lo, hi)
 
     def _apply_action(self):
         self.left_robot.set_joint_position_target(self._left_target)
@@ -227,7 +247,10 @@ class PianoEnv(DirectRLEnv):
             parts.append((press - origin).reshape(self.num_envs, -1))
         if self.cfg.obs_goal_sdf:
             parts.append(nearest_active_distance(self._goal_now()))
-        return {"policy": torch.cat(parts, dim=-1)}
+        # guard: replace any NaN/inf (from a transient physics blow-up) and clamp,
+        # so the policy never sees garbage -> no "std>=0" PPO crash.
+        obs = torch.nan_to_num(torch.cat(parts, dim=-1), nan=0.0, posinf=50.0, neginf=-50.0)
+        return {"policy": obs.clamp(-50.0, 50.0)}
 
     # ---------------------------------------------------------------- reward
     def _get_rewards(self) -> torch.Tensor:
@@ -241,6 +264,29 @@ class PianoEnv(DirectRLEnv):
         tips = self._fingertips_world()
         r_finger = fingering_reward(tips, surface, active, self.reward_cfg)
         r_onset = onset_reward(pressed, self._onset_now(), self.reward_cfg)
+
+        # --- log the REAL metric to wandb: is it actually sounding notes (F1)? ---
+        # (reward can be high while F1=0; F1 is the truth.)
+        from dexsim.piano.reward import press_accuracy
+        recall, precision = press_accuracy(pressed, goal)
+        has_goal = goal.sum(-1) > 0
+        if has_goal.any():
+            rec = recall[has_goal].mean()
+            prec = precision[has_goal].mean()
+            f1 = 2 * rec * prec / (rec + prec + 1e-9)
+        else:
+            rec = prec = f1 = torch.zeros((), device=self.device)
+        if not hasattr(self, "extras") or self.extras is None:
+            self.extras = {}
+        self.extras["log"] = {
+            "play/F1": float(f1),
+            "play/recall": float(rec),
+            "play/precision": float(prec),
+            "play/keys_sounding": float((pressed >= 0.5).float().sum(-1).mean()),
+            "reward/key": float(r_key.mean()),
+            "reward/finger": float(r_finger.mean()),
+            "reward/onset": float(r_onset.mean()),
+        }
         return r_key + r_finger + r_onset
 
     # ----------------------------------------------------------------- dones

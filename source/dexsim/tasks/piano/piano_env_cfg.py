@@ -85,7 +85,7 @@ class PianoEnvCfg(DirectRLEnvCfg):
     ik_max_step: float = 0.05
 
     # piano world pose (shift so the 1.22 m keyboard centers on Y=0, table height)
-    piano_pos = (0.45, -0.61, 0.75)
+    piano_pos = (0.569, -0.606, 0.746)   # fit so LEFT-hand fingers rest on keys 19/20/26
     # robot base poses: elevated on pedestals just behind the keyboard so the
     # arms drape DOWN onto the keys. With the base at key height the wrist can't
     # get above the keys and the fingers end up below the keyboard; raising the
@@ -95,9 +95,14 @@ class PianoEnvCfg(DirectRLEnvCfg):
 
     # action scaling: targets = default + scale * action (action in [-1,1])
     action_scale: float = 0.5
+    # for left-hand-only easy songs: freeze the right arm so it can't mash idle
+    # high keys (those were the false presses tanking precision).
+    mute_right_hand: bool = True
 
     # reward weights (PianoMime/RoboPianist composite)
     key_press_weight: float = 1.0
+    # 0.5 gave the best F1 (0.29, recall 54%); 1.5 over-suppressed pressing
+    # (recall 8%). Keep 0.5 -- the crash that stopped it is now fixed (NaN guard).
     false_press_weight: float = 0.5
     energy_weight: float = 0.0005
     fingering_weight: float = 1.0     # finger->target-key shaping (CRITICAL term)
@@ -118,11 +123,13 @@ class PianoEnvCfg(DirectRLEnvCfg):
         "wrist_3_joint": 0.0,
         "robot0_.*": 0.0,
     }
+    # sweep result: fingertips land z=0.731 (9mm above keys, over y~0.66) -> a
+    # ~1cm finger curl presses. Used for the easy-song demo (right hand only).
     right_ready_pose = {
-        "shoulder_pan_joint": -0.55,
-        "shoulder_lift_joint": -0.45,
-        "elbow_joint": 1.45,
-        "wrist_1_joint": -1.20,
+        "shoulder_pan_joint": 0.5,
+        "shoulder_lift_joint": -0.5,
+        "elbow_joint": 1.2,
+        "wrist_1_joint": -1.2,
         "wrist_2_joint": -1.57,
         "wrist_3_joint": 0.0,
         "robot0_.*": 0.0,

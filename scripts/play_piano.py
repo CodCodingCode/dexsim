@@ -83,7 +83,8 @@ def main():
 
     ckpt = args.checkpoint or get_checkpoint_path("logs/rsl_rl/piano_bimanual", ".*", "model_.*.pt")
     print(f"[play_piano] checkpoint: {ckpt}")
-    runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+    _ad = agent_cfg.to_dict(); _ad.setdefault("policy", {})["noise_std_type"] = "log"
+    runner = OnPolicyRunner(env, _ad, log_dir=None, device=agent_cfg.device)
     runner.load(ckpt)
     policy = runner.get_inference_policy(device=env.unwrapped.device)
 

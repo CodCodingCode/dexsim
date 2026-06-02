@@ -1,0 +1,572 @@
+_wandb:
+    value:
+        cli_version: 0.27.0
+        e:
+            bb1esaxdo8g7z75w06ai38v3d8iteq56:
+                args:
+                    - --headless
+                    - --num_envs
+                    - "2048"
+                    - --midi
+                    - data/midi/easy.mid
+                    - --max_iterations
+                    - "1500"
+                    - --device
+                    - cuda:0
+                codePath: scripts/train_piano.py
+                codePathLocal: scripts/train_piano.py
+                cpu_count: 13
+                cpu_count_logical: 26
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "2930253778944"
+                        used: "119941931008"
+                email: nathanyan2008p@gmail.com
+                executable: /home/ubuntu/dexsim/.venv/bin/python
+                git:
+                    commit: 7f26f349ca3b9f70c902b8970b42c35e4caddf89
+                gpu: NVIDIA H100 80GB HBM3
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Hopper
+                      cudaCores: 16896
+                      memoryTotal: "85520809984"
+                      name: NVIDIA H100 80GB HBM3
+                      uuid: GPU-6c66d55a-9929-5552-c560-fd0fa6353bd3
+                host: 192-222-54-54
+                memory:
+                    total: "237490843648"
+                os: Linux-6.8.0-1046-nvidia-x86_64-with-glibc2.35
+                program: /home/ubuntu/dexsim/scripts/train_piano.py
+                python: CPython 3.10.12
+                root: /home/ubuntu/dexsim
+                startedAt: "2026-06-02T05:24:49.530278Z"
+                writerId: bb1esaxdo8g7z75w06ai38v3d8iteq56
+        m: []
+        python_version: 3.10.12
+        t:
+            "1":
+                - 1
+                - 41
+            "2":
+                - 1
+                - 41
+            "3":
+                - 3
+                - 13
+                - 61
+            "4": 3.10.12
+            "5": 0.27.0
+            "12": 0.27.0
+            "13": linux-x86_64
+alg_cfg:
+    value:
+        clip_param: 0.2
+        desired_kl: 0.01
+        entropy_coef: 0.005
+        gamma: 0.99
+        lam: 0.95
+        learning_rate: 0.0005
+        max_grad_norm: 1
+        normalize_advantage_per_mini_batch: false
+        num_learning_epochs: 5
+        num_mini_batches: 4
+        rnd_cfg: null
+        schedule: adaptive
+        symmetry_cfg: null
+        use_clipped_value_loss: true
+        value_loss_coef: 1
+env_cfg:
+    value:
+        action_noise_model: null
+        action_scale: 0.5
+        action_space: 60
+        control_dt: 0.05
+        decimation: 6
+        energy_weight: 0.0005
+        episode_length_s: 30
+        events: null
+        false_press_weight: 0.5
+        fingering_weight: 1
+        goal_lookahead: 10
+        ik_damping: 0.05
+        ik_max_step: 0.05
+        is_finite_horizon: false
+        key_press_weight: 1
+        left_base_pos:
+            - -0.05
+            - -0.3
+            - 1.05
+        left_ready_pose:
+            elbow_joint: 1.6
+            robot0_.*: 0
+            shoulder_lift_joint: -0.62
+            shoulder_pan_joint: -0.425
+            wrist_1_joint: -1.5
+            wrist_2_joint: -1.57
+            wrist_3_joint: 0
+        left_robot_cfg:
+            actuators:
+                arm:
+                    armature: null
+                    class_type: isaaclab.actuators.actuator_pd:ImplicitActuator
+                    damping: 300
+                    effort_limit: 2000
+                    effort_limit_sim: null
+                    friction: null
+                    joint_names_expr:
+                        - shoulder_pan_joint
+                        - shoulder_lift_joint
+                        - elbow_joint
+                        - wrist_1_joint
+                        - wrist_2_joint
+                        - wrist_3_joint
+                    stiffness: 6000
+                    velocity_limit: 120
+                    velocity_limit_sim: null
+                hand:
+                    armature: null
+                    class_type: isaaclab.actuators.actuator_pd:ImplicitActuator
+                    damping: 0.1
+                    effort_limit: 2
+                    effort_limit_sim: null
+                    friction: 0.01
+                    joint_names_expr:
+                        - robot0_.*
+                    stiffness: 3
+                    velocity_limit: null
+                    velocity_limit_sim: null
+            class_type: isaaclab.assets.articulation.articulation:Articulation
+            collision_group: 0
+            debug_vis: false
+            init_state:
+                ang_vel:
+                    - 0
+                    - 0
+                    - 0
+                joint_pos:
+                    elbow_joint: 1.6
+                    robot0_.*: 0
+                    shoulder_lift_joint: -0.62
+                    shoulder_pan_joint: -0.425
+                    wrist_1_joint: -1.5
+                    wrist_2_joint: -1.57
+                    wrist_3_joint: 0
+                joint_vel:
+                    .*: 0
+                lin_vel:
+                    - 0
+                    - 0
+                    - 0
+                pos:
+                    - -0.05
+                    - -0.3
+                    - 1.05
+                rot:
+                    - 1
+                    - 0
+                    - 0
+                    - 0
+            prim_path: /World/envs/env_.*/LeftRobot
+            soft_joint_pos_limit_factor: 1
+            spawn:
+                activate_contact_sensors: true
+                articulation_props:
+                    articulation_enabled: null
+                    enabled_self_collisions: false
+                    fix_root_link: null
+                    sleep_threshold: null
+                    solver_position_iteration_count: 16
+                    solver_velocity_iteration_count: 1
+                    stabilization_threshold: null
+                collision_props: null
+                copy_from_source: true
+                deformable_props: null
+                fixed_tendons_props: null
+                func: isaaclab.sim.spawners.from_files.from_files:spawn_from_usd
+                joint_drive_props: null
+                mass_props: null
+                rigid_props:
+                    angular_damping: null
+                    disable_gravity: false
+                    enable_gyroscopic_forces: null
+                    kinematic_enabled: null
+                    linear_damping: null
+                    max_angular_velocity: null
+                    max_contact_impulse: null
+                    max_depenetration_velocity: 5
+                    max_linear_velocity: null
+                    retain_accelerations: true
+                    rigid_body_enabled: null
+                    sleep_threshold: null
+                    solver_position_iteration_count: null
+                    solver_velocity_iteration_count: null
+                    stabilization_threshold: null
+                scale: null
+                semantic_tags: null
+                usd_path: /home/ubuntu/dexsim/assets/ur10e_shadow.usd
+                variants: null
+                visible: true
+                visual_material: null
+                visual_material_path: material
+        midi_path: data/midi/easy.mid
+        num_actions: null
+        num_observations: null
+        num_states: null
+        obs_finger_targets: true
+        obs_fingertip_pos: true
+        obs_goal_sdf: true
+        observation_noise_model: null
+        observation_space: 1236
+        onset_weight: 0.5
+        piano_cfg:
+            actuators:
+                keys:
+                    armature: null
+                    class_type: isaaclab.actuators.actuator_pd:ImplicitActuator
+                    damping: 0.05
+                    effort_limit: 50
+                    effort_limit_sim: null
+                    friction: null
+                    joint_names_expr:
+                        - joint_.*
+                    stiffness: 2
+                    velocity_limit: null
+                    velocity_limit_sim: null
+            class_type: isaaclab.assets.articulation.articulation:Articulation
+            collision_group: 0
+            debug_vis: false
+            init_state:
+                ang_vel:
+                    - 0
+                    - 0
+                    - 0
+                joint_pos:
+                    joint_.*: 0
+                joint_vel:
+                    .*: 0
+                lin_vel:
+                    - 0
+                    - 0
+                    - 0
+                pos:
+                    - 0.569
+                    - -0.606
+                    - 0.746
+                rot:
+                    - 1
+                    - 0
+                    - 0
+                    - 0
+            prim_path: /World/envs/env_.*/Piano
+            soft_joint_pos_limit_factor: 1
+            spawn:
+                activate_contact_sensors: true
+                articulation_props:
+                    articulation_enabled: null
+                    enabled_self_collisions: false
+                    fix_root_link: null
+                    sleep_threshold: null
+                    solver_position_iteration_count: 16
+                    solver_velocity_iteration_count: 1
+                    stabilization_threshold: null
+                collision_props: null
+                copy_from_source: true
+                deformable_props: null
+                fixed_tendons_props: null
+                func: isaaclab.sim.spawners.from_files.from_files:spawn_from_usd
+                joint_drive_props: null
+                mass_props: null
+                rigid_props:
+                    angular_damping: null
+                    disable_gravity: false
+                    enable_gyroscopic_forces: null
+                    kinematic_enabled: null
+                    linear_damping: null
+                    max_angular_velocity: null
+                    max_contact_impulse: null
+                    max_depenetration_velocity: 2
+                    max_linear_velocity: null
+                    retain_accelerations: null
+                    rigid_body_enabled: null
+                    sleep_threshold: null
+                    solver_position_iteration_count: null
+                    solver_velocity_iteration_count: null
+                    stabilization_threshold: null
+                scale: null
+                semantic_tags: null
+                usd_path: /home/ubuntu/dexsim/assets/piano88.usd
+                variants: null
+                visible: true
+                visual_material: null
+                visual_material_path: material
+        piano_pos:
+            - 0.569
+            - -0.606
+            - 0.746
+        reference_path: null
+        rerender_on_reset: false
+        right_base_pos:
+            - -0.05
+            - 0.3
+            - 1.05
+        right_ready_pose:
+            elbow_joint: 1.2
+            robot0_.*: 0
+            shoulder_lift_joint: -0.5
+            shoulder_pan_joint: 0.5
+            wrist_1_joint: -1.2
+            wrist_2_joint: -1.57
+            wrist_3_joint: 0
+        right_robot_cfg:
+            actuators:
+                arm:
+                    armature: null
+                    class_type: isaaclab.actuators.actuator_pd:ImplicitActuator
+                    damping: 300
+                    effort_limit: 2000
+                    effort_limit_sim: null
+                    friction: null
+                    joint_names_expr:
+                        - shoulder_pan_joint
+                        - shoulder_lift_joint
+                        - elbow_joint
+                        - wrist_1_joint
+                        - wrist_2_joint
+                        - wrist_3_joint
+                    stiffness: 6000
+                    velocity_limit: 120
+                    velocity_limit_sim: null
+                hand:
+                    armature: null
+                    class_type: isaaclab.actuators.actuator_pd:ImplicitActuator
+                    damping: 0.1
+                    effort_limit: 2
+                    effort_limit_sim: null
+                    friction: 0.01
+                    joint_names_expr:
+                        - robot0_.*
+                    stiffness: 3
+                    velocity_limit: null
+                    velocity_limit_sim: null
+            class_type: isaaclab.assets.articulation.articulation:Articulation
+            collision_group: 0
+            debug_vis: false
+            init_state:
+                ang_vel:
+                    - 0
+                    - 0
+                    - 0
+                joint_pos:
+                    elbow_joint: 1.2
+                    robot0_.*: 0
+                    shoulder_lift_joint: -0.5
+                    shoulder_pan_joint: 0.5
+                    wrist_1_joint: -1.2
+                    wrist_2_joint: -1.57
+                    wrist_3_joint: 0
+                joint_vel:
+                    .*: 0
+                lin_vel:
+                    - 0
+                    - 0
+                    - 0
+                pos:
+                    - -0.05
+                    - 0.3
+                    - 1.05
+                rot:
+                    - 1
+                    - 0
+                    - 0
+                    - 0
+            prim_path: /World/envs/env_.*/RightRobot
+            soft_joint_pos_limit_factor: 1
+            spawn:
+                activate_contact_sensors: true
+                articulation_props:
+                    articulation_enabled: null
+                    enabled_self_collisions: false
+                    fix_root_link: null
+                    sleep_threshold: null
+                    solver_position_iteration_count: 16
+                    solver_velocity_iteration_count: 1
+                    stabilization_threshold: null
+                collision_props: null
+                copy_from_source: true
+                deformable_props: null
+                fixed_tendons_props: null
+                func: isaaclab.sim.spawners.from_files.from_files:spawn_from_usd
+                joint_drive_props: null
+                mass_props: null
+                rigid_props:
+                    angular_damping: null
+                    disable_gravity: false
+                    enable_gyroscopic_forces: null
+                    kinematic_enabled: null
+                    linear_damping: null
+                    max_angular_velocity: null
+                    max_contact_impulse: null
+                    max_depenetration_velocity: 5
+                    max_linear_velocity: null
+                    retain_accelerations: true
+                    rigid_body_enabled: null
+                    sleep_threshold: null
+                    solver_position_iteration_count: null
+                    solver_velocity_iteration_count: null
+                    stabilization_threshold: null
+                scale: null
+                semantic_tags: null
+                usd_path: /home/ubuntu/dexsim/assets/ur10e_shadow.usd
+                variants: null
+                visible: true
+                visual_material: null
+                visual_material_path: material
+        scene:
+            env_spacing: 4
+            filter_collisions: true
+            lazy_sensor_update: true
+            num_envs: 2048
+            replicate_physics: true
+        seed: 0
+        sim:
+            device: cuda:0
+            dt: 0.008333333333333333
+            enable_scene_query_support: false
+            gravity:
+                - 0
+                - 0
+                - -9.81
+            physics_material:
+                compliant_contact_damping: 0
+                compliant_contact_stiffness: 0
+                dynamic_friction: 0.5
+                friction_combine_mode: average
+                func: isaaclab.sim.spawners.materials.physics_materials:spawn_rigid_body_material
+                improve_patch_friction: true
+                restitution: 0
+                restitution_combine_mode: average
+                static_friction: 0.5
+            physics_prim_path: /physicsScene
+            physx:
+                bounce_threshold_velocity: 0.5
+                enable_ccd: false
+                enable_enhanced_determinism: false
+                enable_stabilization: true
+                friction_correlation_distance: 0.025
+                friction_offset_threshold: 0.04
+                gpu_collision_stack_size: 67108864
+                gpu_found_lost_aggregate_pairs_capacity: 33554432
+                gpu_found_lost_pairs_capacity: 2097152
+                gpu_heap_capacity: 67108864
+                gpu_max_num_partitions: 8
+                gpu_max_particle_contacts: 1048576
+                gpu_max_rigid_contact_count: 8388608
+                gpu_max_rigid_patch_count: 163840
+                gpu_max_soft_body_contacts: 1048576
+                gpu_temp_buffer_capacity: 16777216
+                gpu_total_aggregate_pairs_capacity: 2097152
+                max_position_iteration_count: 255
+                max_velocity_iteration_count: 255
+                min_position_iteration_count: 1
+                min_velocity_iteration_count: 0
+                solver_type: 1
+            render:
+                antialiasing_mode: null
+                carb_settings: null
+                dlss_mode: null
+                enable_ambient_occlusion: null
+                enable_direct_lighting: null
+                enable_dl_denoiser: null
+                enable_dlssg: null
+                enable_global_illumination: null
+                enable_reflections: null
+                enable_shadows: null
+                enable_translucency: null
+                rendering_mode: null
+                samples_per_pixel: null
+            render_interval: 6
+            use_fabric: true
+        state_space: 0
+        ui_window_class_type: isaaclab.envs.ui.base_env_window:BaseEnvWindow
+        use_reference: true
+        viewer:
+            asset_name: null
+            body_name: null
+            cam_prim_path: /OmniverseKit_Persp
+            env_index: 0
+            eye:
+                - 7.5
+                - 7.5
+                - 7.5
+            lookat:
+                - 0
+                - 0
+                - 0
+            origin_type: world
+            resolution:
+                - 1280
+                - 720
+        wait_for_textures: true
+        xr: null
+log_dir:
+    value: logs/rsl_rl/piano_bimanual/seed0
+policy_cfg:
+    value:
+        activation: elu
+        actor_hidden_dims:
+            - 512
+            - 256
+            - 128
+        critic_hidden_dims:
+            - 512
+            - 256
+            - 128
+        init_noise_std: 1
+        noise_std_type: scalar
+runner_cfg:
+    value:
+        algorithm:
+            clip_param: 0.2
+            desired_kl: 0.01
+            entropy_coef: 0.005
+            gamma: 0.99
+            lam: 0.95
+            learning_rate: 0.0005
+            max_grad_norm: 1
+            normalize_advantage_per_mini_batch: false
+            num_learning_epochs: 5
+            num_mini_batches: 4
+            rnd_cfg: null
+            schedule: adaptive
+            symmetry_cfg: null
+            use_clipped_value_loss: true
+            value_loss_coef: 1
+        clip_actions: null
+        device: cuda:0
+        empirical_normalization: true
+        experiment_name: piano_bimanual
+        load_checkpoint: model_.*.pt
+        load_run: .*
+        logger: wandb
+        max_iterations: 1500
+        neptune_project: isaaclab
+        num_steps_per_env: 32
+        policy:
+            activation: elu
+            actor_hidden_dims:
+                - 512
+                - 256
+                - 128
+            critic_hidden_dims:
+                - 512
+                - 256
+                - 128
+            init_noise_std: 1
+            noise_std_type: scalar
+        resume: false
+        run_name: ""
+        save_interval: 100
+        seed: 0
+        wandb_project: dexsim-piano

@@ -48,7 +48,8 @@ def main():
         from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
         from dexsim.tasks.piano.agents.rsl_rl_ppo_cfg import PianoPPORunnerCfg
         wrapped = RslRlVecEnvWrapper(env)
-        runner = OnPolicyRunner(wrapped, PianoPPORunnerCfg().to_dict(), log_dir=None, device=env.device)
+        _ad = PianoPPORunnerCfg().to_dict(); _ad.setdefault("policy", {})["noise_std_type"] = "log"
+        runner = OnPolicyRunner(wrapped, _ad, log_dir=None, device=env.device)
         runner.load(args.checkpoint)
         policy = runner.get_inference_policy(device=env.device)
 

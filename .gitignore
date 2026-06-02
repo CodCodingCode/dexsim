@@ -27,3 +27,6 @@ __pycache__/
 
 # hydra run outputs
 outputs/
+
+# trained checkpoints (regenerable)
+results/*.pt

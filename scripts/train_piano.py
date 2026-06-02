@@ -54,7 +54,11 @@ def main():
     env = gym.make(TASK, cfg=env_cfg, render_mode=None)
     env = RslRlVecEnvWrapper(env)
 
-    runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
+    # log-parameterize the action-noise std so it can't go negative (the scalar
+    # std drifted < 0 and crashed PPO at iter 117 with "normal expects std>=0").
+    agent_dict = agent_cfg.to_dict()
+    agent_dict.setdefault("policy", {})["noise_std_type"] = "log"
+    runner = OnPolicyRunner(env, agent_dict, log_dir=log_dir, device=agent_cfg.device)
     if args.bc_init:
         import torch
         ckpt = torch.load(args.bc_init, map_location=agent_cfg.device)

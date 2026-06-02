@@ -20,10 +20,15 @@ from dexsim import ASSETS_DIR
 
 PIANO_USD_PATH = str(ASSETS_DIR / "piano88.usd")
 
-# A key counts as "pressed enough to sound" past this hinge angle (rad, negative).
-KEY_SOUND_ANGLE = -0.10
-KEY_SPRING_STIFFNESS = 8.0
-KEY_SPRING_DAMPING = 0.5
+# Matched to RoboPianist's piano physics (their setup actually registers presses):
+#   white key max travel = atan(0.01/0.15) ~= 0.0666 rad; a key "sounds" at ~50%
+#   of that travel; spring stiffness 2, damping 0.05 (ours was 8 / 0.5 -> 4x too
+#   stiff, and the old -0.10 threshold was BEYOND the physical max travel, so a
+#   key could literally never sound). This was the root cause of F1=0.
+KEY_MAX_TRAVEL_ANGLE = 0.0666           # rad; key hinge stops here (physical max)
+KEY_SOUND_ANGLE = -0.033                # ~50% of max travel -> registers a note
+KEY_SPRING_STIFFNESS = 2.0
+KEY_SPRING_DAMPING = 0.05
 
 PIANO_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(

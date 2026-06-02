@@ -37,9 +37,10 @@ WHITE_W, WHITE_L, WHITE_H = 0.0225, 0.145, 0.012
 BLACK_W, BLACK_L, BLACK_H = 0.011, 0.090, 0.010
 WHITE_PITCH = 0.0235          # center-to-center spacing of white keys
 BLACK_RAISE = 0.009           # black key sits this much above white tops
-KEY_RANGE = 0.18              # max press rotation is small; drive holds it up
-SPRING_STIFFNESS = 8.0        # return-spring strength (N*m/rad-ish)
-SPRING_DAMPING = 0.5
+# matched to RoboPianist (their piano actually registers presses)
+KEY_MAX_TRAVEL_DEG = 3.82     # atan(0.01/0.15) ~= 0.0666 rad; key stops here
+SPRING_STIFFNESS = 2.0        # was 8 (4x too stiff -> fingers couldn't press)
+SPRING_DAMPING = 0.05         # was 0.5 (10x too damped)
 
 # semitone offsets (within octave, from A) that are white, and their order
 def _layout():
@@ -113,7 +114,7 @@ def main():
         kx.AddScaleOp().Set(Gf.Vec3f(l, w, h))
         UsdPhysics.CollisionAPI.Apply(key.GetPrim())
         UsdPhysics.RigidBodyAPI.Apply(key.GetPrim())
-        UsdPhysics.MassAPI.Apply(key.GetPrim()).CreateMassAttr(0.05 if not black else 0.03)
+        UsdPhysics.MassAPI.Apply(key.GetPrim()).CreateMassAttr(0.04 if not black else 0.02)
         # colour
         key.GetDisplayColorAttr().Set([(0.05, 0.05, 0.05) if black else (0.96, 0.96, 0.94)])
 
@@ -127,7 +128,7 @@ def main():
         back_x = (WHITE_L / 2.0)  # world-ish back position relative to key center handled by local pose
         joint.CreateLocalPos1Attr().Set(Gf.Vec3f(l / 2.0, 0.0, 0.0))
         joint.CreateLocalPos0Attr().Set(Gf.Vec3f(back_x + 0.02 - WHITE_L / 2.0, y - span_y / 2.0, 0.03 + cz))
-        joint.CreateLowerLimitAttr(-12.0)   # degrees; small downward press
+        joint.CreateLowerLimitAttr(-KEY_MAX_TRAVEL_DEG)  # deg; stops at ~1cm travel
         joint.CreateUpperLimitAttr(0.5)
         # return-spring drive (angular)
         drive = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), "angular")

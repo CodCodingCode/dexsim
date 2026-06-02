@@ -1,0 +1,3421 @@
+################################################################################
+                      [1m Learning iteration 0/1500 [0m
+
+                       Computation: 8882 steps/s (collection: 7.122s, learning 0.256s)
+             Mean action noise std: 1.00
+          Mean value_function loss: 0.2500
+               Mean surrogate loss: -0.0204
+                 Mean entropy loss: 85.1098
+                       Mean reward: 0.80
+               Mean episode length: 19.33
+                           play/F1: 0.0121
+                       play/recall: 0.0189
+                    play/precision: 0.0091
+                play/keys_sounding: 0.5738
+                        reward/key: 0.0077
+                     reward/finger: 0.0171
+                      reward/onset: 0.0000
+--------------------------------------------------------------------------------
+                   Total timesteps: 65536
+                    Iteration time: 7.38s
+                      Time elapsed: 00:00:07
+                               ETA: 03:04:27
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+
+Storing git diff for 'dexsim' in: logs/rsl_rl/piano_bimanual/seed0/git/dexsim.diff
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+################################################################################
+                      [1m Learning iteration 1/1500 [0m
+
+                       Computation: 9269 steps/s (collection: 6.960s, learning 0.110s)
+             Mean action noise std: 1.00
+          Mean value_function loss: 0.4834
+               Mean surrogate loss: -0.0128
+                 Mean entropy loss: 85.0517
+                       Mean reward: 0.94
+               Mean episode length: 49.81
+                           play/F1: 0.0188
+                       play/recall: 0.0302
+                    play/precision: 0.0138
+                play/keys_sounding: 0.6356
+                        reward/key: 0.0120
+                     reward/finger: 0.0172
+                      reward/onset: 0.0004
+--------------------------------------------------------------------------------
+                   Total timesteps: 131072
+                    Iteration time: 7.07s
+                      Time elapsed: 00:00:14
+                               ETA: 03:00:29
+
+################################################################################
+                      [1m Learning iteration 2/1500 [0m
+
+                       Computation: 9222 steps/s (collection: 6.996s, learning 0.110s)
+             Mean action noise std: 1.00
+          Mean value_function loss: 0.1025
+               Mean surrogate loss: -0.0131
+                 Mean entropy loss: 85.0208
+                       Mean reward: 2.05
+               Mean episode length: 81.71
+                           play/F1: 0.0183
+                       play/recall: 0.0309
+                    play/precision: 0.0133
+                play/keys_sounding: 0.6298
+                        reward/key: 0.0032
+                     reward/finger: 0.0089
+                      reward/onset: 0.0004
+--------------------------------------------------------------------------------
+                   Total timesteps: 196608
+                    Iteration time: 7.11s
+                      Time elapsed: 00:00:21
+                               ETA: 02:59:22
+
+################################################################################
+                      [1m Learning iteration 3/1500 [0m
+
+                       Computation: 9087 steps/s (collection: 7.102s, learning 0.110s)
+             Mean action noise std: 1.00
+          Mean value_function loss: 0.5358
+               Mean surrogate loss: -0.0052
+                 Mean entropy loss: 85.0040
+                       Mean reward: 3.19
+               Mean episode length: 114.77
+                           play/F1: 0.0199
+                       play/recall: 0.0330
+                    play/precision: 0.0143
+                play/keys_sounding: 0.7214
+                        reward/key: 0.0168
+                     reward/finger: 0.0303
+                      reward/onset: 0.0001
+--------------------------------------------------------------------------------
+                   Total timesteps: 262144
+                    Iteration time: 7.21s
+                      Time elapsed: 00:00:28
+                               ETA: 02:59:25
+
+################################################################################
+                      [1m Learning iteration 4/1500 [0m
+
+                       Computation: 9019 steps/s (collection: 7.156s, learning 0.110s)
+             Mean action noise std: 1.00
+          Mean value_function loss: 0.6700
+               Mean surrogate loss: -0.0080
+                 Mean entropy loss: 84.9730
+                       Mean reward: 3.39
+               Mean episode length: 139.87
+                           play/F1: 0.0248
+                       play/recall: 0.0409
+                    play/precision: 0.0179
+                play/keys_sounding: 0.7135
+                        reward/key: 0.0167
+                     reward/finger: 0.0231
+                      reward/onset: 0.0005
+--------------------------------------------------------------------------------
+                   Total timesteps: 327680
+                    Iteration time: 7.27s
+                      Time elapsed: 00:00:36
+                               ETA: 02:59:40
+
+################################################################################
+                      [1m Learning iteration 5/1500 [0m
+
+                       Computation: 8915 steps/s (collection: 7.241s, learning 0.109s)
+             Mean action noise std: 1.00
+          Mean value_function loss: 0.2365
+               Mean surrogate loss: -0.0076
+                 Mean entropy loss: 84.9547
+                       Mean reward: 5.30
+               Mean episode length: 179.43
+                           play/F1: 0.0281
+                       play/recall: 0.0458
+                    play/precision: 0.0204
+                play/keys_sounding: 0.6870
+                        reward/key: 0.0089
+                     reward/finger: 0.0138
+                      reward/onset: 0.0004
+--------------------------------------------------------------------------------
+                   Total timesteps: 393216
+                    Iteration time: 7.35s
+                      Time elapsed: 00:00:43
+                               ETA: 03:00:09
+
+################################################################################
+                      [1m Learning iteration 6/1500 [0m
+
+                       Computation: 8811 steps/s (collection: 7.328s, learning 0.109s)
+             Mean action noise std: 1.00
+          Mean value_function loss: 0.7678
+               Mean surrogate loss: -0.0052
+                 Mean entropy loss: 84.9404
+                       Mean reward: 7.07
+               Mean episode length: 212.18
+                           play/F1: 0.0333
+                       play/recall: 0.0540
+                    play/precision: 0.0241
+                play/keys_sounding: 0.7889
+                        reward/key: 0.0288
+                     reward/finger: 0.0337
+                      reward/onset: 0.0002
+--------------------------------------------------------------------------------
+                   Total timesteps: 458752
+                    Iteration time: 7.44s
+                      Time elapsed: 00:00:50
+                               ETA: 03:00:46
+
+################################################################################
+                      [1m Learning iteration 7/1500 [0m
+
+                       Computation: 8728 steps/s (collection: 7.399s, learning 0.109s)
+             Mean action noise std: 1.00
+          Mean value_function loss: 0.9169
+               Mean surrogate loss: -0.0067
+                 Mean entropy loss: 84.9120
+                       Mean reward: 7.71
+               Mean episode length: 242.56
+                           play/F1: 0.0332
+                       play/recall: 0.0552
+                    play/precision: 0.0238
+                play/keys_sounding: 0.7597
+                        reward/key: 0.0236
+                     reward/finger: 0.0315
+                      reward/onset: 0.0005
+--------------------------------------------------------------------------------
+                   Total timesteps: 524288
+                    Iteration time: 7.51s
+                      Time elapsed: 00:00:58
+                               ETA: 03:01:25
+
+################################################################################
+                      [1m Learning iteration 8/1500 [0m
+
+                       Computation: 8699 steps/s (collection: 7.429s, learning 0.105s)
+             Mean action noise std: 1.00
+          Mean value_function loss: 0.4480
+               Mean surrogate loss: -0.0076
+                 Mean entropy loss: 84.8861
+                       Mean reward: 10.85
+               Mean episode length: 271.69
+                           play/F1: 0.0400
+                       play/recall: 0.0667
+                    play/precision: 0.0287
+                play/keys_sounding: 0.7722
+                        reward/key: 0.0166
+                     reward/finger: 0.0222
+                      reward/onset: 0.0006
+--------------------------------------------------------------------------------
+                   Total timesteps: 589824
+                    Iteration time: 7.53s
+                      Time elapsed: 00:01:05
+                               ETA: 03:01:58
+
+################################################################################
+                      [1m Learning iteration 9/1500 [0m
+
+                       Computation: 8554 steps/s (collection: 7.556s, learning 0.105s)
+             Mean action noise std: 1.00
+          Mean value_function loss: 0.9842
+               Mean surrogate loss: 0.0009
+                 Mean entropy loss: 84.8537
+                       Mean reward: 12.22
+               Mean episode length: 305.97
+                           play/F1: 0.0449
+                       play/recall: 0.0746
+                    play/precision: 0.0321
+                play/keys_sounding: 0.9110
+                        reward/key: 0.0379
+                     reward/finger: 0.0417
+                      reward/onset: 0.0002
+--------------------------------------------------------------------------------
+                   Total timesteps: 655360
+                    Iteration time: 7.66s
+                      Time elapsed: 00:01:13
+                               ETA: 03:02:42
+
+################################################################################
+                      [1m Learning iteration 10/1500 [0m
+
+                       Computation: 8567 steps/s (collection: 7.544s, learning 0.105s)
+             Mean action noise std: 1.00
+          Mean value_function loss: 1.3058
+               Mean surrogate loss: 0.0002
+                 Mean entropy loss: 84.8400
+                       Mean reward: 14.60
+               Mean episode length: 338.52
+                           play/F1: 0.0526
+                       play/recall: 0.0865
+                    play/precision: 0.0379
+                play/keys_sounding: 0.8567
+                        reward/key: 0.0382
+                     reward/finger: 0.0393
+                      reward/onset: 0.0005
+--------------------------------------------------------------------------------
+                   Total timesteps: 720896
+                    Iteration time: 7.65s
+                      Time elapsed: 00:01:21
+                               ETA: 03:03:15
+
+################################################################################
+                      [1m Learning iteration 11/1500 [0m
+
+                       Computation: 8608 steps/s (collection: 7.508s, learning 0.104s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 0.7597
+               Mean surrogate loss: -0.0046
+                 Mean entropy loss: 84.8249
+                       Mean reward: 17.72
+               Mean episode length: 370.50
+                           play/F1: 0.0536
+                       play/recall: 0.0882
+                    play/precision: 0.0386
+                play/keys_sounding: 0.8353
+                        reward/key: 0.0277
+                     reward/finger: 0.0306
+                      reward/onset: 0.0006
+--------------------------------------------------------------------------------
+                   Total timesteps: 786432
+                    Iteration time: 7.61s
+                      Time elapsed: 00:01:28
+                               ETA: 03:03:36
+
+################################################################################
+                      [1m Learning iteration 12/1500 [0m
+
+                       Computation: 8457 steps/s (collection: 7.644s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 1.1004
+               Mean surrogate loss: -0.0057
+                 Mean entropy loss: 84.8117
+                       Mean reward: 19.08
+               Mean episode length: 402.60
+                           play/F1: 0.0563
+                       play/recall: 0.0935
+                    play/precision: 0.0404
+                play/keys_sounding: 0.9531
+                        reward/key: 0.0448
+                     reward/finger: 0.0488
+                      reward/onset: 0.0004
+--------------------------------------------------------------------------------
+                   Total timesteps: 851968
+                    Iteration time: 7.75s
+                      Time elapsed: 00:01:36
+                               ETA: 03:04:09
+
+################################################################################
+                      [1m Learning iteration 13/1500 [0m
+
+                       Computation: 8492 steps/s (collection: 7.612s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 1.4751
+               Mean surrogate loss: -0.0008
+                 Mean entropy loss: 84.7868
+                       Mean reward: 20.30
+               Mean episode length: 433.33
+                           play/F1: 0.0632
+                       play/recall: 0.1052
+                    play/precision: 0.0453
+                play/keys_sounding: 0.9292
+                        reward/key: 0.0454
+                     reward/finger: 0.0457
+                      reward/onset: 0.0006
+--------------------------------------------------------------------------------
+                   Total timesteps: 917504
+                    Iteration time: 7.72s
+                      Time elapsed: 00:01:44
+                               ETA: 03:04:32
+
+################################################################################
+                      [1m Learning iteration 14/1500 [0m
+
+                       Computation: 8505 steps/s (collection: 7.600s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 1.0011
+               Mean surrogate loss: -0.0042
+                 Mean entropy loss: 84.7717
+                       Mean reward: 24.03
+               Mean episode length: 467.98
+                           play/F1: 0.0640
+                       play/recall: 0.1079
+                    play/precision: 0.0455
+                play/keys_sounding: 0.9090
+                        reward/key: 0.0397
+                     reward/finger: 0.0385
+                      reward/onset: 0.0006
+--------------------------------------------------------------------------------
+                   Total timesteps: 983040
+                    Iteration time: 7.70s
+                      Time elapsed: 00:01:51
+                               ETA: 03:04:51
+
+################################################################################
+                      [1m Learning iteration 15/1500 [0m
+
+                       Computation: 8448 steps/s (collection: 7.652s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 1.4493
+               Mean surrogate loss: -0.0056
+                 Mean entropy loss: 84.7637
+                       Mean reward: 28.59
+               Mean episode length: 499.09
+                           play/F1: 0.0716
+                       play/recall: 0.1220
+                    play/precision: 0.0507
+                play/keys_sounding: 1.0055
+                        reward/key: 0.0561
+                     reward/finger: 0.0495
+                      reward/onset: 0.0004
+--------------------------------------------------------------------------------
+                   Total timesteps: 1048576
+                    Iteration time: 7.76s
+                      Time elapsed: 00:01:59
+                               ETA: 03:05:10
+
+################################################################################
+                      [1m Learning iteration 16/1500 [0m
+
+                       Computation: 8469 steps/s (collection: 7.633s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 1.5464
+               Mean surrogate loss: -0.0072
+                 Mean entropy loss: 84.7469
+                       Mean reward: 31.21
+               Mean episode length: 529.65
+                           play/F1: 0.0777
+                       play/recall: 0.1308
+                    play/precision: 0.0554
+                play/keys_sounding: 0.9726
+                        reward/key: 0.0560
+                     reward/finger: 0.0476
+                      reward/onset: 0.0007
+--------------------------------------------------------------------------------
+                   Total timesteps: 1114112
+                    Iteration time: 7.74s
+                      Time elapsed: 00:02:07
+                               ETA: 03:05:25
+
+################################################################################
+                      [1m Learning iteration 17/1500 [0m
+
+                       Computation: 8455 steps/s (collection: 7.646s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 1.5136
+               Mean surrogate loss: -0.0061
+                 Mean entropy loss: 84.7313
+                       Mean reward: 33.13
+               Mean episode length: 558.28
+                           play/F1: 0.0774
+                       play/recall: 0.1343
+                    play/precision: 0.0544
+                play/keys_sounding: 1.0019
+                        reward/key: 0.0561
+                     reward/finger: 0.0484
+                      reward/onset: 0.0007
+--------------------------------------------------------------------------------
+                   Total timesteps: 1179648
+                    Iteration time: 7.75s
+                      Time elapsed: 00:02:15
+                               ETA: 03:05:39
+
+################################################################################
+                      [1m Learning iteration 18/1500 [0m
+
+                       Computation: 8434 steps/s (collection: 7.664s, learning 0.106s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 1.7828
+               Mean surrogate loss: -0.0043
+                 Mean entropy loss: 84.7111
+                       Mean reward: 37.12
+               Mean episode length: 592.77
+                           play/F1: 0.0851
+                       play/recall: 0.1469
+                    play/precision: 0.0600
+                play/keys_sounding: 1.0364
+                        reward/key: 0.0638
+                     reward/finger: 0.0498
+                      reward/onset: 0.0007
+--------------------------------------------------------------------------------
+                   Total timesteps: 1245184
+                    Iteration time: 7.77s
+                      Time elapsed: 00:02:22
+                               ETA: 03:05:51
+
+################################################################################
+                      [1m Learning iteration 19/1500 [0m
+
+                       Computation: 8406 steps/s (collection: 7.691s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 1.7582
+               Mean surrogate loss: -0.0051
+                 Mean entropy loss: 84.6946
+                       Mean reward: 42.64
+               Mean episode length: 599.00
+                           play/F1: 0.0891
+                       play/recall: 0.1525
+                    play/precision: 0.0630
+                play/keys_sounding: 1.0657
+                        reward/key: 0.0675
+                     reward/finger: 0.0528
+                      reward/onset: 0.0007
+--------------------------------------------------------------------------------
+                   Total timesteps: 1310720
+                    Iteration time: 7.80s
+                      Time elapsed: 00:02:30
+                               ETA: 03:06:04
+
+################################################################################
+                      [1m Learning iteration 20/1500 [0m
+
+                       Computation: 8385 steps/s (collection: 7.710s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 1.8876
+               Mean surrogate loss: -0.0040
+                 Mean entropy loss: 84.6493
+                       Mean reward: 46.52
+               Mean episode length: 599.00
+                           play/F1: 0.0939
+                       play/recall: 0.1637
+                    play/precision: 0.0659
+                play/keys_sounding: 1.0694
+                        reward/key: 0.0729
+                     reward/finger: 0.0530
+                      reward/onset: 0.0008
+--------------------------------------------------------------------------------
+                   Total timesteps: 1376256
+                    Iteration time: 7.82s
+                      Time elapsed: 00:02:38
+                               ETA: 03:06:16
+
+################################################################################
+                      [1m Learning iteration 21/1500 [0m
+
+                       Computation: 8385 steps/s (collection: 7.710s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 1.9893
+               Mean surrogate loss: -0.0039
+                 Mean entropy loss: 84.6226
+                       Mean reward: 47.73
+               Mean episode length: 599.00
+                           play/F1: 0.1019
+                       play/recall: 0.1766
+                    play/precision: 0.0717
+                play/keys_sounding: 1.0665
+                        reward/key: 0.0775
+                     reward/finger: 0.0541
+                      reward/onset: 0.0008
+--------------------------------------------------------------------------------
+                   Total timesteps: 1441792
+                    Iteration time: 7.82s
+                      Time elapsed: 00:02:46
+                               ETA: 03:06:26
+
+################################################################################
+                      [1m Learning iteration 22/1500 [0m
+
+                       Computation: 8545 steps/s (collection: 7.564s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.0538
+               Mean surrogate loss: -0.0039
+                 Mean entropy loss: 84.6207
+                       Mean reward: 52.75
+               Mean episode length: 599.00
+                           play/F1: 0.1027
+                       play/recall: 0.1801
+                    play/precision: 0.0719
+                play/keys_sounding: 1.0907
+                        reward/key: 0.0809
+                     reward/finger: 0.0552
+                      reward/onset: 0.0008
+--------------------------------------------------------------------------------
+                   Total timesteps: 1507328
+                    Iteration time: 7.67s
+                      Time elapsed: 00:02:54
+                               ETA: 03:06:25
+
+################################################################################
+                      [1m Learning iteration 23/1500 [0m
+
+                       Computation: 8496 steps/s (collection: 7.608s, learning 0.106s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.1318
+               Mean surrogate loss: -0.0028
+                 Mean entropy loss: 84.6144
+                       Mean reward: 54.13
+               Mean episode length: 599.00
+                           play/F1: 0.1115
+                       play/recall: 0.1944
+                    play/precision: 0.0783
+                play/keys_sounding: 1.0934
+                        reward/key: 0.0856
+                     reward/finger: 0.0528
+                      reward/onset: 0.0009
+--------------------------------------------------------------------------------
+                   Total timesteps: 1572864
+                    Iteration time: 7.71s
+                      Time elapsed: 00:03:01
+                               ETA: 03:06:27
+
+################################################################################
+                      [1m Learning iteration 24/1500 [0m
+
+                       Computation: 8402 steps/s (collection: 7.695s, learning 0.104s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 3.9718
+               Mean surrogate loss: 0.0060
+                 Mean entropy loss: 84.6078
+                       Mean reward: 58.89
+               Mean episode length: 599.00
+                           play/F1: 0.1122
+                       play/recall: 0.1995
+                    play/precision: 0.0781
+                play/keys_sounding: 1.1697
+                        reward/key: 0.0897
+                     reward/finger: 0.0573
+                      reward/onset: 0.0010
+--------------------------------------------------------------------------------
+                   Total timesteps: 1638400
+                    Iteration time: 7.80s
+                      Time elapsed: 00:03:09
+                               ETA: 03:06:32
+
+################################################################################
+                      [1m Learning iteration 25/1500 [0m
+
+                       Computation: 8409 steps/s (collection: 7.688s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.0648
+               Mean surrogate loss: -0.0013
+                 Mean entropy loss: 84.6068
+                       Mean reward: 60.72
+               Mean episode length: 599.00
+                           play/F1: 0.1089
+                       play/recall: 0.1975
+                    play/precision: 0.0753
+                play/keys_sounding: 1.1649
+                        reward/key: 0.0870
+                     reward/finger: 0.0550
+                      reward/onset: 0.0009
+--------------------------------------------------------------------------------
+                   Total timesteps: 1703936
+                    Iteration time: 7.79s
+                      Time elapsed: 00:03:17
+                               ETA: 03:06:37
+
+################################################################################
+                      [1m Learning iteration 26/1500 [0m
+
+                       Computation: 8353 steps/s (collection: 7.740s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.2467
+               Mean surrogate loss: -0.0038
+                 Mean entropy loss: 84.6040
+                       Mean reward: 65.02
+               Mean episode length: 599.00
+                           play/F1: 0.1138
+                       play/recall: 0.2036
+                    play/precision: 0.0790
+                play/keys_sounding: 1.1805
+                        reward/key: 0.0919
+                     reward/finger: 0.0580
+                      reward/onset: 0.0008
+--------------------------------------------------------------------------------
+                   Total timesteps: 1769472
+                    Iteration time: 7.84s
+                      Time elapsed: 00:03:25
+                               ETA: 03:06:43
+
+################################################################################
+                      [1m Learning iteration 27/1500 [0m
+
+                       Computation: 8330 steps/s (collection: 7.762s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.3229
+               Mean surrogate loss: -0.0038
+                 Mean entropy loss: 84.5949
+                       Mean reward: 66.63
+               Mean episode length: 599.00
+                           play/F1: 0.1184
+                       play/recall: 0.2151
+                    play/precision: 0.0818
+                play/keys_sounding: 1.1926
+                        reward/key: 0.0959
+                     reward/finger: 0.0566
+                      reward/onset: 0.0009
+--------------------------------------------------------------------------------
+                   Total timesteps: 1835008
+                    Iteration time: 7.87s
+                      Time elapsed: 00:03:33
+                               ETA: 03:06:49
+
+################################################################################
+                      [1m Learning iteration 28/1500 [0m
+
+                       Computation: 8358 steps/s (collection: 7.735s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.3397
+               Mean surrogate loss: -0.0024
+                 Mean entropy loss: 84.5872
+                       Mean reward: 70.67
+               Mean episode length: 599.00
+                           play/F1: 0.1231
+                       play/recall: 0.2262
+                    play/precision: 0.0846
+                play/keys_sounding: 1.2359
+                        reward/key: 0.1002
+                     reward/finger: 0.0552
+                      reward/onset: 0.0009
+--------------------------------------------------------------------------------
+                   Total timesteps: 1900544
+                    Iteration time: 7.84s
+                      Time elapsed: 00:03:40
+                               ETA: 03:06:53
+
+################################################################################
+                      [1m Learning iteration 29/1500 [0m
+
+                       Computation: 8351 steps/s (collection: 7.741s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.3973
+               Mean surrogate loss: -0.0033
+                 Mean entropy loss: 84.5770
+                       Mean reward: 72.72
+               Mean episode length: 599.00
+                           play/F1: 0.1304
+                       play/recall: 0.2408
+                    play/precision: 0.0894
+                play/keys_sounding: 1.2485
+                        reward/key: 0.1085
+                     reward/finger: 0.0552
+                      reward/onset: 0.0012
+--------------------------------------------------------------------------------
+                   Total timesteps: 1966080
+                    Iteration time: 7.85s
+                      Time elapsed: 00:03:48
+                               ETA: 03:06:57
+
+################################################################################
+                      [1m Learning iteration 30/1500 [0m
+
+                       Computation: 8328 steps/s (collection: 7.764s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.5184
+               Mean surrogate loss: -0.0033
+                 Mean entropy loss: 84.5738
+                       Mean reward: 76.24
+               Mean episode length: 599.00
+                           play/F1: 0.1345
+                       play/recall: 0.2497
+                    play/precision: 0.0921
+                play/keys_sounding: 1.2610
+                        reward/key: 0.1128
+                     reward/finger: 0.0560
+                      reward/onset: 0.0010
+--------------------------------------------------------------------------------
+                   Total timesteps: 2031616
+                    Iteration time: 7.87s
+                      Time elapsed: 00:03:56
+                               ETA: 03:07:01
+
+################################################################################
+                      [1m Learning iteration 31/1500 [0m
+
+                       Computation: 8333 steps/s (collection: 7.759s, learning 0.106s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.5987
+               Mean surrogate loss: 0.0006
+                 Mean entropy loss: 84.5668
+                       Mean reward: 78.73
+               Mean episode length: 599.00
+                           play/F1: 0.1342
+                       play/recall: 0.2521
+                    play/precision: 0.0915
+                play/keys_sounding: 1.2922
+                        reward/key: 0.1127
+                     reward/finger: 0.0558
+                      reward/onset: 0.0011
+--------------------------------------------------------------------------------
+                   Total timesteps: 2097152
+                    Iteration time: 7.86s
+                      Time elapsed: 00:04:04
+                               ETA: 03:07:04
+
+################################################################################
+                      [1m Learning iteration 32/1500 [0m
+
+                       Computation: 8405 steps/s (collection: 7.692s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6284
+               Mean surrogate loss: -0.0051
+                 Mean entropy loss: 84.5512
+                       Mean reward: 82.55
+               Mean episode length: 599.00
+                           play/F1: 0.1387
+                       play/recall: 0.2575
+                    play/precision: 0.0950
+                play/keys_sounding: 1.2622
+                        reward/key: 0.1162
+                     reward/finger: 0.0595
+                      reward/onset: 0.0011
+--------------------------------------------------------------------------------
+                   Total timesteps: 2162688
+                    Iteration time: 7.80s
+                      Time elapsed: 00:04:12
+                               ETA: 03:07:03
+
+################################################################################
+                      [1m Learning iteration 33/1500 [0m
+
+                       Computation: 8340 steps/s (collection: 7.753s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6570
+               Mean surrogate loss: 0.0017
+                 Mean entropy loss: 84.5341
+                       Mean reward: 82.99
+               Mean episode length: 599.00
+                           play/F1: 0.1416
+                       play/recall: 0.2639
+                    play/precision: 0.0968
+                play/keys_sounding: 1.2803
+                        reward/key: 0.1199
+                     reward/finger: 0.0591
+                      reward/onset: 0.0011
+--------------------------------------------------------------------------------
+                   Total timesteps: 2228224
+                    Iteration time: 7.86s
+                      Time elapsed: 00:04:20
+                               ETA: 03:07:05
+
+################################################################################
+                      [1m Learning iteration 34/1500 [0m
+
+                       Computation: 8368 steps/s (collection: 7.727s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.8195
+               Mean surrogate loss: 0.0086
+                 Mean entropy loss: 84.5276
+                       Mean reward: 86.77
+               Mean episode length: 599.00
+                           play/F1: 0.1537
+                       play/recall: 0.2891
+                    play/precision: 0.1047
+                play/keys_sounding: 1.3458
+                        reward/key: 0.1303
+                     reward/finger: 0.0531
+                      reward/onset: 0.0013
+--------------------------------------------------------------------------------
+                   Total timesteps: 2293760
+                    Iteration time: 7.83s
+                      Time elapsed: 00:04:27
+                               ETA: 03:07:05
+
+################################################################################
+                      [1m Learning iteration 35/1500 [0m
+
+                       Computation: 8454 steps/s (collection: 7.647s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6021
+               Mean surrogate loss: -0.0025
+                 Mean entropy loss: 84.5220
+                       Mean reward: 88.12
+               Mean episode length: 599.00
+                           play/F1: 0.1548
+                       play/recall: 0.2895
+                    play/precision: 0.1057
+                play/keys_sounding: 1.3555
+                        reward/key: 0.1299
+                     reward/finger: 0.0452
+                      reward/onset: 0.0013
+--------------------------------------------------------------------------------
+                   Total timesteps: 2359296
+                    Iteration time: 7.75s
+                      Time elapsed: 00:04:35
+                               ETA: 03:07:01
+
+################################################################################
+                      [1m Learning iteration 36/1500 [0m
+
+                       Computation: 8554 steps/s (collection: 7.556s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7226
+               Mean surrogate loss: -0.0042
+                 Mean entropy loss: 84.5100
+                       Mean reward: 92.42
+               Mean episode length: 599.00
+                           play/F1: 0.1687
+                       play/recall: 0.3160
+                    play/precision: 0.1151
+                play/keys_sounding: 1.3996
+                        reward/key: 0.1442
+                     reward/finger: 0.0406
+                      reward/onset: 0.0012
+--------------------------------------------------------------------------------
+                   Total timesteps: 2424832
+                    Iteration time: 7.66s
+                      Time elapsed: 00:04:43
+                               ETA: 03:06:53
+
+################################################################################
+                      [1m Learning iteration 37/1500 [0m
+
+                       Computation: 8574 steps/s (collection: 7.538s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6441
+               Mean surrogate loss: -0.0012
+                 Mean entropy loss: 84.4933
+                       Mean reward: 94.85
+               Mean episode length: 599.00
+                           play/F1: 0.1705
+                       play/recall: 0.3197
+                    play/precision: 0.1163
+                play/keys_sounding: 1.3927
+                        reward/key: 0.1447
+                     reward/finger: 0.0389
+                      reward/onset: 0.0014
+--------------------------------------------------------------------------------
+                   Total timesteps: 2490368
+                    Iteration time: 7.64s
+                      Time elapsed: 00:04:51
+                               ETA: 03:06:45
+
+################################################################################
+                      [1m Learning iteration 38/1500 [0m
+
+                       Computation: 8528 steps/s (collection: 7.579s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7235
+               Mean surrogate loss: 0.0002
+                 Mean entropy loss: 84.4861
+                       Mean reward: 96.27
+               Mean episode length: 599.00
+                           play/F1: 0.1746
+                       play/recall: 0.3286
+                    play/precision: 0.1189
+                play/keys_sounding: 1.3875
+                        reward/key: 0.1478
+                     reward/finger: 0.0402
+                      reward/onset: 0.0013
+--------------------------------------------------------------------------------
+                   Total timesteps: 2555904
+                    Iteration time: 7.68s
+                      Time elapsed: 00:04:58
+                               ETA: 03:06:38
+
+################################################################################
+                      [1m Learning iteration 39/1500 [0m
+
+                       Computation: 8534 steps/s (collection: 7.574s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 3.0775
+               Mean surrogate loss: -0.0017
+                 Mean entropy loss: 84.4678
+                       Mean reward: 101.50
+               Mean episode length: 599.00
+                           play/F1: 0.1772
+                       play/recall: 0.3366
+                    play/precision: 0.1203
+                play/keys_sounding: 1.4350
+                        reward/key: 0.1553
+                     reward/finger: 0.0441
+                      reward/onset: 0.0013
+--------------------------------------------------------------------------------
+                   Total timesteps: 2621440
+                    Iteration time: 7.68s
+                      Time elapsed: 00:05:06
+                               ETA: 03:06:31
+
+################################################################################
+                      [1m Learning iteration 40/1500 [0m
+
+                       Computation: 8604 steps/s (collection: 7.512s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.8066
+               Mean surrogate loss: -0.0012
+                 Mean entropy loss: 84.4402
+                       Mean reward: 99.02
+               Mean episode length: 599.00
+                           play/F1: 0.1813
+                       play/recall: 0.3353
+                    play/precision: 0.1243
+                play/keys_sounding: 1.3672
+                        reward/key: 0.1507
+                     reward/finger: 0.0310
+                      reward/onset: 0.0013
+--------------------------------------------------------------------------------
+                   Total timesteps: 2686976
+                    Iteration time: 7.62s
+                      Time elapsed: 00:05:14
+                               ETA: 03:06:22
+
+################################################################################
+                      [1m Learning iteration 41/1500 [0m
+
+                       Computation: 8505 steps/s (collection: 7.600s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.9831
+               Mean surrogate loss: 0.0166
+                 Mean entropy loss: 84.4240
+                       Mean reward: 102.78
+               Mean episode length: 599.00
+                           play/F1: 0.1794
+                       play/recall: 0.3398
+                    play/precision: 0.1219
+                play/keys_sounding: 1.3913
+                        reward/key: 0.1550
+                     reward/finger: 0.0319
+                      reward/onset: 0.0014
+--------------------------------------------------------------------------------
+                   Total timesteps: 2752512
+                    Iteration time: 7.70s
+                      Time elapsed: 00:05:21
+                               ETA: 03:06:16
+
+################################################################################
+                      [1m Learning iteration 42/1500 [0m
+
+                       Computation: 8579 steps/s (collection: 7.534s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 3.4679
+               Mean surrogate loss: 0.0218
+                 Mean entropy loss: 84.4200
+                       Mean reward: 100.80
+               Mean episode length: 599.00
+                           play/F1: 0.1952
+                       play/recall: 0.3681
+                    play/precision: 0.1329
+                play/keys_sounding: 1.3986
+                        reward/key: 0.1663
+                     reward/finger: 0.0355
+                      reward/onset: 0.0013
+--------------------------------------------------------------------------------
+                   Total timesteps: 2818048
+                    Iteration time: 7.64s
+                      Time elapsed: 00:05:29
+                               ETA: 03:06:07
+
+################################################################################
+                      [1m Learning iteration 43/1500 [0m
+
+                       Computation: 8637 steps/s (collection: 7.483s, learning 0.104s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 3.1699
+               Mean surrogate loss: 0.0158
+                 Mean entropy loss: 84.4199
+                       Mean reward: 105.33
+               Mean episode length: 599.00
+                           play/F1: 0.1865
+                       play/recall: 0.3531
+                    play/precision: 0.1267
+                play/keys_sounding: 1.4057
+                        reward/key: 0.1624
+                     reward/finger: 0.0362
+                      reward/onset: 0.0014
+--------------------------------------------------------------------------------
+                   Total timesteps: 2883584
+                    Iteration time: 7.59s
+                      Time elapsed: 00:05:36
+                               ETA: 03:05:57
+
+################################################################################
+                      [1m Learning iteration 44/1500 [0m
+
+                       Computation: 8564 steps/s (collection: 7.545s, learning 0.107s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 3.1925
+               Mean surrogate loss: 0.0210
+                 Mean entropy loss: 84.4197
+                       Mean reward: 108.15
+               Mean episode length: 599.00
+                           play/F1: 0.1887
+                       play/recall: 0.3572
+                    play/precision: 0.1283
+                play/keys_sounding: 1.3847
+                        reward/key: 0.1623
+                     reward/finger: 0.0387
+                      reward/onset: 0.0014
+--------------------------------------------------------------------------------
+                   Total timesteps: 2949120
+                    Iteration time: 7.65s
+                      Time elapsed: 00:05:44
+                               ETA: 03:05:50
+
+################################################################################
+                      [1m Learning iteration 45/1500 [0m
+
+                       Computation: 8539 steps/s (collection: 7.570s, learning 0.104s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.9207
+               Mean surrogate loss: 0.0120
+                 Mean entropy loss: 84.4196
+                       Mean reward: 109.42
+               Mean episode length: 599.00
+                           play/F1: 0.1878
+                       play/recall: 0.3548
+                    play/precision: 0.1277
+                play/keys_sounding: 1.3986
+                        reward/key: 0.1612
+                     reward/finger: 0.0369
+                      reward/onset: 0.0012
+--------------------------------------------------------------------------------
+                   Total timesteps: 3014656
+                    Iteration time: 7.67s
+                      Time elapsed: 00:05:52
+                               ETA: 03:05:42
+
+################################################################################
+                      [1m Learning iteration 46/1500 [0m
+
+                       Computation: 8606 steps/s (collection: 7.511s, learning 0.104s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.9371
+               Mean surrogate loss: 0.0188
+                 Mean entropy loss: 84.4196
+                       Mean reward: 108.39
+               Mean episode length: 599.00
+                           play/F1: 0.1860
+                       play/recall: 0.3515
+                    play/precision: 0.1265
+                play/keys_sounding: 1.3842
+                        reward/key: 0.1612
+                     reward/finger: 0.0375
+                      reward/onset: 0.0012
+--------------------------------------------------------------------------------
+                   Total timesteps: 3080192
+                    Iteration time: 7.61s
+                      Time elapsed: 00:05:59
+                               ETA: 03:05:33
+
+################################################################################
+                      [1m Learning iteration 47/1500 [0m
+
+                       Computation: 8665 steps/s (collection: 7.458s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.9040
+               Mean surrogate loss: 0.0123
+                 Mean entropy loss: 84.4196
+                       Mean reward: 113.97
+               Mean episode length: 599.00
+                           play/F1: 0.1926
+                       play/recall: 0.3635
+                    play/precision: 0.1311
+                play/keys_sounding: 1.4048
+                        reward/key: 0.1651
+                     reward/finger: 0.0343
+                      reward/onset: 0.0014
+--------------------------------------------------------------------------------
+                   Total timesteps: 3145728
+                    Iteration time: 7.56s
+                      Time elapsed: 00:06:07
+                               ETA: 03:05:23
+
+################################################################################
+                      [1m Learning iteration 48/1500 [0m
+
+                       Computation: 8583 steps/s (collection: 7.530s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7712
+               Mean surrogate loss: 0.0103
+                 Mean entropy loss: 84.4194
+                       Mean reward: 113.03
+               Mean episode length: 599.00
+                           play/F1: 0.1862
+                       play/recall: 0.3549
+                    play/precision: 0.1263
+                play/keys_sounding: 1.4142
+                        reward/key: 0.1619
+                     reward/finger: 0.0367
+                      reward/onset: 0.0015
+--------------------------------------------------------------------------------
+                   Total timesteps: 3211264
+                    Iteration time: 7.64s
+                      Time elapsed: 00:06:15
+                               ETA: 03:05:15
+
+################################################################################
+                      [1m Learning iteration 49/1500 [0m
+
+                       Computation: 8588 steps/s (collection: 7.526s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.8471
+               Mean surrogate loss: 0.0049
+                 Mean entropy loss: 84.4189
+                       Mean reward: 112.39
+               Mean episode length: 599.00
+                           play/F1: 0.1885
+                       play/recall: 0.3595
+                    play/precision: 0.1278
+                play/keys_sounding: 1.4263
+                        reward/key: 0.1645
+                     reward/finger: 0.0381
+                      reward/onset: 0.0016
+--------------------------------------------------------------------------------
+                   Total timesteps: 3276800
+                    Iteration time: 7.63s
+                      Time elapsed: 00:06:22
+                               ETA: 03:05:06
+
+################################################################################
+                      [1m Learning iteration 50/1500 [0m
+
+                       Computation: 8476 steps/s (collection: 7.627s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6851
+               Mean surrogate loss: 0.0101
+                 Mean entropy loss: 84.4174
+                       Mean reward: 117.67
+               Mean episode length: 599.00
+                           play/F1: 0.1863
+                       play/recall: 0.3552
+                    play/precision: 0.1263
+                play/keys_sounding: 1.4224
+                        reward/key: 0.1613
+                     reward/finger: 0.0390
+                      reward/onset: 0.0014
+--------------------------------------------------------------------------------
+                   Total timesteps: 3342336
+                    Iteration time: 7.73s
+                      Time elapsed: 00:06:30
+                               ETA: 03:05:01
+
+################################################################################
+                      [1m Learning iteration 51/1500 [0m
+
+                       Computation: 8496 steps/s (collection: 7.608s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7450
+               Mean surrogate loss: -0.0034
+                 Mean entropy loss: 84.4139
+                       Mean reward: 118.65
+               Mean episode length: 599.00
+                           play/F1: 0.1833
+                       play/recall: 0.3510
+                    play/precision: 0.1241
+                play/keys_sounding: 1.4348
+                        reward/key: 0.1604
+                     reward/finger: 0.0432
+                      reward/onset: 0.0014
+--------------------------------------------------------------------------------
+                   Total timesteps: 3407872
+                    Iteration time: 7.71s
+                      Time elapsed: 00:06:38
+                               ETA: 03:04:55
+
+################################################################################
+                      [1m Learning iteration 52/1500 [0m
+
+                       Computation: 8588 steps/s (collection: 7.526s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7748
+               Mean surrogate loss: -0.0017
+                 Mean entropy loss: 84.3948
+                       Mean reward: 115.83
+               Mean episode length: 599.00
+                           play/F1: 0.1857
+                       play/recall: 0.3566
+                    play/precision: 0.1256
+                play/keys_sounding: 1.4693
+                        reward/key: 0.1618
+                     reward/finger: 0.0424
+                      reward/onset: 0.0014
+--------------------------------------------------------------------------------
+                   Total timesteps: 3473408
+                    Iteration time: 7.63s
+                      Time elapsed: 00:06:45
+                               ETA: 03:04:46
+
+################################################################################
+                      [1m Learning iteration 53/1500 [0m
+
+                       Computation: 8527 steps/s (collection: 7.580s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.5774
+               Mean surrogate loss: 0.0131
+                 Mean entropy loss: 84.3764
+                       Mean reward: 118.54
+               Mean episode length: 599.00
+                           play/F1: 0.1838
+                       play/recall: 0.3532
+                    play/precision: 0.1243
+                play/keys_sounding: 1.4732
+                        reward/key: 0.1627
+                     reward/finger: 0.0431
+                      reward/onset: 0.0017
+--------------------------------------------------------------------------------
+                   Total timesteps: 3538944
+                    Iteration time: 7.68s
+                      Time elapsed: 00:06:53
+                               ETA: 03:04:39
+
+################################################################################
+                      [1m Learning iteration 54/1500 [0m
+
+                       Computation: 8587 steps/s (collection: 7.526s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7335
+               Mean surrogate loss: 0.0061
+                 Mean entropy loss: 84.3758
+                       Mean reward: 119.49
+               Mean episode length: 599.00
+                           play/F1: 0.1959
+                       play/recall: 0.3783
+                    play/precision: 0.1322
+                play/keys_sounding: 1.4630
+                        reward/key: 0.1699
+                     reward/finger: 0.0391
+                      reward/onset: 0.0015
+--------------------------------------------------------------------------------
+                   Total timesteps: 3604480
+                    Iteration time: 7.63s
+                      Time elapsed: 00:07:01
+                               ETA: 03:04:31
+
+################################################################################
+                      [1m Learning iteration 55/1500 [0m
+
+                       Computation: 8589 steps/s (collection: 7.526s, learning 0.104s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7280
+               Mean surrogate loss: 0.0145
+                 Mean entropy loss: 84.3753
+                       Mean reward: 118.25
+               Mean episode length: 599.00
+                           play/F1: 0.1986
+                       play/recall: 0.3835
+                    play/precision: 0.1340
+                play/keys_sounding: 1.4840
+                        reward/key: 0.1745
+                     reward/finger: 0.0392
+                      reward/onset: 0.0017
+--------------------------------------------------------------------------------
+                   Total timesteps: 3670016
+                    Iteration time: 7.63s
+                      Time elapsed: 00:07:08
+                               ETA: 03:04:23
+
+################################################################################
+                      [1m Learning iteration 56/1500 [0m
+
+                       Computation: 8559 steps/s (collection: 7.552s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.8658
+               Mean surrogate loss: 0.0214
+                 Mean entropy loss: 84.3751
+                       Mean reward: 121.70
+               Mean episode length: 599.00
+                           play/F1: 0.1962
+                       play/recall: 0.3783
+                    play/precision: 0.1324
+                play/keys_sounding: 1.4988
+                        reward/key: 0.1753
+                     reward/finger: 0.0396
+                      reward/onset: 0.0017
+--------------------------------------------------------------------------------
+                   Total timesteps: 3735552
+                    Iteration time: 7.66s
+                      Time elapsed: 00:07:16
+                               ETA: 03:04:15
+
+################################################################################
+                      [1m Learning iteration 57/1500 [0m
+
+                       Computation: 8593 steps/s (collection: 7.521s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.4537
+               Mean surrogate loss: -0.0006
+                 Mean entropy loss: 84.3739
+                       Mean reward: 120.81
+               Mean episode length: 599.00
+                           play/F1: 0.1961
+                       play/recall: 0.3736
+                    play/precision: 0.1330
+                play/keys_sounding: 1.4644
+                        reward/key: 0.1681
+                     reward/finger: 0.0326
+                      reward/onset: 0.0018
+--------------------------------------------------------------------------------
+                   Total timesteps: 3801088
+                    Iteration time: 7.63s
+                      Time elapsed: 00:07:24
+                               ETA: 03:04:07
+
+################################################################################
+                      [1m Learning iteration 58/1500 [0m
+
+                       Computation: 8607 steps/s (collection: 7.509s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7322
+               Mean surrogate loss: -0.0050
+                 Mean entropy loss: 84.3637
+                       Mean reward: 121.65
+               Mean episode length: 599.00
+                           play/F1: 0.1983
+                       play/recall: 0.3814
+                    play/precision: 0.1340
+                play/keys_sounding: 1.5097
+                        reward/key: 0.1749
+                     reward/finger: 0.0375
+                      reward/onset: 0.0016
+--------------------------------------------------------------------------------
+                   Total timesteps: 3866624
+                    Iteration time: 7.61s
+                      Time elapsed: 00:07:31
+                               ETA: 03:03:58
+
+################################################################################
+                      [1m Learning iteration 59/1500 [0m
+
+                       Computation: 8538 steps/s (collection: 7.571s, learning 0.104s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 3.0525
+               Mean surrogate loss: 0.0063
+                 Mean entropy loss: 84.3474
+                       Mean reward: 120.14
+               Mean episode length: 599.00
+                           play/F1: 0.1955
+                       play/recall: 0.3805
+                    play/precision: 0.1316
+                play/keys_sounding: 1.5145
+                        reward/key: 0.1741
+                     reward/finger: 0.0365
+                      reward/onset: 0.0017
+--------------------------------------------------------------------------------
+                   Total timesteps: 3932160
+                    Iteration time: 7.67s
+                      Time elapsed: 00:07:39
+                               ETA: 03:03:51
+
+################################################################################
+                      [1m Learning iteration 60/1500 [0m
+
+                       Computation: 8414 steps/s (collection: 7.683s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6709
+               Mean surrogate loss: 0.0003
+                 Mean entropy loss: 84.3389
+                       Mean reward: 124.52
+               Mean episode length: 599.00
+                           play/F1: 0.1992
+                       play/recall: 0.3891
+                    play/precision: 0.1339
+                play/keys_sounding: 1.5199
+                        reward/key: 0.1758
+                     reward/finger: 0.0375
+                      reward/onset: 0.0018
+--------------------------------------------------------------------------------
+                   Total timesteps: 3997696
+                    Iteration time: 7.79s
+                      Time elapsed: 00:07:47
+                               ETA: 03:03:46
+
+################################################################################
+                      [1m Learning iteration 61/1500 [0m
+
+                       Computation: 8424 steps/s (collection: 7.674s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6421
+               Mean surrogate loss: 0.0009
+                 Mean entropy loss: 84.3222
+                       Mean reward: 123.84
+               Mean episode length: 599.00
+                           play/F1: 0.2028
+                       play/recall: 0.3966
+                    play/precision: 0.1362
+                play/keys_sounding: 1.5269
+                        reward/key: 0.1797
+                     reward/finger: 0.0376
+                      reward/onset: 0.0018
+--------------------------------------------------------------------------------
+                   Total timesteps: 4063232
+                    Iteration time: 7.78s
+                      Time elapsed: 00:07:54
+                               ETA: 03:03:42
+
+################################################################################
+                      [1m Learning iteration 62/1500 [0m
+
+                       Computation: 8548 steps/s (collection: 7.562s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.8788
+               Mean surrogate loss: -0.0018
+                 Mean entropy loss: 84.3043
+                       Mean reward: 124.80
+               Mean episode length: 599.00
+                           play/F1: 0.1983
+                       play/recall: 0.3884
+                    play/precision: 0.1332
+                play/keys_sounding: 1.5211
+                        reward/key: 0.1778
+                     reward/finger: 0.0447
+                      reward/onset: 0.0018
+--------------------------------------------------------------------------------
+                   Total timesteps: 4128768
+                    Iteration time: 7.67s
+                      Time elapsed: 00:08:02
+                               ETA: 03:03:34
+
+################################################################################
+                      [1m Learning iteration 63/1500 [0m
+
+                       Computation: 8647 steps/s (collection: 7.474s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7000
+               Mean surrogate loss: -0.0008
+                 Mean entropy loss: 84.2865
+                       Mean reward: 124.79
+               Mean episode length: 599.00
+                           play/F1: 0.2021
+                       play/recall: 0.3959
+                    play/precision: 0.1357
+                play/keys_sounding: 1.5257
+                        reward/key: 0.1825
+                     reward/finger: 0.0419
+                      reward/onset: 0.0019
+--------------------------------------------------------------------------------
+                   Total timesteps: 4194304
+                    Iteration time: 7.58s
+                      Time elapsed: 00:08:10
+                               ETA: 03:03:25
+
+################################################################################
+                      [1m Learning iteration 64/1500 [0m
+
+                       Computation: 8585 steps/s (collection: 7.529s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.4799
+               Mean surrogate loss: 0.0100
+                 Mean entropy loss: 84.2714
+                       Mean reward: 125.24
+               Mean episode length: 599.00
+                           play/F1: 0.1933
+                       play/recall: 0.3801
+                    play/precision: 0.1296
+                play/keys_sounding: 1.5159
+                        reward/key: 0.1710
+                     reward/finger: 0.0461
+                      reward/onset: 0.0019
+--------------------------------------------------------------------------------
+                   Total timesteps: 4259840
+                    Iteration time: 7.63s
+                      Time elapsed: 00:08:17
+                               ETA: 03:03:16
+
+################################################################################
+                      [1m Learning iteration 65/1500 [0m
+
+                       Computation: 8485 steps/s (collection: 7.618s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6184
+               Mean surrogate loss: -0.0012
+                 Mean entropy loss: 84.2623
+                       Mean reward: 127.87
+               Mean episode length: 599.00
+                           play/F1: 0.1976
+                       play/recall: 0.3901
+                    play/precision: 0.1323
+                play/keys_sounding: 1.5518
+                        reward/key: 0.1784
+                     reward/finger: 0.0445
+                      reward/onset: 0.0019
+--------------------------------------------------------------------------------
+                   Total timesteps: 4325376
+                    Iteration time: 7.72s
+                      Time elapsed: 00:08:25
+                               ETA: 03:03:10
+
+################################################################################
+                      [1m Learning iteration 66/1500 [0m
+
+                       Computation: 8459 steps/s (collection: 7.642s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7893
+               Mean surrogate loss: -0.0034
+                 Mean entropy loss: 84.2486
+                       Mean reward: 126.89
+               Mean episode length: 599.00
+                           play/F1: 0.2041
+                       play/recall: 0.4004
+                    play/precision: 0.1370
+                play/keys_sounding: 1.5688
+                        reward/key: 0.1827
+                     reward/finger: 0.0433
+                      reward/onset: 0.0019
+--------------------------------------------------------------------------------
+                   Total timesteps: 4390912
+                    Iteration time: 7.75s
+                      Time elapsed: 00:08:33
+                               ETA: 03:03:04
+
+################################################################################
+                      [1m Learning iteration 67/1500 [0m
+
+                       Computation: 8521 steps/s (collection: 7.586s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.8573
+               Mean surrogate loss: -0.0047
+                 Mean entropy loss: 84.2371
+                       Mean reward: 128.17
+               Mean episode length: 599.00
+                           play/F1: 0.2081
+                       play/recall: 0.4084
+                    play/precision: 0.1397
+                play/keys_sounding: 1.5560
+                        reward/key: 0.1860
+                     reward/finger: 0.0416
+                      reward/onset: 0.0019
+--------------------------------------------------------------------------------
+                   Total timesteps: 4456448
+                    Iteration time: 7.69s
+                      Time elapsed: 00:08:40
+                               ETA: 03:02:57
+
+################################################################################
+                      [1m Learning iteration 68/1500 [0m
+
+                       Computation: 8526 steps/s (collection: 7.582s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6836
+               Mean surrogate loss: 0.0028
+                 Mean entropy loss: 84.2316
+                       Mean reward: 131.33
+               Mean episode length: 599.00
+                           play/F1: 0.2112
+                       play/recall: 0.4153
+                    play/precision: 0.1417
+                play/keys_sounding: 1.5543
+                        reward/key: 0.1896
+                     reward/finger: 0.0418
+                      reward/onset: 0.0020
+--------------------------------------------------------------------------------
+                   Total timesteps: 4521984
+                    Iteration time: 7.69s
+                      Time elapsed: 00:08:48
+                               ETA: 03:02:50
+
+################################################################################
+                      [1m Learning iteration 69/1500 [0m
+
+                       Computation: 8607 steps/s (collection: 7.509s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7217
+               Mean surrogate loss: -0.0004
+                 Mean entropy loss: 84.2257
+                       Mean reward: 130.65
+               Mean episode length: 599.00
+                           play/F1: 0.2099
+                       play/recall: 0.4097
+                    play/precision: 0.1411
+                play/keys_sounding: 1.5423
+                        reward/key: 0.1869
+                     reward/finger: 0.0416
+                      reward/onset: 0.0021
+--------------------------------------------------------------------------------
+                   Total timesteps: 4587520
+                    Iteration time: 7.61s
+                      Time elapsed: 00:08:56
+                               ETA: 03:02:42
+
+################################################################################
+                      [1m Learning iteration 70/1500 [0m
+
+                       Computation: 8391 steps/s (collection: 7.705s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.5487
+               Mean surrogate loss: -0.0026
+                 Mean entropy loss: 84.2246
+                       Mean reward: 132.70
+               Mean episode length: 599.00
+                           play/F1: 0.2102
+                       play/recall: 0.4104
+                    play/precision: 0.1413
+                play/keys_sounding: 1.5701
+                        reward/key: 0.1887
+                     reward/finger: 0.0407
+                      reward/onset: 0.0021
+--------------------------------------------------------------------------------
+                   Total timesteps: 4653056
+                    Iteration time: 7.81s
+                      Time elapsed: 00:09:04
+                               ETA: 03:02:37
+
+################################################################################
+                      [1m Learning iteration 71/1500 [0m
+
+                       Computation: 8408 steps/s (collection: 7.688s, learning 0.106s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.7283
+               Mean surrogate loss: -0.0027
+                 Mean entropy loss: 84.2165
+                       Mean reward: 131.73
+               Mean episode length: 599.00
+                           play/F1: 0.2126
+                       play/recall: 0.4185
+                    play/precision: 0.1425
+                play/keys_sounding: 1.5672
+                        reward/key: 0.1890
+                     reward/finger: 0.0416
+                      reward/onset: 0.0020
+--------------------------------------------------------------------------------
+                   Total timesteps: 4718592
+                    Iteration time: 7.79s
+                      Time elapsed: 00:09:11
+                               ETA: 03:02:32
+
+################################################################################
+                      [1m Learning iteration 72/1500 [0m
+
+                       Computation: 8430 steps/s (collection: 7.669s, learning 0.104s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 3.0431
+               Mean surrogate loss: 0.0111
+                 Mean entropy loss: 84.2089
+                       Mean reward: 132.07
+               Mean episode length: 599.00
+                           play/F1: 0.2163
+                       play/recall: 0.4225
+                    play/precision: 0.1454
+                play/keys_sounding: 1.5913
+                        reward/key: 0.1960
+                     reward/finger: 0.0405
+                      reward/onset: 0.0021
+--------------------------------------------------------------------------------
+                   Total timesteps: 4784128
+                    Iteration time: 7.77s
+                      Time elapsed: 00:09:19
+                               ETA: 03:02:26
+
+################################################################################
+                      [1m Learning iteration 73/1500 [0m
+
+                       Computation: 8644 steps/s (collection: 7.477s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.8901
+               Mean surrogate loss: 0.0192
+                 Mean entropy loss: 84.2081
+                       Mean reward: 131.39
+               Mean episode length: 599.00
+                           play/F1: 0.2193
+                       play/recall: 0.4283
+                    play/precision: 0.1474
+                play/keys_sounding: 1.5682
+                        reward/key: 0.1943
+                     reward/finger: 0.0378
+                      reward/onset: 0.0024
+--------------------------------------------------------------------------------
+                   Total timesteps: 4849664
+                    Iteration time: 7.58s
+                      Time elapsed: 00:09:27
+                               ETA: 03:02:17
+
+################################################################################
+                      [1m Learning iteration 74/1500 [0m
+
+                       Computation: 8613 steps/s (collection: 7.503s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6948
+               Mean surrogate loss: -0.0001
+                 Mean entropy loss: 84.2074
+                       Mean reward: 136.96
+               Mean episode length: 599.00
+                           play/F1: 0.2277
+                       play/recall: 0.4427
+                    play/precision: 0.1533
+                play/keys_sounding: 1.5314
+                        reward/key: 0.1999
+                     reward/finger: 0.0353
+                      reward/onset: 0.0020
+--------------------------------------------------------------------------------
+                   Total timesteps: 4915200
+                    Iteration time: 7.61s
+                      Time elapsed: 00:09:34
+                               ETA: 03:02:08
+
+################################################################################
+                      [1m Learning iteration 75/1500 [0m
+
+                       Computation: 8624 steps/s (collection: 7.494s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.8446
+               Mean surrogate loss: 0.0031
+                 Mean entropy loss: 84.1989
+                       Mean reward: 132.54
+               Mean episode length: 599.00
+                           play/F1: 0.2322
+                       play/recall: 0.4514
+                    play/precision: 0.1563
+                play/keys_sounding: 1.5777
+                        reward/key: 0.2101
+                     reward/finger: 0.0345
+                      reward/onset: 0.0021
+--------------------------------------------------------------------------------
+                   Total timesteps: 4980736
+                    Iteration time: 7.60s
+                      Time elapsed: 00:09:42
+                               ETA: 03:01:59
+
+################################################################################
+                      [1m Learning iteration 76/1500 [0m
+
+                       Computation: 8573 steps/s (collection: 7.540s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6325
+               Mean surrogate loss: 0.0139
+                 Mean entropy loss: 84.1927
+                       Mean reward: 137.18
+               Mean episode length: 599.00
+                           play/F1: 0.2308
+                       play/recall: 0.4462
+                    play/precision: 0.1557
+                play/keys_sounding: 1.5360
+                        reward/key: 0.2046
+                     reward/finger: 0.0322
+                      reward/onset: 0.0021
+--------------------------------------------------------------------------------
+                   Total timesteps: 5046272
+                    Iteration time: 7.64s
+                      Time elapsed: 00:09:50
+                               ETA: 03:01:51
+
+################################################################################
+                      [1m Learning iteration 77/1500 [0m
+
+                       Computation: 8473 steps/s (collection: 7.630s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6063
+               Mean surrogate loss: 0.0020
+                 Mean entropy loss: 84.1920
+                       Mean reward: 139.46
+               Mean episode length: 599.00
+                           play/F1: 0.2247
+                       play/recall: 0.4403
+                    play/precision: 0.1509
+                play/keys_sounding: 1.5620
+                        reward/key: 0.1999
+                     reward/finger: 0.0387
+                      reward/onset: 0.0023
+--------------------------------------------------------------------------------
+                   Total timesteps: 5111808
+                    Iteration time: 7.73s
+                      Time elapsed: 00:09:57
+                               ETA: 03:01:45
+
+################################################################################
+                      [1m Learning iteration 78/1500 [0m
+
+                       Computation: 8438 steps/s (collection: 7.662s, learning 0.104s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.6569
+               Mean surrogate loss: 0.0106
+                 Mean entropy loss: 84.1889
+                       Mean reward: 138.97
+               Mean episode length: 599.00
+                           play/F1: 0.2213
+                       play/recall: 0.4342
+                    play/precision: 0.1486
+                play/keys_sounding: 1.5827
+                        reward/key: 0.2011
+                     reward/finger: 0.0424
+                      reward/onset: 0.0022
+--------------------------------------------------------------------------------
+                   Total timesteps: 5177344
+                    Iteration time: 7.77s
+                      Time elapsed: 00:10:05
+                               ETA: 03:01:39
+
+################################################################################
+                      [1m Learning iteration 79/1500 [0m
+
+                       Computation: 8429 steps/s (collection: 7.670s, learning 0.105s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.5591
+               Mean surrogate loss: 0.0158
+                 Mean entropy loss: 84.1862
+                       Mean reward: 136.68
+               Mean episode length: 599.00
+                           play/F1: 0.2232
+                       play/recall: 0.4400
+                    play/precision: 0.1496
+                play/keys_sounding: 1.5747
+                        reward/key: 0.1988
+                     reward/finger: 0.0411
+                      reward/onset: 0.0024
+--------------------------------------------------------------------------------
+                   Total timesteps: 5242880
+                    Iteration time: 7.77s
+                      Time elapsed: 00:10:13
+                               ETA: 03:01:34
+
+################################################################################
+                      [1m Learning iteration 80/1500 [0m
+
+                       Computation: 8427 steps/s (collection: 7.672s, learning 0.104s)
+             Mean action noise std: 0.99
+          Mean value_function loss: 2.5535
+               Mean surrogate loss: 0.0314
+                 Mean entropy loss: 84.1860
+                       Mean reward: 140.88
+               Mean episode length: 599.00
+                           play/F1: 0.2234
+                       play/recall: 0.4368
+                    play/precision: 0.1502
+                play/keys_sounding: 1.5750
+                        reward/key: 0.2005
+                     reward/finger: 0.0402
+                      reward/onset: 0.0022
+--------------------------------------------------------------------------------
+                   Total timesteps: 5308416
+                    Iteration time: 7.78s
+                      Time elapsed: 00:10:21
+                               ETA: 03:01:28
+
+################################################################################
+                      [1m Learning iteration 81/1500 [0m
+
+                       Computation: 8597 steps/s (collection: 7.518s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.3152
+               Mean surrogate loss: 0.0018
+                 Mean entropy loss: 84.1858
+                       Mean reward: 140.09
+               Mean episode length: 599.00
+                           play/F1: 0.2230
+                       play/recall: 0.4340
+                    play/precision: 0.1500
+                play/keys_sounding: 1.5631
+                        reward/key: 0.1973
+                     reward/finger: 0.0354
+                      reward/onset: 0.0023
+--------------------------------------------------------------------------------
+                   Total timesteps: 5373952
+                    Iteration time: 7.62s
+                      Time elapsed: 00:10:28
+                               ETA: 03:01:19
+
+################################################################################
+                      [1m Learning iteration 82/1500 [0m
+
+                       Computation: 8688 steps/s (collection: 7.437s, learning 0.106s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.5054
+               Mean surrogate loss: 0.0050
+                 Mean entropy loss: 84.1838
+                       Mean reward: 142.94
+               Mean episode length: 599.00
+                           play/F1: 0.2248
+                       play/recall: 0.4327
+                    play/precision: 0.1519
+                play/keys_sounding: 1.5702
+                        reward/key: 0.2008
+                     reward/finger: 0.0338
+                      reward/onset: 0.0023
+--------------------------------------------------------------------------------
+                   Total timesteps: 5439488
+                    Iteration time: 7.54s
+                      Time elapsed: 00:10:36
+                               ETA: 03:01:10
+
+################################################################################
+                      [1m Learning iteration 83/1500 [0m
+
+                       Computation: 8615 steps/s (collection: 7.501s, learning 0.106s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.4660
+               Mean surrogate loss: 0.0041
+                 Mean entropy loss: 84.1827
+                       Mean reward: 139.46
+               Mean episode length: 599.00
+                           play/F1: 0.2291
+                       play/recall: 0.4431
+                    play/precision: 0.1545
+                play/keys_sounding: 1.5596
+                        reward/key: 0.2011
+                     reward/finger: 0.0336
+                      reward/onset: 0.0024
+--------------------------------------------------------------------------------
+                   Total timesteps: 5505024
+                    Iteration time: 7.61s
+                      Time elapsed: 00:10:43
+                               ETA: 03:01:01
+
+################################################################################
+                      [1m Learning iteration 84/1500 [0m
+
+                       Computation: 8599 steps/s (collection: 7.514s, learning 0.107s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.2243
+               Mean surrogate loss: 0.0003
+                 Mean entropy loss: 84.1768
+                       Mean reward: 141.77
+               Mean episode length: 599.00
+                           play/F1: 0.2200
+                       play/recall: 0.4268
+                    play/precision: 0.1483
+                play/keys_sounding: 1.5484
+                        reward/key: 0.1949
+                     reward/finger: 0.0314
+                      reward/onset: 0.0023
+--------------------------------------------------------------------------------
+                   Total timesteps: 5570560
+                    Iteration time: 7.62s
+                      Time elapsed: 00:10:51
+                               ETA: 03:00:52
+
+################################################################################
+                      [1m Learning iteration 85/1500 [0m
+
+                       Computation: 8607 steps/s (collection: 7.509s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.4271
+               Mean surrogate loss: -0.0042
+                 Mean entropy loss: 84.1645
+                       Mean reward: 143.95
+               Mean episode length: 599.00
+                           play/F1: 0.2297
+                       play/recall: 0.4432
+                    play/precision: 0.1551
+                play/keys_sounding: 1.5657
+                        reward/key: 0.2031
+                     reward/finger: 0.0307
+                      reward/onset: 0.0023
+--------------------------------------------------------------------------------
+                   Total timesteps: 5636096
+                    Iteration time: 7.61s
+                      Time elapsed: 00:10:59
+                               ETA: 03:00:44
+
+################################################################################
+                      [1m Learning iteration 86/1500 [0m
+
+                       Computation: 8504 steps/s (collection: 7.601s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.3735
+               Mean surrogate loss: -0.0006
+                 Mean entropy loss: 84.1389
+                       Mean reward: 142.01
+               Mean episode length: 599.00
+                           play/F1: 0.2277
+                       play/recall: 0.4386
+                    play/precision: 0.1538
+                play/keys_sounding: 1.5642
+                        reward/key: 0.2014
+                     reward/finger: 0.0312
+                      reward/onset: 0.0023
+--------------------------------------------------------------------------------
+                   Total timesteps: 5701632
+                    Iteration time: 7.71s
+                      Time elapsed: 00:11:06
+                               ETA: 03:00:37
+
+################################################################################
+                      [1m Learning iteration 87/1500 [0m
+
+                       Computation: 8621 steps/s (collection: 7.497s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7692
+               Mean surrogate loss: 0.0013
+                 Mean entropy loss: 84.1215
+                       Mean reward: 140.41
+               Mean episode length: 599.00
+                           play/F1: 0.2302
+                       play/recall: 0.4441
+                    play/precision: 0.1554
+                play/keys_sounding: 1.5584
+                        reward/key: 0.2027
+                     reward/finger: 0.0310
+                      reward/onset: 0.0024
+--------------------------------------------------------------------------------
+                   Total timesteps: 5767168
+                    Iteration time: 7.60s
+                      Time elapsed: 00:11:14
+                               ETA: 03:00:28
+
+################################################################################
+                      [1m Learning iteration 88/1500 [0m
+
+                       Computation: 8488 steps/s (collection: 7.611s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.4366
+               Mean surrogate loss: -0.0040
+                 Mean entropy loss: 84.1083
+                       Mean reward: 140.68
+               Mean episode length: 599.00
+                           play/F1: 0.2238
+                       play/recall: 0.4446
+                    play/precision: 0.1496
+                play/keys_sounding: 1.6357
+                        reward/key: 0.2035
+                     reward/finger: 0.0349
+                      reward/onset: 0.0025
+--------------------------------------------------------------------------------
+                   Total timesteps: 5832704
+                    Iteration time: 7.72s
+                      Time elapsed: 00:11:22
+                               ETA: 03:00:22
+
+################################################################################
+                      [1m Learning iteration 89/1500 [0m
+
+                       Computation: 8402 steps/s (collection: 7.690s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7892
+               Mean surrogate loss: 0.0282
+                 Mean entropy loss: 84.0926
+                       Mean reward: 145.37
+               Mean episode length: 599.00
+                           play/F1: 0.2296
+                       play/recall: 0.4558
+                    play/precision: 0.1535
+                play/keys_sounding: 1.6543
+                        reward/key: 0.2106
+                     reward/finger: 0.0343
+                      reward/onset: 0.0026
+--------------------------------------------------------------------------------
+                   Total timesteps: 5898240
+                    Iteration time: 7.80s
+                      Time elapsed: 00:11:29
+                               ETA: 03:00:16
+
+################################################################################
+                      [1m Learning iteration 90/1500 [0m
+
+                       Computation: 8453 steps/s (collection: 7.644s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7303
+               Mean surrogate loss: 0.0029
+                 Mean entropy loss: 84.0900
+                       Mean reward: 144.83
+               Mean episode length: 599.00
+                           play/F1: 0.2305
+                       play/recall: 0.4518
+                    play/precision: 0.1548
+                play/keys_sounding: 1.6079
+                        reward/key: 0.2054
+                     reward/finger: 0.0350
+                      reward/onset: 0.0027
+--------------------------------------------------------------------------------
+                   Total timesteps: 5963776
+                    Iteration time: 7.75s
+                      Time elapsed: 00:11:37
+                               ETA: 03:00:10
+
+################################################################################
+                      [1m Learning iteration 91/1500 [0m
+
+                       Computation: 8435 steps/s (collection: 7.660s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.8038
+               Mean surrogate loss: -0.0041
+                 Mean entropy loss: 84.0848
+                       Mean reward: 143.32
+               Mean episode length: 599.00
+                           play/F1: 0.2348
+                       play/recall: 0.4595
+                    play/precision: 0.1577
+                play/keys_sounding: 1.6129
+                        reward/key: 0.2108
+                     reward/finger: 0.0337
+                      reward/onset: 0.0026
+--------------------------------------------------------------------------------
+                   Total timesteps: 6029312
+                    Iteration time: 7.77s
+                      Time elapsed: 00:11:45
+                               ETA: 03:00:04
+
+################################################################################
+                      [1m Learning iteration 92/1500 [0m
+
+                       Computation: 8475 steps/s (collection: 7.623s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7203
+               Mean surrogate loss: -0.0037
+                 Mean entropy loss: 84.0672
+                       Mean reward: 145.30
+               Mean episode length: 599.00
+                           play/F1: 0.2369
+                       play/recall: 0.4615
+                    play/precision: 0.1594
+                play/keys_sounding: 1.6070
+                        reward/key: 0.2130
+                     reward/finger: 0.0336
+                      reward/onset: 0.0028
+--------------------------------------------------------------------------------
+                   Total timesteps: 6094848
+                    Iteration time: 7.73s
+                      Time elapsed: 00:11:53
+                               ETA: 02:59:57
+
+################################################################################
+                      [1m Learning iteration 93/1500 [0m
+
+                       Computation: 8532 steps/s (collection: 7.575s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.5944
+               Mean surrogate loss: 0.0067
+                 Mean entropy loss: 84.0581
+                       Mean reward: 145.36
+               Mean episode length: 599.00
+                           play/F1: 0.2400
+                       play/recall: 0.4694
+                    play/precision: 0.1613
+                play/keys_sounding: 1.6045
+                        reward/key: 0.2133
+                     reward/finger: 0.0337
+                      reward/onset: 0.0028
+--------------------------------------------------------------------------------
+                   Total timesteps: 6160384
+                    Iteration time: 7.68s
+                      Time elapsed: 00:12:00
+                               ETA: 02:59:49
+
+################################################################################
+                      [1m Learning iteration 94/1500 [0m
+
+                       Computation: 8558 steps/s (collection: 7.548s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.4634
+               Mean surrogate loss: -0.0015
+                 Mean entropy loss: 84.0558
+                       Mean reward: 145.57
+               Mean episode length: 599.00
+                           play/F1: 0.2418
+                       play/recall: 0.4663
+                    play/precision: 0.1633
+                play/keys_sounding: 1.5751
+                        reward/key: 0.2140
+                     reward/finger: 0.0302
+                      reward/onset: 0.0026
+--------------------------------------------------------------------------------
+                   Total timesteps: 6225920
+                    Iteration time: 7.66s
+                      Time elapsed: 00:12:08
+                               ETA: 02:59:42
+
+################################################################################
+                      [1m Learning iteration 95/1500 [0m
+
+                       Computation: 8519 steps/s (collection: 7.583s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7136
+               Mean surrogate loss: -0.0045
+                 Mean entropy loss: 84.0445
+                       Mean reward: 146.57
+               Mean episode length: 599.00
+                           play/F1: 0.2442
+                       play/recall: 0.4726
+                    play/precision: 0.1647
+                play/keys_sounding: 1.5845
+                        reward/key: 0.2202
+                     reward/finger: 0.0312
+                      reward/onset: 0.0025
+--------------------------------------------------------------------------------
+                   Total timesteps: 6291456
+                    Iteration time: 7.69s
+                      Time elapsed: 00:12:16
+                               ETA: 02:59:34
+
+################################################################################
+                      [1m Learning iteration 96/1500 [0m
+
+                       Computation: 8569 steps/s (collection: 7.538s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.6905
+               Mean surrogate loss: 0.0023
+                 Mean entropy loss: 84.0260
+                       Mean reward: 143.06
+               Mean episode length: 599.00
+                           play/F1: 0.2457
+                       play/recall: 0.4749
+                    play/precision: 0.1657
+                play/keys_sounding: 1.5781
+                        reward/key: 0.2149
+                     reward/finger: 0.0309
+                      reward/onset: 0.0027
+--------------------------------------------------------------------------------
+                   Total timesteps: 6356992
+                    Iteration time: 7.65s
+                      Time elapsed: 00:12:23
+                               ETA: 02:59:26
+
+################################################################################
+                      [1m Learning iteration 97/1500 [0m
+
+                       Computation: 8523 steps/s (collection: 7.579s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.4610
+               Mean surrogate loss: -0.0022
+                 Mean entropy loss: 84.0192
+                       Mean reward: 144.29
+               Mean episode length: 599.00
+                           play/F1: 0.2427
+                       play/recall: 0.4684
+                    play/precision: 0.1638
+                play/keys_sounding: 1.5765
+                        reward/key: 0.2162
+                     reward/finger: 0.0333
+                      reward/onset: 0.0026
+--------------------------------------------------------------------------------
+                   Total timesteps: 6422528
+                    Iteration time: 7.69s
+                      Time elapsed: 00:12:31
+                               ETA: 02:59:19
+
+################################################################################
+                      [1m Learning iteration 98/1500 [0m
+
+                       Computation: 8603 steps/s (collection: 7.508s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7523
+               Mean surrogate loss: -0.0011
+                 Mean entropy loss: 84.0024
+                       Mean reward: 144.21
+               Mean episode length: 599.00
+                           play/F1: 0.2519
+                       play/recall: 0.4864
+                    play/precision: 0.1700
+                play/keys_sounding: 1.5668
+                        reward/key: 0.2210
+                     reward/finger: 0.0307
+                      reward/onset: 0.0028
+--------------------------------------------------------------------------------
+                   Total timesteps: 6488064
+                    Iteration time: 7.62s
+                      Time elapsed: 00:12:39
+                               ETA: 02:59:10
+
+################################################################################
+                      [1m Learning iteration 99/1500 [0m
+
+                       Computation: 8552 steps/s (collection: 7.554s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.6285
+               Mean surrogate loss: -0.0039
+                 Mean entropy loss: 83.9758
+                       Mean reward: 144.67
+               Mean episode length: 599.00
+                           play/F1: 0.2532
+                       play/recall: 0.4871
+                    play/precision: 0.1711
+                play/keys_sounding: 1.5763
+                        reward/key: 0.2267
+                     reward/finger: 0.0318
+                      reward/onset: 0.0027
+--------------------------------------------------------------------------------
+                   Total timesteps: 6553600
+                    Iteration time: 7.66s
+                      Time elapsed: 00:12:46
+                               ETA: 02:59:03
+
+################################################################################
+                     [1m Learning iteration 100/1500 [0m
+
+                       Computation: 8528 steps/s (collection: 7.575s, learning 0.109s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 3.3932
+               Mean surrogate loss: -0.0018
+                 Mean entropy loss: 83.9395
+                       Mean reward: 147.50
+               Mean episode length: 599.00
+                           play/F1: 0.2542
+                       play/recall: 0.4851
+                    play/precision: 0.1723
+                play/keys_sounding: 1.5473
+                        reward/key: 0.2207
+                     reward/finger: 0.0340
+                      reward/onset: 0.0029
+--------------------------------------------------------------------------------
+                   Total timesteps: 6619136
+                    Iteration time: 7.68s
+                      Time elapsed: 00:12:54
+                               ETA: 02:58:55
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.
+
+################################################################################
+                     [1m Learning iteration 101/1500 [0m
+
+                       Computation: 8544 steps/s (collection: 7.566s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7797
+               Mean surrogate loss: 0.0053
+                 Mean entropy loss: 83.9252
+                       Mean reward: 148.55
+               Mean episode length: 599.00
+                           play/F1: 0.2585
+                       play/recall: 0.4947
+                    play/precision: 0.1749
+                play/keys_sounding: 1.5643
+                        reward/key: 0.2284
+                     reward/finger: 0.0312
+                      reward/onset: 0.0029
+--------------------------------------------------------------------------------
+                   Total timesteps: 6684672
+                    Iteration time: 7.67s
+                      Time elapsed: 00:13:02
+                               ETA: 02:58:48
+
+################################################################################
+                     [1m Learning iteration 102/1500 [0m
+
+                       Computation: 8543 steps/s (collection: 7.566s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.4926
+               Mean surrogate loss: -0.0011
+                 Mean entropy loss: 83.9179
+                       Mean reward: 149.39
+               Mean episode length: 599.00
+                           play/F1: 0.2543
+                       play/recall: 0.4892
+                    play/precision: 0.1719
+                play/keys_sounding: 1.5836
+                        reward/key: 0.2259
+                     reward/finger: 0.0333
+                      reward/onset: 0.0028
+--------------------------------------------------------------------------------
+                   Total timesteps: 6750208
+                    Iteration time: 7.67s
+                      Time elapsed: 00:13:09
+                               ETA: 02:58:40
+
+################################################################################
+                     [1m Learning iteration 103/1500 [0m
+
+                       Computation: 8493 steps/s (collection: 7.611s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.4880
+               Mean surrogate loss: -0.0018
+                 Mean entropy loss: 83.9053
+                       Mean reward: 147.57
+               Mean episode length: 599.00
+                           play/F1: 0.2539
+                       play/recall: 0.4891
+                    play/precision: 0.1715
+                play/keys_sounding: 1.5721
+                        reward/key: 0.2230
+                     reward/finger: 0.0334
+                      reward/onset: 0.0030
+--------------------------------------------------------------------------------
+                   Total timesteps: 6815744
+                    Iteration time: 7.72s
+                      Time elapsed: 00:13:17
+                               ETA: 02:58:33
+
+################################################################################
+                     [1m Learning iteration 104/1500 [0m
+
+                       Computation: 8542 steps/s (collection: 7.567s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.8369
+               Mean surrogate loss: -0.0037
+                 Mean entropy loss: 83.8931
+                       Mean reward: 150.63
+               Mean episode length: 599.00
+                           play/F1: 0.2620
+                       play/recall: 0.4973
+                    play/precision: 0.1779
+                play/keys_sounding: 1.5596
+                        reward/key: 0.2286
+                     reward/finger: 0.0329
+                      reward/onset: 0.0029
+--------------------------------------------------------------------------------
+                   Total timesteps: 6881280
+                    Iteration time: 7.67s
+                      Time elapsed: 00:13:25
+                               ETA: 02:58:25
+
+################################################################################
+                     [1m Learning iteration 105/1500 [0m
+
+                       Computation: 8506 steps/s (collection: 7.599s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.8685
+               Mean surrogate loss: 0.0809
+                 Mean entropy loss: 83.8842
+                       Mean reward: 147.83
+               Mean episode length: 599.00
+                           play/F1: 0.2595
+                       play/recall: 0.4923
+                    play/precision: 0.1763
+                play/keys_sounding: 1.5782
+                        reward/key: 0.2279
+                     reward/finger: 0.0354
+                      reward/onset: 0.0030
+--------------------------------------------------------------------------------
+                   Total timesteps: 6946816
+                    Iteration time: 7.70s
+                      Time elapsed: 00:13:32
+                               ETA: 02:58:18
+
+################################################################################
+                     [1m Learning iteration 106/1500 [0m
+
+                       Computation: 8527 steps/s (collection: 7.581s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.6875
+               Mean surrogate loss: 0.0170
+                 Mean entropy loss: 83.8853
+                       Mean reward: 148.64
+               Mean episode length: 599.00
+                           play/F1: 0.2582
+                       play/recall: 0.4926
+                    play/precision: 0.1750
+                play/keys_sounding: 1.5662
+                        reward/key: 0.2253
+                     reward/finger: 0.0334
+                      reward/onset: 0.0028
+--------------------------------------------------------------------------------
+                   Total timesteps: 7012352
+                    Iteration time: 7.68s
+                      Time elapsed: 00:13:40
+                               ETA: 02:58:11
+
+################################################################################
+                     [1m Learning iteration 107/1500 [0m
+
+                       Computation: 8474 steps/s (collection: 7.628s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7011
+               Mean surrogate loss: 0.0095
+                 Mean entropy loss: 83.8853
+                       Mean reward: 154.32
+               Mean episode length: 599.00
+                           play/F1: 0.2596
+                       play/recall: 0.4903
+                    play/precision: 0.1765
+                play/keys_sounding: 1.5663
+                        reward/key: 0.2254
+                     reward/finger: 0.0360
+                      reward/onset: 0.0029
+--------------------------------------------------------------------------------
+                   Total timesteps: 7077888
+                    Iteration time: 7.73s
+                      Time elapsed: 00:13:48
+                               ETA: 02:58:04
+
+################################################################################
+                     [1m Learning iteration 108/1500 [0m
+
+                       Computation: 8491 steps/s (collection: 7.613s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.6877
+               Mean surrogate loss: 0.0088
+                 Mean entropy loss: 83.8847
+                       Mean reward: 155.83
+               Mean episode length: 599.00
+                           play/F1: 0.2627
+                       play/recall: 0.4978
+                    play/precision: 0.1784
+                play/keys_sounding: 1.5840
+                        reward/key: 0.2303
+                     reward/finger: 0.0358
+                      reward/onset: 0.0032
+--------------------------------------------------------------------------------
+                   Total timesteps: 7143424
+                    Iteration time: 7.72s
+                      Time elapsed: 00:13:56
+                               ETA: 02:57:57
+
+################################################################################
+                     [1m Learning iteration 109/1500 [0m
+
+                       Computation: 8470 steps/s (collection: 7.633s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7225
+               Mean surrogate loss: 0.0067
+                 Mean entropy loss: 83.8842
+                       Mean reward: 153.80
+               Mean episode length: 599.00
+                           play/F1: 0.2642
+                       play/recall: 0.4981
+                    play/precision: 0.1798
+                play/keys_sounding: 1.5789
+                        reward/key: 0.2295
+                     reward/finger: 0.0344
+                      reward/onset: 0.0033
+--------------------------------------------------------------------------------
+                   Total timesteps: 7208960
+                    Iteration time: 7.74s
+                      Time elapsed: 00:14:03
+                               ETA: 02:57:50
+
+################################################################################
+                     [1m Learning iteration 110/1500 [0m
+
+                       Computation: 8543 steps/s (collection: 7.566s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.5841
+               Mean surrogate loss: 0.0112
+                 Mean entropy loss: 83.8831
+                       Mean reward: 151.69
+               Mean episode length: 599.00
+                           play/F1: 0.2636
+                       play/recall: 0.4955
+                    play/precision: 0.1796
+                play/keys_sounding: 1.5593
+                        reward/key: 0.2246
+                     reward/finger: 0.0337
+                      reward/onset: 0.0030
+--------------------------------------------------------------------------------
+                   Total timesteps: 7274496
+                    Iteration time: 7.67s
+                      Time elapsed: 00:14:11
+                               ETA: 02:57:42
+
+################################################################################
+                     [1m Learning iteration 111/1500 [0m
+
+                       Computation: 8509 steps/s (collection: 7.596s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.6337
+               Mean surrogate loss: 0.0086
+                 Mean entropy loss: 83.8811
+                       Mean reward: 152.26
+               Mean episode length: 599.00
+                           play/F1: 0.2652
+                       play/recall: 0.5018
+                    play/precision: 0.1803
+                play/keys_sounding: 1.6141
+                        reward/key: 0.2321
+                     reward/finger: 0.0349
+                      reward/onset: 0.0032
+--------------------------------------------------------------------------------
+                   Total timesteps: 7340032
+                    Iteration time: 7.70s
+                      Time elapsed: 00:14:19
+                               ETA: 02:57:35
+
+################################################################################
+                     [1m Learning iteration 112/1500 [0m
+
+                       Computation: 8520 steps/s (collection: 7.587s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.8612
+               Mean surrogate loss: 0.0052
+                 Mean entropy loss: 83.8777
+                       Mean reward: 159.40
+               Mean episode length: 599.00
+                           play/F1: 0.2662
+                       play/recall: 0.4998
+                    play/precision: 0.1814
+                play/keys_sounding: 1.5804
+                        reward/key: 0.2313
+                     reward/finger: 0.0312
+                      reward/onset: 0.0033
+--------------------------------------------------------------------------------
+                   Total timesteps: 7405568
+                    Iteration time: 7.69s
+                      Time elapsed: 00:14:26
+                               ETA: 02:57:28
+
+################################################################################
+                     [1m Learning iteration 113/1500 [0m
+
+                       Computation: 8557 steps/s (collection: 7.553s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.6767
+               Mean surrogate loss: 0.0002
+                 Mean entropy loss: 83.8747
+                       Mean reward: 159.68
+               Mean episode length: 599.00
+                           play/F1: 0.2671
+                       play/recall: 0.5060
+                    play/precision: 0.1815
+                play/keys_sounding: 1.5576
+                        reward/key: 0.2301
+                     reward/finger: 0.0317
+                      reward/onset: 0.0030
+--------------------------------------------------------------------------------
+                   Total timesteps: 7471104
+                    Iteration time: 7.66s
+                      Time elapsed: 00:14:34
+                               ETA: 02:57:20
+
+################################################################################
+                     [1m Learning iteration 114/1500 [0m
+
+                       Computation: 8523 steps/s (collection: 7.584s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 3.1030
+               Mean surrogate loss: 0.0110
+                 Mean entropy loss: 83.8700
+                       Mean reward: 159.17
+               Mean episode length: 599.00
+                           play/F1: 0.2685
+                       play/recall: 0.5028
+                    play/precision: 0.1832
+                play/keys_sounding: 1.5764
+                        reward/key: 0.2351
+                     reward/finger: 0.0344
+                      reward/onset: 0.0033
+--------------------------------------------------------------------------------
+                   Total timesteps: 7536640
+                    Iteration time: 7.69s
+                      Time elapsed: 00:14:42
+                               ETA: 02:57:12
+
+################################################################################
+                     [1m Learning iteration 115/1500 [0m
+
+                       Computation: 8574 steps/s (collection: 7.538s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.8768
+               Mean surrogate loss: -0.0008
+                 Mean entropy loss: 83.8695
+                       Mean reward: 156.18
+               Mean episode length: 599.00
+                           play/F1: 0.2694
+                       play/recall: 0.5039
+                    play/precision: 0.1839
+                play/keys_sounding: 1.5580
+                        reward/key: 0.2304
+                     reward/finger: 0.0334
+                      reward/onset: 0.0032
+--------------------------------------------------------------------------------
+                   Total timesteps: 7602176
+                    Iteration time: 7.64s
+                      Time elapsed: 00:14:49
+                               ETA: 02:57:04
+
+################################################################################
+                     [1m Learning iteration 116/1500 [0m
+
+                       Computation: 8591 steps/s (collection: 7.523s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.8809
+               Mean surrogate loss: 0.0033
+                 Mean entropy loss: 83.8667
+                       Mean reward: 155.51
+               Mean episode length: 599.00
+                           play/F1: 0.2651
+                       play/recall: 0.4981
+                    play/precision: 0.1807
+                play/keys_sounding: 1.5406
+                        reward/key: 0.2282
+                     reward/finger: 0.0323
+                      reward/onset: 0.0032
+--------------------------------------------------------------------------------
+                   Total timesteps: 7667712
+                    Iteration time: 7.63s
+                      Time elapsed: 00:14:57
+                               ETA: 02:56:56
+
+################################################################################
+                     [1m Learning iteration 117/1500 [0m
+
+                       Computation: 8590 steps/s (collection: 7.524s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7907
+               Mean surrogate loss: 0.0090
+                 Mean entropy loss: 83.8626
+                       Mean reward: 161.13
+               Mean episode length: 599.00
+                           play/F1: 0.2726
+                       play/recall: 0.5113
+                    play/precision: 0.1859
+                play/keys_sounding: 1.5658
+                        reward/key: 0.2335
+                     reward/finger: 0.0298
+                      reward/onset: 0.0033
+--------------------------------------------------------------------------------
+                   Total timesteps: 7733248
+                    Iteration time: 7.63s
+                      Time elapsed: 00:15:05
+                               ETA: 02:56:48
+
+################################################################################
+                     [1m Learning iteration 118/1500 [0m
+
+                       Computation: 8615 steps/s (collection: 7.501s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7081
+               Mean surrogate loss: 0.0060
+                 Mean entropy loss: 83.8614
+                       Mean reward: 161.96
+               Mean episode length: 599.00
+                           play/F1: 0.2706
+                       play/recall: 0.5087
+                    play/precision: 0.1844
+                play/keys_sounding: 1.5653
+                        reward/key: 0.2362
+                     reward/finger: 0.0307
+                      reward/onset: 0.0031
+--------------------------------------------------------------------------------
+                   Total timesteps: 7798784
+                    Iteration time: 7.61s
+                      Time elapsed: 00:15:12
+                               ETA: 02:56:39
+
+################################################################################
+                     [1m Learning iteration 119/1500 [0m
+
+                       Computation: 8653 steps/s (collection: 7.468s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 3.0143
+               Mean surrogate loss: -0.0007
+                 Mean entropy loss: 83.8570
+                       Mean reward: 160.94
+               Mean episode length: 599.00
+                           play/F1: 0.2729
+                       play/recall: 0.5062
+                    play/precision: 0.1868
+                play/keys_sounding: 1.5131
+                        reward/key: 0.2342
+                     reward/finger: 0.0325
+                      reward/onset: 0.0030
+--------------------------------------------------------------------------------
+                   Total timesteps: 7864320
+                    Iteration time: 7.57s
+                      Time elapsed: 00:15:20
+                               ETA: 02:56:31
+
+################################################################################
+                     [1m Learning iteration 120/1500 [0m
+
+                       Computation: 8656 steps/s (collection: 7.466s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.9632
+               Mean surrogate loss: 0.0012
+                 Mean entropy loss: 83.8458
+                       Mean reward: 155.70
+               Mean episode length: 599.00
+                           play/F1: 0.2772
+                       play/recall: 0.5113
+                    play/precision: 0.1901
+                play/keys_sounding: 1.5212
+                        reward/key: 0.2339
+                     reward/finger: 0.0327
+                      reward/onset: 0.0033
+--------------------------------------------------------------------------------
+                   Total timesteps: 7929856
+                    Iteration time: 7.57s
+                      Time elapsed: 00:15:27
+                               ETA: 02:56:22
+
+################################################################################
+                     [1m Learning iteration 121/1500 [0m
+
+                       Computation: 8616 steps/s (collection: 7.501s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 3.0359
+               Mean surrogate loss: 0.0032
+                 Mean entropy loss: 83.8419
+                       Mean reward: 159.20
+               Mean episode length: 599.00
+                           play/F1: 0.2748
+                       play/recall: 0.5120
+                    play/precision: 0.1878
+                play/keys_sounding: 1.5615
+                        reward/key: 0.2372
+                     reward/finger: 0.0318
+                      reward/onset: 0.0031
+--------------------------------------------------------------------------------
+                   Total timesteps: 7995392
+                    Iteration time: 7.61s
+                      Time elapsed: 00:15:35
+                               ETA: 02:56:14
+
+################################################################################
+                     [1m Learning iteration 122/1500 [0m
+
+                       Computation: 8687 steps/s (collection: 7.436s, learning 0.108s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.9559
+               Mean surrogate loss: 0.0060
+                 Mean entropy loss: 83.8414
+                       Mean reward: 158.91
+               Mean episode length: 599.00
+                           play/F1: 0.2770
+                       play/recall: 0.5128
+                    play/precision: 0.1898
+                play/keys_sounding: 1.5233
+                        reward/key: 0.2357
+                     reward/finger: 0.0305
+                      reward/onset: 0.0032
+--------------------------------------------------------------------------------
+                   Total timesteps: 8060928
+                    Iteration time: 7.54s
+                      Time elapsed: 00:15:43
+                               ETA: 02:56:04
+
+################################################################################
+                     [1m Learning iteration 123/1500 [0m
+
+                       Computation: 8454 steps/s (collection: 7.647s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 3.1362
+               Mean surrogate loss: 0.0051
+                 Mean entropy loss: 83.8348
+                       Mean reward: 155.21
+               Mean episode length: 599.00
+                           play/F1: 0.2722
+                       play/recall: 0.5097
+                    play/precision: 0.1857
+                play/keys_sounding: 1.5691
+                        reward/key: 0.2345
+                     reward/finger: 0.0302
+                      reward/onset: 0.0032
+--------------------------------------------------------------------------------
+                   Total timesteps: 8126464
+                    Iteration time: 7.75s
+                      Time elapsed: 00:15:50
+                               ETA: 02:55:58
+
+################################################################################
+                     [1m Learning iteration 124/1500 [0m
+
+                       Computation: 8514 steps/s (collection: 7.592s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 3.0772
+               Mean surrogate loss: 0.0153
+                 Mean entropy loss: 83.8305
+                       Mean reward: 162.76
+               Mean episode length: 599.00
+                           play/F1: 0.2749
+                       play/recall: 0.5128
+                    play/precision: 0.1878
+                play/keys_sounding: 1.5625
+                        reward/key: 0.2367
+                     reward/finger: 0.0321
+                      reward/onset: 0.0035
+--------------------------------------------------------------------------------
+                   Total timesteps: 8192000
+                    Iteration time: 7.70s
+                      Time elapsed: 00:15:58
+                               ETA: 02:55:50
+
+################################################################################
+                     [1m Learning iteration 125/1500 [0m
+
+                       Computation: 8598 steps/s (collection: 7.516s, learning 0.106s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 3.0833
+               Mean surrogate loss: -0.0007
+                 Mean entropy loss: 83.8288
+                       Mean reward: 160.71
+               Mean episode length: 599.00
+                           play/F1: 0.2651
+                       play/recall: 0.5032
+                    play/precision: 0.1799
+                play/keys_sounding: 1.5565
+                        reward/key: 0.2311
+                     reward/finger: 0.0315
+                      reward/onset: 0.0031
+--------------------------------------------------------------------------------
+                   Total timesteps: 8257536
+                    Iteration time: 7.62s
+                      Time elapsed: 00:16:06
+                               ETA: 02:55:42
+
+################################################################################
+                     [1m Learning iteration 126/1500 [0m
+
+                       Computation: 8517 steps/s (collection: 7.590s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7412
+               Mean surrogate loss: 0.0037
+                 Mean entropy loss: 83.8224
+                       Mean reward: 162.28
+               Mean episode length: 599.00
+                           play/F1: 0.2572
+                       play/recall: 0.4909
+                    play/precision: 0.1743
+                play/keys_sounding: 1.5807
+                        reward/key: 0.2267
+                     reward/finger: 0.0352
+                      reward/onset: 0.0031
+--------------------------------------------------------------------------------
+                   Total timesteps: 8323072
+                    Iteration time: 7.69s
+                      Time elapsed: 00:16:13
+                               ETA: 02:55:35
+
+################################################################################
+                     [1m Learning iteration 127/1500 [0m
+
+                       Computation: 8489 steps/s (collection: 7.616s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.6822
+               Mean surrogate loss: 0.0080
+                 Mean entropy loss: 83.8176
+                       Mean reward: 162.69
+               Mean episode length: 599.00
+                           play/F1: 0.2571
+                       play/recall: 0.4912
+                    play/precision: 0.1742
+                play/keys_sounding: 1.5902
+                        reward/key: 0.2248
+                     reward/finger: 0.0349
+                      reward/onset: 0.0034
+--------------------------------------------------------------------------------
+                   Total timesteps: 8388608
+                    Iteration time: 7.72s
+                      Time elapsed: 00:16:21
+                               ETA: 02:55:28
+
+################################################################################
+                     [1m Learning iteration 128/1500 [0m
+
+                       Computation: 8435 steps/s (collection: 7.664s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.5765
+               Mean surrogate loss: -0.0014
+                 Mean entropy loss: 83.8111
+                       Mean reward: 161.01
+               Mean episode length: 599.00
+                           play/F1: 0.2499
+                       play/recall: 0.4835
+                    play/precision: 0.1685
+                play/keys_sounding: 1.6569
+                        reward/key: 0.2255
+                     reward/finger: 0.0358
+                      reward/onset: 0.0035
+--------------------------------------------------------------------------------
+                   Total timesteps: 8454144
+                    Iteration time: 7.77s
+                      Time elapsed: 00:16:29
+                               ETA: 02:55:21
+
+################################################################################
+                     [1m Learning iteration 129/1500 [0m
+
+                       Computation: 8449 steps/s (collection: 7.651s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7303
+               Mean surrogate loss: 0.0007
+                 Mean entropy loss: 83.7972
+                       Mean reward: 161.76
+               Mean episode length: 599.00
+                           play/F1: 0.2470
+                       play/recall: 0.4748
+                    play/precision: 0.1669
+                play/keys_sounding: 1.6409
+                        reward/key: 0.2144
+                     reward/finger: 0.0342
+                      reward/onset: 0.0036
+--------------------------------------------------------------------------------
+                   Total timesteps: 8519680
+                    Iteration time: 7.76s
+                      Time elapsed: 00:16:37
+                               ETA: 02:55:14
+
+################################################################################
+                     [1m Learning iteration 130/1500 [0m
+
+                       Computation: 8536 steps/s (collection: 7.572s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.6258
+               Mean surrogate loss: -0.0035
+                 Mean entropy loss: 83.7893
+                       Mean reward: 152.86
+               Mean episode length: 599.00
+                           play/F1: 0.2589
+                       play/recall: 0.4963
+                    play/precision: 0.1751
+                play/keys_sounding: 1.6638
+                        reward/key: 0.2258
+                     reward/finger: 0.0315
+                      reward/onset: 0.0037
+--------------------------------------------------------------------------------
+                   Total timesteps: 8585216
+                    Iteration time: 7.68s
+                      Time elapsed: 00:16:44
+                               ETA: 02:55:07
+
+################################################################################
+                     [1m Learning iteration 131/1500 [0m
+
+                       Computation: 8547 steps/s (collection: 7.562s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7163
+               Mean surrogate loss: 0.0043
+                 Mean entropy loss: 83.7805
+                       Mean reward: 162.64
+               Mean episode length: 599.00
+                           play/F1: 0.2584
+                       play/recall: 0.4970
+                    play/precision: 0.1746
+                play/keys_sounding: 1.6966
+                        reward/key: 0.2322
+                     reward/finger: 0.0332
+                      reward/onset: 0.0039
+--------------------------------------------------------------------------------
+                   Total timesteps: 8650752
+                    Iteration time: 7.67s
+                      Time elapsed: 00:16:52
+                               ETA: 02:54:59
+
+################################################################################
+                     [1m Learning iteration 132/1500 [0m
+
+                       Computation: 8638 steps/s (collection: 7.481s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7005
+               Mean surrogate loss: 0.0163
+                 Mean entropy loss: 83.7746
+                       Mean reward: 157.28
+               Mean episode length: 599.00
+                           play/F1: 0.2574
+                       play/recall: 0.4950
+                    play/precision: 0.1739
+                play/keys_sounding: 1.6460
+                        reward/key: 0.2254
+                     reward/finger: 0.0360
+                      reward/onset: 0.0037
+--------------------------------------------------------------------------------
+                   Total timesteps: 8716288
+                    Iteration time: 7.59s
+                      Time elapsed: 00:16:59
+                               ETA: 02:54:51
+
+################################################################################
+                     [1m Learning iteration 133/1500 [0m
+
+                       Computation: 8601 steps/s (collection: 7.515s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7066
+               Mean surrogate loss: 0.0153
+                 Mean entropy loss: 83.7731
+                       Mean reward: 161.07
+               Mean episode length: 599.00
+                           play/F1: 0.2653
+                       play/recall: 0.5070
+                    play/precision: 0.1796
+                play/keys_sounding: 1.6412
+                        reward/key: 0.2323
+                     reward/finger: 0.0366
+                      reward/onset: 0.0034
+--------------------------------------------------------------------------------
+                   Total timesteps: 8781824
+                    Iteration time: 7.62s
+                      Time elapsed: 00:17:07
+                               ETA: 02:54:42
+
+################################################################################
+                     [1m Learning iteration 134/1500 [0m
+
+                       Computation: 8740 steps/s (collection: 7.393s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7881
+               Mean surrogate loss: -0.0003
+                 Mean entropy loss: 83.7713
+                       Mean reward: 155.88
+               Mean episode length: 599.00
+                           play/F1: 0.2638
+                       play/recall: 0.5017
+                    play/precision: 0.1790
+                play/keys_sounding: 1.6153
+                        reward/key: 0.2324
+                     reward/finger: 0.0373
+                      reward/onset: 0.0036
+--------------------------------------------------------------------------------
+                   Total timesteps: 8847360
+                    Iteration time: 7.50s
+                      Time elapsed: 00:17:15
+                               ETA: 02:54:33
+
+################################################################################
+                     [1m Learning iteration 135/1500 [0m
+
+                       Computation: 8820 steps/s (collection: 7.326s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.8227
+               Mean surrogate loss: -0.0001
+                 Mean entropy loss: 83.7640
+                       Mean reward: 160.44
+               Mean episode length: 599.00
+                           play/F1: 0.2742
+                       play/recall: 0.5154
+                    play/precision: 0.1868
+                play/keys_sounding: 1.6079
+                        reward/key: 0.2347
+                     reward/finger: 0.0354
+                      reward/onset: 0.0034
+--------------------------------------------------------------------------------
+                   Total timesteps: 8912896
+                    Iteration time: 7.43s
+                      Time elapsed: 00:17:22
+                               ETA: 02:54:23
+
+################################################################################
+                     [1m Learning iteration 136/1500 [0m
+
+                       Computation: 8724 steps/s (collection: 7.407s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.9359
+               Mean surrogate loss: 0.0010
+                 Mean entropy loss: 83.7528
+                       Mean reward: 165.50
+               Mean episode length: 599.00
+                           play/F1: 0.2712
+                       play/recall: 0.5133
+                    play/precision: 0.1843
+                play/keys_sounding: 1.6027
+                        reward/key: 0.2354
+                     reward/finger: 0.0340
+                      reward/onset: 0.0034
+--------------------------------------------------------------------------------
+                   Total timesteps: 8978432
+                    Iteration time: 7.51s
+                      Time elapsed: 00:17:30
+                               ETA: 02:54:14
+
+################################################################################
+                     [1m Learning iteration 137/1500 [0m
+
+                       Computation: 8630 steps/s (collection: 7.488s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.9727
+               Mean surrogate loss: 0.0001
+                 Mean entropy loss: 83.7415
+                       Mean reward: 161.03
+               Mean episode length: 599.00
+                           play/F1: 0.2715
+                       play/recall: 0.5134
+                    play/precision: 0.1846
+                play/keys_sounding: 1.5906
+                        reward/key: 0.2359
+                     reward/finger: 0.0355
+                      reward/onset: 0.0035
+--------------------------------------------------------------------------------
+                   Total timesteps: 9043968
+                    Iteration time: 7.59s
+                      Time elapsed: 00:17:37
+                               ETA: 02:54:05
+
+################################################################################
+                     [1m Learning iteration 138/1500 [0m
+
+                       Computation: 8639 steps/s (collection: 7.481s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.9208
+               Mean surrogate loss: 0.0068
+                 Mean entropy loss: 83.7293
+                       Mean reward: 158.39
+               Mean episode length: 599.00
+                           play/F1: 0.2751
+                       play/recall: 0.5168
+                    play/precision: 0.1874
+                play/keys_sounding: 1.5987
+                        reward/key: 0.2416
+                     reward/finger: 0.0353
+                      reward/onset: 0.0034
+--------------------------------------------------------------------------------
+                   Total timesteps: 9109504
+                    Iteration time: 7.59s
+                      Time elapsed: 00:17:45
+                               ETA: 02:53:57
+
+################################################################################
+                     [1m Learning iteration 139/1500 [0m
+
+                       Computation: 8674 steps/s (collection: 7.450s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.9040
+               Mean surrogate loss: 0.0108
+                 Mean entropy loss: 83.7277
+                       Mean reward: 155.69
+               Mean episode length: 599.00
+                           play/F1: 0.2765
+                       play/recall: 0.5183
+                    play/precision: 0.1886
+                play/keys_sounding: 1.5875
+                        reward/key: 0.2354
+                     reward/finger: 0.0321
+                      reward/onset: 0.0035
+--------------------------------------------------------------------------------
+                   Total timesteps: 9175040
+                    Iteration time: 7.56s
+                      Time elapsed: 00:17:52
+                               ETA: 02:53:48
+
+################################################################################
+                     [1m Learning iteration 140/1500 [0m
+
+                       Computation: 8691 steps/s (collection: 7.435s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.8990
+               Mean surrogate loss: 0.0024
+                 Mean entropy loss: 83.7272
+                       Mean reward: 159.71
+               Mean episode length: 599.00
+                           play/F1: 0.2775
+                       play/recall: 0.5205
+                    play/precision: 0.1892
+                play/keys_sounding: 1.5943
+                        reward/key: 0.2404
+                     reward/finger: 0.0319
+                      reward/onset: 0.0034
+--------------------------------------------------------------------------------
+                   Total timesteps: 9240576
+                    Iteration time: 7.54s
+                      Time elapsed: 00:18:00
+                               ETA: 02:53:39
+
+################################################################################
+                     [1m Learning iteration 141/1500 [0m
+
+                       Computation: 8700 steps/s (collection: 7.428s, learning 0.105s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.8840
+               Mean surrogate loss: 0.0080
+                 Mean entropy loss: 83.7262
+                       Mean reward: 162.10
+               Mean episode length: 599.00
+                           play/F1: 0.2860
+                       play/recall: 0.5311
+                    play/precision: 0.1957
+                play/keys_sounding: 1.5727
+                        reward/key: 0.2454
+                     reward/finger: 0.0309
+                      reward/onset: 0.0033
+--------------------------------------------------------------------------------
+                   Total timesteps: 9306112
+                    Iteration time: 7.53s
+                      Time elapsed: 00:18:07
+                               ETA: 02:53:31
+
+################################################################################
+                     [1m Learning iteration 142/1500 [0m
+
+                       Computation: 8719 steps/s (collection: 7.412s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.7977
+               Mean surrogate loss: 0.0106
+                 Mean entropy loss: 83.7247
+                       Mean reward: 163.12
+               Mean episode length: 599.00
+                           play/F1: 0.2868
+                       play/recall: 0.5359
+                    play/precision: 0.1959
+                play/keys_sounding: 1.5839
+                        reward/key: 0.2472
+                     reward/finger: 0.0315
+                      reward/onset: 0.0036
+--------------------------------------------------------------------------------
+                   Total timesteps: 9371648
+                    Iteration time: 7.52s
+                      Time elapsed: 00:18:15
+                               ETA: 02:53:21
+
+################################################################################
+                     [1m Learning iteration 143/1500 [0m
+
+                       Computation: 8719 steps/s (collection: 7.412s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 3.2680
+               Mean surrogate loss: 0.0127
+                 Mean entropy loss: 83.7218
+                       Mean reward: 160.47
+               Mean episode length: 599.00
+                           play/F1: 0.2863
+                       play/recall: 0.5318
+                    play/precision: 0.1959
+                play/keys_sounding: 1.5797
+                        reward/key: 0.2449
+                     reward/finger: 0.0301
+                      reward/onset: 0.0033
+--------------------------------------------------------------------------------
+                   Total timesteps: 9437184
+                    Iteration time: 7.52s
+                      Time elapsed: 00:18:22
+                               ETA: 02:53:12
+
+################################################################################
+                     [1m Learning iteration 144/1500 [0m
+
+                       Computation: 8741 steps/s (collection: 7.393s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 2.8784
+               Mean surrogate loss: 0.0042
+                 Mean entropy loss: 83.7201
+                       Mean reward: 163.04
+               Mean episode length: 599.00
+                           play/F1: 0.2878
+                       play/recall: 0.5364
+                    play/precision: 0.1967
+                play/keys_sounding: 1.5743
+                        reward/key: 0.2475
+                     reward/finger: 0.0297
+                      reward/onset: 0.0035
+--------------------------------------------------------------------------------
+                   Total timesteps: 9502720
+                    Iteration time: 7.50s
+                      Time elapsed: 00:18:30
+                               ETA: 02:53:03
+
+################################################################################
+                     [1m Learning iteration 145/1500 [0m
+
+                       Computation: 8719 steps/s (collection: 7.411s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 6.5782
+               Mean surrogate loss: 0.0015
+                 Mean entropy loss: 83.7192
+                       Mean reward: 163.99
+               Mean episode length: 599.00
+                           play/F1: 0.2898
+                       play/recall: 0.5397
+                    play/precision: 0.1981
+                play/keys_sounding: 1.5905
+                        reward/key: 0.2506
+                     reward/finger: 0.0287
+                      reward/onset: 0.0035
+--------------------------------------------------------------------------------
+                   Total timesteps: 9568256
+                    Iteration time: 7.52s
+                      Time elapsed: 00:18:37
+                               ETA: 02:52:54
+
+################################################################################
+                     [1m Learning iteration 146/1500 [0m
+
+                       Computation: 8747 steps/s (collection: 7.388s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 3.1644
+               Mean surrogate loss: 0.0027
+                 Mean entropy loss: 83.7182
+                       Mean reward: 164.76
+               Mean episode length: 599.00
+                           play/F1: 0.2880
+                       play/recall: 0.5408
+                    play/precision: 0.1963
+                play/keys_sounding: 1.5670
+                        reward/key: 0.2470
+                     reward/finger: 0.0274
+                      reward/onset: 0.0032
+--------------------------------------------------------------------------------
+                   Total timesteps: 9633792
+                    Iteration time: 7.49s
+                      Time elapsed: 00:18:45
+                               ETA: 02:52:45
+
+################################################################################
+                     [1m Learning iteration 147/1500 [0m
+
+                       Computation: 8672 steps/s (collection: 7.453s, learning 0.104s)
+             Mean action noise std: 0.98
+          Mean value_function loss: 3.1018
+               Mean surrogate loss: 0.0030
+                 Mean entropy loss: 83.7177
+                       Mean reward: 164.23
+               Mean episode length: 599.00
+                           play/F1: 0.2925
+                       play/recall: 0.5407
+                    play/precision: 0.2005
+                play/keys_sounding: 1.5947
+                        reward/key: 0.2524
+                     reward/finger: 0.0284
+                      reward/onset: 0.0032
+--------------------------------------------------------------------------------
+                   Total timesteps: 9699328
+                    Iteration time: 7.56s
+                      Time elapsed: 00:18:52
+                               ETA: 02:52:37
+Traceback (most recent call last):
+  File "/home/ubuntu/dexsim/scripts/train_piano.py", line 76, in <module>
+    main()
+  File "/home/ubuntu/dexsim/scripts/train_piano.py", line 72, in main
+    runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+  File "/home/ubuntu/dexsim/.venv/lib/python3.10/site-packages/rsl_rl/runners/on_policy_runner.py", line 260, in learn
+    loss_dict = self.alg.update()
+  File "/home/ubuntu/dexsim/.venv/lib/python3.10/site-packages/rsl_rl/algorithms/ppo.py", line 258, in update
+    self.policy.act(obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
+  File "/home/ubuntu/dexsim/.venv/lib/python3.10/site-packages/rsl_rl/modules/actor_critic.py", line 122, in act
+    return self.distribution.sample()
+  File "/home/ubuntu/dexsim/.venv/lib/python3.10/site-packages/torch/distributions/normal.py", line 73, in sample
+    return torch.normal(self.loc.expand(shape), self.scale.expand(shape))
+RuntimeError: normal expects all elements of std >= 0.0

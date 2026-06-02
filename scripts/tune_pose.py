@@ -27,7 +27,7 @@ cfg = PianoEnvCfg()
 base = cfg.left_base_pos if args.side == "left" else cfg.right_base_pos
 # target key point: this hand's half of the keyboard, just at key height
 ty = -0.40 if args.side == "left" else 0.40
-target = np.array([0.352, ty, 0.74])
+target = np.array([0.352, ty, 0.722])   # right AT the white-key top surface
 
 sim = SimulationContext(SimulationCfg(dt=1/120.0, device=args.device))
 sim_utils.GroundPlaneCfg().func("/World/ground", sim_utils.GroundPlaneCfg())
