@@ -6,45 +6,57 @@
   <title>more soon.</title>
   <script src="https://cdn.jsdelivr.net/combine/npm/tone@14.7.58,npm/@magenta/music@1.23.1/es6/core.js,npm/focus-visible@5,npm/html-midi-player@1.5.0"></script>
   <style>
-    html, body {
-      height: 100%;
+    :root { color-scheme: light; }
+    body {
       margin: 0;
-      background: #000;
-      color: #eee;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: #fff;
+      color: #111;
+      font-family: ui-monospace, "SF Mono", Menlo, Monaco, "Cascadia Code", "Courier New", monospace;
+      font-size: 16px;
+      line-height: 1.6;
     }
     .wrap {
-      min-height: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 1.75rem;
-      padding: 1rem;
-      box-sizing: border-box;
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 12vh 24px 6rem;
     }
-    .more { font-size: 2rem; letter-spacing: 0.02em; }
-    .track { font-size: 0.9rem; color: #777; }
+    a { color: #1a56db; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .nav { font-size: 0.9rem; color: #888; margin-bottom: 3rem; }
+    .nav a { color: #555; }
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin: 0 0 0.25rem;
+    }
+    .sub { color: #666; margin: 0 0 2rem; }
+    .track { font-weight: 700; margin: 0 0 0.75rem; }
     midi-player {
-      width: min(90vw, 480px);
-      --md-sys-color-primary: #eee;
-      --md-sys-color-on-primary: #000;
-      --md-sys-color-surface: #111;
-      --md-sys-color-on-surface: #eee;
-      --md-sys-color-on-surface-variant: #aaa;
+      width: 100%;
+      max-width: 520px;
+      display: block;
+      margin-bottom: 1rem;
     }
+    midi-visualizer { display: block; max-width: 520px; }
+    footer { margin-top: 3rem; font-size: 0.85rem; color: #999; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="more">more soon.</div>
+    <div class="nav">[ <a href="https://nathanyan.vercel.app/">home</a> ]</div>
+
+    <h1>more soon.</h1>
+    <p class="sub">a small thing in the meantime &mdash; press play.</p>
+
+    <p class="track">nettspend &mdash; we not like you</p>
     <midi-player
       src="nettspend%20-%20we%20not%20like%20you.mid"
       sound-font
       visualizer="#vis">
     </midi-player>
     <midi-visualizer id="vis" type="piano-roll"></midi-visualizer>
-    <div class="track">nettspend &mdash; we not like you</div>
+
+    <footer>/ more soon.</footer>
   </div>
 </body>
 </html>
