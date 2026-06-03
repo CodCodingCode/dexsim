@@ -19,6 +19,7 @@ parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--bc_init", default=None, help="BC warm-start checkpoint (scripts/bc_pretrain.py)")
 parser.add_argument("--freeze_hands", action="store_true", help="curriculum phase 1: drive arms only (hands frozen)")
 parser.add_argument("--freeze_arms", action="store_true", help="fixed-hands mode: drive fingers only (arms held)")
+parser.add_argument("--arm_ik_follow", action="store_true", help="arms servoed online by WristPoseIK to the fingering centroid; policy drives only the 48 finger DoF (no q_ref)")
 parser.add_argument("--reference", default=None, help="explicit q_ref .npz (e.g. an RP1M reference); enables use_reference and overrides the default per-song file")
 parser.add_argument("--no_fold", action="store_true", help="disable fold_to_reach (use the song's real key positions, e.g. for RP1M)")
 parser.add_argument("--no_mute", action="store_true", help="disable mute_right_hand (needed for two-handed songs)")
@@ -50,6 +51,10 @@ def main():
     env_cfg.freeze_hands = args.freeze_hands
     if args.freeze_arms:
         env_cfg.freeze_arms = True
+    if args.arm_ik_follow:
+        env_cfg.arm_ik_follow = True
+        env_cfg.freeze_arms = False     # arms move (IK-driven), not held static
+        env_cfg.use_reference = False   # no q_ref trajectory needed in this mode
     if args.reference:
         env_cfg.reference_path = args.reference
         env_cfg.use_reference = True   # <-- without this the q_ref is ignored
