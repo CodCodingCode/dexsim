@@ -5,6 +5,26 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
+## 2026-06-03 — tick 10 (mission step 2: rebuild current-IK reference)
+- **Change:** `diag_tip_err.py` now prints each reference's build mtime — the
+  anti-stale guard from tick 9's lesson (verified: twinkle.npz shows "built 17:09",
+  obviously pre the 17:56 IK-fix commit). Commit `d0649a8`.
+- **Experiment launched (background):** `build_reference.py --midi data/midi/twinkle.mid
+  --headless --out data/reference/twinkle_curik.npz` (PID 328567; default fold+mute,
+  ik_substeps 10, current cfg/damping 0.05). Writes a FRESH file (no overwrite),
+  stores tip_err. Log: `logs/autoloop/build_curik.log`.
+- **NEXT TICK MUST:** `python scripts/diag_tip_err.py data/reference/twinkle_curik.npz`
+  (tail the build log if the npz isn't there yet — full song build takes a few min).
+  This is the honest current-cfg baseline. Expected from the rous_ik proxy: left
+  median ~70mm, right ~30mm, both above the ~11mm key-width target → confirms the
+  ~45mm blur floor is the live blocker and motivates step 3 (arm-servo IK rewrite).
+  If left ≫ right again here (with CURRENT cfg), then there IS a residual left-arm
+  geometry issue after all and step 4 (base pose/window) moves up.
+- **Backlog:** mission step 2 in progress; step 3 (FingertipIK→WristPoseIK arm-servo)
+  queued as the highest-leverage F1 change.
+
+---
+
 ## 2026-06-03 — tick 9 (mission step 1: locate left mount → CORRECTION)
 - **Question:** where is the left mount orientation set; what's the ~90° error?
 - **Finding — there is no live mount bug; tick 8 was misled by a STALE file:**
