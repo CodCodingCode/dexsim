@@ -5,6 +5,36 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
+## 2026-06-03 — tick 5
+- **Question (backlog #1):** why is reference precision 1.8% — where do false presses
+  come from?
+- **Finding (likely root cause = STALE reference file):** zero-residual play commands
+  exactly `q_ref[step]`, loaded from `data/reference/<midi-stem>.npz`. The eval used
+  `data/reference/twinkle.npz`, **mtime 17:09**. But `HOVER_CLEARANCE` (idle-finger
+  lift) was raised 0.010→0.030 and committed at **17:56** (commit `6e15516`) with the
+  note that 1cm "sounded ~5 wrong keys/step, precision capped at 0.077." So the loaded
+  reference predates the fix → idle fingers sit ~1cm too low → false presses →
+  precision 0.018. Newer post-fix builds already exist on disk and were NOT used:
+  `twinkle_rp1m.npz` (17:44), `twinkle_rous_ik.npz` (18:08).
+- **Change:** `PianoEnv._load_reference` now stashes the resolved path and the status
+  line prints the reference *filename + frame count* (was just "loaded"/"FALLBACK").
+  Staleness is now visible in every eval/train log — the gap that hid this. Compiles;
+  commit `0709590`.
+- **Hypothesis (to confirm next tick):** evaluating a *post-hover-fix* reference
+  (`twinkle_rous_ik.npz` or `twinkle_rp1m.npz`) will show markedly higher precision
+  than the stale 0.018. If so, the reference pipeline is fine — we were just eval'ing
+  a stale artifact — and the path to a usable warm-start is "rebuild references with
+  current geometry," not a deeper IK fix.
+- **NEXT TICK:** add a `--reference <npz>` flag to `eval_reference.py` (its one
+  change), then background-eval `twinkle_rous_ik.npz` and `twinkle_rp1m.npz` vs the
+  stale default; compare precision. (eval_reference.py currently has no way to point
+  at a non-default reference — that's why I didn't run it this tick.)
+- **Backlog:** #1 still "precision/false presses" but now narrowed to "confirm stale
+  vs fresh reference"; if fresh ref is good → promote "rebuild all references" + then
+  resume warm-start work.
+
+---
+
 ## 2026-06-03 — tick 4
 - **Question (backlog):** read tick-3's background reference eval; is the IK
   reference good enough to warm-start from?
