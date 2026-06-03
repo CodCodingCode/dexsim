@@ -35,6 +35,12 @@ from dexsim.piano.ik import WristPoseIK
 
 
 def main():
+    # line-buffer stdout: the per-target prints are otherwise block-buffered and
+    # LOST if the IK sweep drives the arm into a singularity and segfaults sim.step
+    # (a Python-less crash flushes nothing). With this, partial results + the exact
+    # crash target survive -- and the crash point is itself reach/singularity evidence.
+    import sys
+    sys.stdout.reconfigure(line_buffering=True)
     cfg = PianoEnvCfg()
     cfg.scene.num_envs = 1
     env = PianoEnv(cfg, render_mode=None)
