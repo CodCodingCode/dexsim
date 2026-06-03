@@ -5,7 +5,31 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
-## 2026-06-03 — tick 10 (mission step 2: rebuild current-IK reference)
+## 2026-06-03 — tick 11 (current-IK baseline → tick-9 over-correction CORRECTED)
+- **Result (current-IK rebuild, twinkle_curik.npz, built 20:23):** STILL diverges
+  the left. hand L median **305mm, 54% steps >100mm**; hand R 53mm/17%. So the left
+  divergence is **LIVE under build_reference.py/FingertipIK**, not a stale artifact —
+  tick 9 over-corrected (it trusted the rous_ik proxy). Lesson: a proxy from a
+  different pipeline is not a substitute for grading the thing you actually run.
+- **What the 72mm rous_ik file actually was:** `twinkle_rous_ik.npz` came from
+  `build_rp1m_ik_reference.py`, which uses `_arm_only_dls` — **arm-columns-only IK
+  with the hand CLAMPED to an RP1M-retargeted pose**. That's the arm-servo design.
+  It's 4× better (left 305→72mm) — confirming FingertipIK's over-constraint is the
+  problem and arm-servo is the fix (already partly implemented).
+- **But even arm-servo left ~72mm / 24% divergent** → suggests a genuine **left-arm
+  REACH gap**, not only solver choice. Must settle reach-vs-solver before rewriting.
+- **Change:** updated ACTIVE MISSION in `RESEARCH_LOOP.md` — un-obsolete the left-arm
+  issue (it's live), set the decisive gate "is it reach or solver?" ahead of the IK
+  rewrite. Commit below.
+- **Experiment launched (background):** `scripts/diag_wrist_ik.py --headless`
+  (PID 328994) — runs the WELL-POSED WristPoseIK (palm 6-DoF target on the 6-DoF arm,
+  60 iters) and sweeps targets across each hand's span. Log `logs/autoloop/diag_wrist.log`.
+- **NEXT TICK MUST read `logs/autoloop/diag_wrist.log`. Decision gate:**
+  * small pos err across the LEFT span (e.g. <20mm everywhere) → arm reaches fine;
+    the fix is purely "switch reference builder to WristPoseIK arm-servo" (adopt the
+    rp1m_ik pipeline for plain MIDI). Solver problem, not geometry.
+  * large left-span err / fails at part of the span → genuine **reach gap**: move
+    `left_base_pos` / shrink `left_key_window`, THEN re-grade. Geometry problem.
 - **Change:** `diag_tip_err.py` now prints each reference's build mtime — the
   anti-stale guard from tick 9's lesson (verified: twinkle.npz shows "built 17:09",
   obviously pre the 17:56 IK-fix commit). Commit `d0649a8`.

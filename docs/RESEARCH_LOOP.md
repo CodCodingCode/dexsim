@@ -54,15 +54,17 @@ Real current state on the POST-fix reference: both hands limited by a shared **~
 DLS blur floor** (over-constrained FingertipIK), left still ~2× right (72 vs 31mm).
 
 Re-scoped plan (each step = one tick; verify before advancing):
-1. [x] (tick 9) Located mount handling: none set; left divergence was stale artifact.
-2. [ ] Rebuild a CURRENT-IK twinkle reference to a fresh file (background; do NOT
-       overwrite existing npz) and re-grade with `diag_tip_err.py` — establish the
-       honest current left/right tip_err with today's cfg.
-3. [ ] Attack the shared ~45mm blur floor: switch the reference IK from FingertipIK
-       (over-constrains 6-DoF arm w/ 5 tips) to WristPoseIK arm-servo + RP1M-clamped
-       hand (ik.py's OWN recommendation), so active fingertips land within a
-       white-key width (~11mm). This is the highest-leverage change for F1.
-4. [ ] If left still lags right after that, revisit left base pose / window reach.
+1. [x] (tick 9) Mount handling: none set in cfg (no ~90° bug).
+2. [x] (tick 11) Current-IK rebuild (twinkle_curik.npz) STILL diverges left (305mm,
+       54%) under build_reference.py/FingertipIK → left issue is LIVE, not stale
+       (tick 9 over-corrected). The 72mm rous_ik came from build_rp1m_ik_reference.py's
+       `_arm_only_dls` (arm-only, hand clamped) = the arm-servo design, 4× better.
+3. [ ] (IN PROGRESS) GATE: is the left a REACH gap or a SOLVER artifact? Reading
+       `diag_wrist_ik.py` (well-posed WristPoseIK sweep across each hand's span).
+       - small left-span err → SOLVER: adopt arm-servo (rp1m_ik) for plain MIDI refs.
+       - large left-span err → REACH: move left_base_pos / shrink left_key_window first.
+4. [ ] Apply whichever fix the gate selects; rebuild + re-grade with diag_tip_err
+       (target active median → ~key width 11mm, left≈right, divergence→~0).
 5. [ ] Re-eval F1 (`eval_reference.py --zero`); confirm it moved off ~0.03.
 6. [ ] THEN resume warm-start track (KL-to-frozen-BC etc.).
 
