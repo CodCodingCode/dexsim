@@ -93,6 +93,15 @@ class PianoEnv(DirectRLEnv):
         if self._arm_ik_follow:
             self.joint_scale = self.joint_scale * is_hand.unsqueeze(0)
             self._arm_dof_mask = (is_hand < 0.5)            # (30,) bool: the arm joints
+            # per-finger flexion-joint columns (J1/J2/J3) for the idle-finger curl, in
+            # per-hand finger order [th,ff,mf,rf,lf]; same layout on both robots.
+            _names = self.left_robot.data.joint_names
+            self._finger_flex_cols = [
+                torch.tensor([i for i, n in enumerate(_names)
+                              if f"robot0_{tag}J" in n and n[-1] in "123"],
+                             device=self.device, dtype=torch.long)
+                for tag in ("TH", "FF", "MF", "RF", "LF")
+            ]
             print("[PianoEnv] ARM-IK-FOLLOW: WristPoseIK servos arms to the fingering "
                   "centroid; policy drives only the 48 finger DoF")
 
@@ -342,6 +351,16 @@ class PianoEnv(DirectRLEnv):
             fing_r = self.fik_right.solve(press[:, NUM_FINGERS // 2:])
         base_l = torch.where(m, arm_l, fing_l)               # arm cols servo, finger cols base
         base_r = torch.where(m, arm_r, fing_r)
+        # IDLE-FINGER CURL: lift fingers with no note THIS step up into the palm so the
+        # hand stops mashing its ~8-key footprint; the active finger stays straight.
+        curl = getattr(self.cfg, "idle_finger_curl", 0.0)
+        if curl != 0.0:
+            fa = self.finger_active[self.song_step]          # (E,10) global finger order
+            for hand_i, base in enumerate((base_l, base_r)):
+                for fi in range(5):
+                    cols = self._finger_flex_cols[fi]
+                    idle = (~fa[:, hand_i * 5 + fi].bool()).float().unsqueeze(-1)  # (E,1)
+                    base[:, cols] = base[:, cols] + curl * idle
         return base_l, base_r
 
     def _apply_action(self):

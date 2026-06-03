@@ -25,6 +25,7 @@ parser.add_argument("--reference", default=None, help="explicit q_ref .npz to lo
                     "(overrides the default data/reference/<midi-stem>.npz)")
 parser.add_argument("--arm_ik_follow", action="store_true", help="arms servoed online "
                     "by WristPoseIK to the fingering centroid; no q_ref needed")
+parser.add_argument("--idle_finger_curl", type=float, default=None, help="curl idle fingers up in the base pose (rad; sign-test the anti-mash)")
 parser.add_argument("--out", default=None, help="write metrics as JSON to this path "
                     "(so a backgrounded eval leaves a machine-readable result)")
 AppLauncher.add_app_launcher_args(parser)
@@ -52,6 +53,8 @@ def main():
         # math drives the arms, policy/zero-residual drives the fingers: no reference
         # trajectory, arms are not frozen, they track the fingering centroid online.
         cfg.arm_ik_follow = True
+        if args.idle_finger_curl is not None:
+            cfg.idle_finger_curl = args.idle_finger_curl
         cfg.freeze_arms = False
         cfg.use_reference = False
 
@@ -77,6 +80,17 @@ def main():
     # active keys, and (unlike the macro avg) it charges false presses during
     # rests — exactly the precision leak the per-step mean over goal-steps hid.
     tp_tot = fp_tot = fn_tot = 0.0
+    # per-hand micro counts (left/right key split) + onset micro counts (rising-edge
+    # strike vs note-start) + arm-health step sums. Same micro philosophy as above.
+    tpL = fpL = fnL = tpR = fpR = fnR = 0.0
+    # onset is matched with a +/-W-step tolerance (a finger takes a few 20Hz steps to
+    # descend and trip the strike, so an exact-step match reads ~0). Collect the played
+    # strikes and goal onsets per step, then dilate over time and match after the loop.
+    played_steps = []; onset_steps = []
+    W_on = int(getattr(env, "onset_tol_steps", 3))
+    margin_sum = jerk_sum = 0.0
+    lmask = env.left_key_mask.bool()        # (88,) left-hand keys
+    rmask = env.right_key_mask.bool()       # (88,) right-hand keys
     tipd_sum = 0.0; tipd_n = 0   # mean active fingertip->assigned-key distance (mm):
     #   the online tip_err, validates whether the hands are POSITIONED on the keys
     #   (independent of whether the fingers actually pressed). Key check for arm_ik_follow.
@@ -96,6 +110,16 @@ def main():
         obs_dict, rew, _, _, _ = env.step(action)
         obs = obs_dict["policy"] if isinstance(obs_dict, dict) else obs_dict
 
+        # ONSET events: read the rising-edge strike (_just_struck) NOW, before the
+        # _key_pressed_fraction() call below re-advances the latch and clears it.
+        # played = key went silent->sounding this step; goal = note starts this step.
+        played_steps.append(env._just_struck.clone())
+        onset_steps.append(env._onset_now().bool().clone())
+        # arm health (motion quality, invisible to F1): worst-joint limit margin and
+        # policy action jerk, both already computed by the env this step.
+        margin_sum += float(env._arm_limit_margin().mean())
+        jerk_sum += float(env._action_jerk.mean())
+
         pressed = env._key_pressed_fraction()
         goal = env._goal_now()
         # micro counts over every env/key this step
@@ -104,6 +128,14 @@ def main():
         tp_tot += float((sounding & goal_b).sum())
         fp_tot += float((sounding & ~goal_b).sum())
         fn_tot += float((~sounding & goal_b).sum())
+        # per-hand micro counts: restrict the same sounding/goal masks to each hand's
+        # keys (lmask/rmask partition all 88, so left+right sums match the overall).
+        tpL += float((sounding & goal_b & lmask).sum())
+        fpL += float((sounding & ~goal_b & lmask).sum())
+        fnL += float((~sounding & goal_b & lmask).sum())
+        tpR += float((sounding & goal_b & rmask).sum())
+        fpR += float((sounding & ~goal_b & rmask).sum())
+        fnR += float((~sounding & goal_b & rmask).sum())
 
         # online fingertip->assigned-key distance for ACTIVE fingers (mm)
         kt = env._key_top_world()
@@ -127,6 +159,40 @@ def main():
     mrec = tp_tot / (tp_tot + fn_tot + eps)
     mprec = tp_tot / (tp_tot + fp_tot + eps)
     mf1 = 2 * mrec * mprec / (mrec + mprec + eps)
+
+    def _prf(tp, fp, fn):
+        r = tp / (tp + fn + eps); p = tp / (tp + fp + eps)
+        return p, r, 2 * p * r / (p + r + eps)
+    # per-hand F1 (which arm is carrying / dragging the score) + onset F1 (did it
+    # strike notes ON TIME, not just hold them) + arm-health step means.
+    pL, rL, f1L = _prf(tpL, fpL, fnL)
+    pR, rR, f1R = _prf(tpR, fpR, fnR)
+    # windowed onset match: dilate both played-strike and goal-onset timelines by +/-W
+    # steps, then a goal onset counts as recalled if a strike landed within the window
+    # (and vice-versa for precision). Tolerates the finger's descent latency.
+    played_t = torch.stack(played_steps).float()    # (T, E, 88)
+    onset_t = torch.stack(onset_steps).float()       # (T, E, 88)
+
+    def _dilate(x, w):                               # max over +/-w along time (dim 0)
+        out = x.clone()
+        for s in range(1, w + 1):
+            fut = torch.zeros_like(x); fut[:-s] = x[s:]
+            pst = torch.zeros_like(x); pst[s:] = x[:-s]
+            out = torch.maximum(out, torch.maximum(fut, pst))
+        return out
+    played_d = _dilate(played_t, W_on)
+    onset_d = _dilate(onset_t, W_on)
+    on_r = float((onset_t * played_d).sum() / (onset_t.sum() + eps))   # onsets struck in-window
+    on_p = float((played_t * onset_d).sum() / (played_t.sum() + eps))  # strikes near an onset
+    on_f1 = 2 * on_p * on_r / (on_p + on_r + eps)
+    print(f"[dbg] played_strikes_total={int(played_t.sum())}  onset_total={int(onset_t.sum())}")
+    # strike vs onset counts: a quick "did it actually play?" sanity signal. The pure
+    # reference only strikes during the initial settle (n_strikes << n_onsets) -> it
+    # holds a static pose rather than re-striking each note, which is why onset F1 ~ 0.
+    n_strikes = int(played_t.sum())
+    n_onsets = int(onset_t.sum())
+    avg_margin = margin_sum / T
+    avg_jerk = jerk_sum / T
     # macro (per-step mean over goal-steps; kept for comparison)
     rec = rec_sum / max(1, n_scored)
     prec = prec_sum / max(1, n_scored)
@@ -143,6 +209,12 @@ def main():
           f"mean_reward/step={rew_sum / T:.3f}")
     print(f"[eval] active fingertip->key distance: {tip_mm:.1f} mm "
           f"(positioning quality; key half-width ~11mm)")
+    print(f"[eval] per-hand  F1_left={f1L:.3f} (R={rL:.3f} P={pL:.3f})  "
+          f"F1_right={f1R:.3f} (R={rR:.3f} P={pR:.3f})")
+    print(f"[eval] onset     F1={on_f1:.3f}  recall={on_r:.3f}  precision={on_p:.3f}  "
+          f"({n_strikes} strikes vs {n_onsets} onsets, +/-{W_on}-step tol; not just held)")
+    print(f"[eval] arm       limit_margin={avg_margin:.3f} (1=mid-range, 0=at a limit)  "
+          f"action_jerk={avg_jerk:.4f} (policy smoothness; 0 for pure reference)")
     print("=" * 60)
     if args.out:
         import json
@@ -152,6 +224,13 @@ def main():
                 "steps": T,
                 "micro": {"recall": mrec, "precision": mprec, "f1": mf1},
                 "macro": {"recall": rec, "precision": prec, "f1": f1},
+                "per_hand": {
+                    "left": {"recall": rL, "precision": pL, "f1": f1L},
+                    "right": {"recall": rR, "precision": pR, "f1": f1R},
+                },
+                "onset": {"recall": on_r, "precision": on_p, "f1": on_f1,
+                          "tol_steps": W_on, "n_strikes": n_strikes, "n_onsets": n_onsets},
+                "arm_health": {"limit_margin": avg_margin, "action_jerk": avg_jerk},
                 "mean_reward_per_step": rew_sum / T,
                 "tip_mm": tip_mm,
             }, f, indent=2)

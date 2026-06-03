@@ -204,6 +204,14 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # hand footprint (the mash that pins precision ~0.05). 0 = off.
     idle_clear_weight: float = 0.0
     idle_clear_margin: float = 0.02   # m above the key tops an idle fingertip must stay
+    # IDLE-FINGER CURL (structural anti-mash): the reward-only idle-clear term was 3% of
+    # the dominant false-press penalty and changed keys_sounding by 0 -- the mash is
+    # PHYSICAL (the hand footprint rings ~8 keys, the policy can't beat it). So curl the
+    # flexion joints (J1/J2/J3) of fingers NOT assigned a note THIS step up into the palm
+    # in the base pose, making a clean single-finger press physically possible. rad added
+    # per idle-finger flexion joint; sign flips the curl direction (set off=0). The policy
+    # residual still rides on top, and the ACTIVE finger stays straight to press.
+    idle_finger_curl: float = 0.0
     fingering_weight: float = 1.0     # PHASE 2 (hands in): positioning is auxiliary
     #   now -- the fingers do fine placement while key/onset (pressing) lead. (Phase
     #   1 used 3.0 for a strong arms-only positioning signal.)
