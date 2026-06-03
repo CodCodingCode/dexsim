@@ -5,7 +5,28 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
-## 2026-06-03 — tick 11 (current-IK baseline → tick-9 over-correction CORRECTED)
+## 2026-06-03 — tick 12 (reachability sweep crashed → made it crash-legible, relaunched)
+- **Tick-11 experiment FAILED:** `diag_wrist_ik.py` log was 42 lines, ended at Isaac
+  boot, no results, no traceback. Diagnosis: stdout was block-buffered and a **C-level
+  crash in `env.sim.step`** (no Python traceback ⇒ segfault) flushed nothing. The
+  crash is before the first per-target print could flush — most likely the LEFT arm
+  IK driving into a **singularity / physics blow-up** (which would itself answer the
+  reach gate: a singular left arm = the divergence source).
+- **Change:** `diag_wrist_ik.py` now line-buffers stdout (commit `e0a861b`) so partial
+  per-target errors AND the exact crash target survive. Compiles.
+- **Experiment relaunched (background):** `python -u scripts/diag_wrist_ik.py
+  --headless --n 9 --iters 60` (PID 329525) → `logs/autoloop/diag_wrist2.log`.
+- **NEXT TICK MUST read `logs/autoloop/diag_wrist2.log` — three outcomes:**
+  1. full sweep completes, LEFT worst-err small (<~20mm) → SOLVER problem: arm reaches
+     fine, adopt arm-servo (rp1m_ik) reference builder for plain MIDI.
+  2. full sweep, LEFT worst-err large at part of span → REACH gap: move left_base_pos
+     / shrink left_key_window.
+  3. crashes again mid-LEFT-sweep at a specific key → that key/config is a **singular
+     pose** the left arm can't servo through → reach/singularity fix (base pose or
+     window), and the crash key tells us where.
+- **Process note:** this is the 2nd failed/again-launched background run in a row
+  (curik rebuild was fine; wrist sweep crashed). Background Isaac jobs are fragile;
+  budget ~2 ticks each (launch → read). Acceptable but slowing convergence.
 - **Result (current-IK rebuild, twinkle_curik.npz, built 20:23):** STILL diverges
   the left. hand L median **305mm, 54% steps >100mm**; hand R 53mm/17%. So the left
   divergence is **LIVE under build_reference.py/FingertipIK**, not a stale artifact —
