@@ -167,8 +167,12 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # (the policy never touches the stiff arm joints). Set with freeze_arms=False and
     # use_reference=False. Supersedes freeze_arms (static hold) when both are set.
     arm_ik_follow: bool = False
-    arm_ik_hover: float = 0.05   # m the servoed palm hovers above the key tops (matches
-    #   diag_wrist_ik's 0.05, which converged the palm to 4-14mm). Fingers reach down from there.
+    arm_ik_hover: float = 0.09   # m the servoed palm hovers above the key tops. Raised
+    #   0.05->0.09: at 0.05 the whole hand (palm+relaxed fingers) sat ON the keyboard and
+    #   mashed ~15 keys/step (precision pinned ~0.05, F1 flat). Lifting the palm makes idle
+    #   fingers CLEAR the keys so pressing becomes a deliberate finger extension the policy
+    #   chooses. Capped at 0.09 (not higher) so an extended Shadow finger (~7cm) can still
+    #   reach the keys; raise/lower off wandb play/keys_sounding (want ~#active, not 15).
     finger_ik_base: bool = False  # PARKED: also pose the fingers analytically (hand-only
     #   FingertipIK) instead of leaving them at ready pose for RL. A relative one-step DLS
     #   target can't drive the weak hand actuators (stiffness 3) the way it drives the stiff
@@ -184,11 +188,11 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # keys PER INTENDED NOTE, which is ~40-80x stronger at the same weight, so 0.75
     # here ≈ "one wrong note nearly cancels one right note". Retune off wandb
     # play/precision; drop toward 0.5 if recall collapses.
-    false_press_weight: float = 0.5   # PUNISH wrong notes hard for PRECISION. Safe now
-    #   ONLY because we BC-warm-start from the IK fingering expert (--bc_init): the policy
-    #   begins in a press-the-right-key basin, so a strong false penalty sharpens precision
-    #   instead of cratering reward/key to -2 (which is what happened from a COLD start).
-    #   If recall collapses, drop toward 0.3.
+    false_press_weight: float = 1.0   # PUNISH wrong notes hard for PRECISION. Raised
+    #   0.5->1.0 alongside the arm_ik_hover lift: with the hand no longer forced to mash,
+    #   a stronger false-press penalty pushes the policy to sound ONLY the assigned key
+    #   instead of catching the target amid ~15 rung keys (precision was pinned ~0.05).
+    #   If recall collapses (policy stops pressing at all), drop back toward 0.5.
     energy_weight: float = 0.0005
     fingering_weight: float = 1.0     # PHASE 2 (hands in): positioning is auxiliary
     #   now -- the fingers do fine placement while key/onset (pressing) lead. (Phase
