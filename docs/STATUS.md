@@ -32,7 +32,24 @@ actually sound vs the MIDI), pure reference (zero residual):
 
 Reward can be *positive while F1≈0* → **reward is not evidence of playing.**
 
-### Root-cause diagnostic (`scripts/key_press_diag.py`, Twinkle)
+> **UPDATE 2026-06-03 (autoloop tick 4):** the numbers above were measured with a
+> buggy metric AND the old `KEY_SOUND_ANGLE = -0.10` (beyond physical key travel —
+> keys could *never* sound). After fixing the sound angle to **-0.012** and the eval
+> metric (micro-averaged, scored by the sim's own velocity-gated sound latch —
+> commits `732002b`, `3034758`), the pure IK reference on **twinkle** now reads:
+>
+> | metric | recall | precision | F1 |
+> |--------|--------|-----------|----|
+> | micro  | **0.114** | **0.018** | **0.031** |
+>
+> So the gate moved from "keys physically can't sound (recall 0)" to "keys sound,
+> but the reference mashes ~50× more wrong keys than right (precision 1.8%)." The
+> bottleneck is now **finger-placement precision / false presses**, not key physics.
+> The `30 != 26` actuator warning is **benign** — the 4 unactuated joints per hand
+> are the Shadow Hand's coupled distal `*J0` joints (driven by their parent). The
+> `-0.10`/`-0.056` diagnostic below is STALE.
+
+### Root-cause diagnostic (`scripts/key_press_diag.py`, Twinkle) — STALE, see update above
 ```
 over 445 note-steps:  goal key depressed at all = 1%,  sounded = 0%
 deepest any key pressed = -0.056 rad  (needs <= KEY_SOUND_ANGLE = -0.10 to sound)
