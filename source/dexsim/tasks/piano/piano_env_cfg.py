@@ -72,17 +72,33 @@ class PianoEnvCfg(DirectRLEnvCfg):
     control_dt: float = CONTROL_DT
     goal_lookahead: int = GOAL_LOOKAHEAD
 
+    # --- fold a wide-range song into the rig's reachable key windows ---
+    # The two fixed arm bases each reach only a narrow ~8-key band (left over key
+    # ~22, right over key ~66) with an unreachable gap between. A wide song (e.g.
+    # song.mid spans keys 13..72) is otherwise un-trackable -> the IK reference
+    # collapses (zero-residual F1 ~0.05). Octave-fold every note into the nearest
+    # hand window so the reference is physically playable. Windows are inclusive
+    # (lo, hi) key indices; the left band is the proven-reachable easy-song span.
+    fold_to_reach: bool = True    # fixed hands can only reach the keys under them,
+    # so fold every note into each hand's window (= where the fixed hand hovers).
+    left_key_window: tuple[int, int] = (19, 26)
+    right_key_window: tuple[int, int] = (63, 70)
+
     # --- residual RL over an IK reference (PianoMime) ---
     # If reference_path exists, the action is a residual on the precomputed IK
     # reference joint trajectory (action_scale * a + q_ref). If it's missing, the
     # env degrades gracefully to a residual on the static ready pose. Build one
     # with scripts/build_reference.py. None -> derive from the MIDI stem.
     reference_path: str | None = None
-    use_reference: bool = True
+    use_reference: bool = False   # fixed-hands mode: arms hold the ready pose (no
+    #   per-note IK trajectory needed); only the fingers move to press.
 
     # IK params (used by build_reference.py and any online IK)
-    ik_damping: float = 0.05
-    ik_max_step: float = 0.05
+    ik_damping: float = 0.05    # 0.02 diverges the LEFT arm at singular configs
+    #   (145mm+ even on folded keys, while the right converged to 17mm). 0.05 is the
+    #   stable singularity handling -> both hands converge on the reachable windows.
+    ik_max_step: float = 0.05   # 0.12 overshoots/oscillates -> WORSE convergence
+    #   (right 271mm vs 57mm at 0.05). Small step + many substeps converges tighter.
 
     # piano world pose (shift so the 1.22 m keyboard centers on Y=0, table height)
     piano_pos = (0.569, -0.606, 0.746)   # fit so LEFT-hand fingers rest on keys 19/20/26
@@ -93,23 +109,63 @@ class PianoEnvCfg(DirectRLEnvCfg):
     left_base_pos = (-0.05, -0.30, 1.05)
     right_base_pos = (-0.05, 0.30, 1.05)
 
-    # action scaling: targets = default + scale * action (action in [-1,1])
-    action_scale: float = 0.5
+    # action scaling: targets = default + scale * action (action in [-1,1]).
+    # Per-joint (see PianoEnv.joint_scale): the stiff arm joints (stiffness 6000)
+    # explode under a large residual -> NaN, but the weak hand joints (stiffness 3)
+    # need a generous range to travel between keys and actually press them. One
+    # global scale can't serve both: 0.5 blew up the arm; 0.15 froze the fingers
+    # (F1 stuck ~0.02). So scale the arm gently and the hand generously.
+    arm_action_scale: float = 0.15    # 0.30 crashed physics (stiff arm joints blow
+    #   up under a large residual -> PhysX hard crash). 0.15 is the stable max; the
+    #   reference must instead be made precise so the arm barely needs to correct.
+    hand_action_scale: float = 0.35   # was 0.6: too large -> with exploration noise the
+    #   fingers flailed and struck ~23 keys at once (precision 3%, reward/key pinned at
+    #   -2, learning stalled). 0.35 still travels between keys in a window but stops the
+    #   mash. Raise again once the fingers reliably press single keys.
+    # legacy global scale (still used by scripts/bc_pretrain.py); not used by the env
+    action_scale: float = 0.15
+
+    # --- curriculum: arms first, then hands ---
+    # Phase 1 (freeze_hands=True): zero the 48 hand DoF so the policy ONLY drives the
+    # 12 arm DoF -> it learns to SWEEP the arms so each hand's (frozen, pressed-pose)
+    # fingers land on the right keys, scored by the fingering + arm-position reward.
+    # Phase 2 (freeze_hands=False, warm-started from phase 1): unfreeze the hands so
+    # they learn to press while the arms hold position. Sidesteps the IK-precision
+    # wall by LEARNING arm positioning instead of relying on the (imperfect) IK ref.
+    freeze_hands: bool = False
+    # FIXED-HANDS mode: arms hold a constant pose hovering over the keyboard; only
+    # the fingers are trained to press (RoboPianist-style). Sidesteps the whole arm
+    # positioning/tracking problem to first prove the fingers can hit notes.
+    freeze_arms: bool = True
     # for left-hand-only easy songs: freeze the right arm so it can't mash idle
-    # high keys (those were the false presses tanking precision).
-    mute_right_hand: bool = True
+    # high keys. BUT 'song.mid' is two-handed -- it needs the right hand on 943/999
+    # steps (keys span 13..72, crossing the middle). Muting it hard-capped F1 near
+    # zero (half the notes unplayable). Must be False for any two-handed song.
+    mute_right_hand: bool = True   # CURRICULUM (easy.mid is LEFT-hand only, keys 19/20/26):
+    #   hold the right fingers at the ready pose so they can't mash idle right-window keys
+    #   and generate pure false-press noise. MUST be reverted to False for the two-handed
+    #   song.mid (its notes cross into the right window).
 
     # reward weights (PianoMime/RoboPianist composite)
-    key_press_weight: float = 1.0
+    key_press_weight: float = 2.0   # was 1.0: PRESSING the right key must dominate
+    #   the (positioning) shaping, else the policy hovers near keys for finger
+    #   reward and never presses (F1 flat ~0.04, reward/finger 0.44 >> press).
     # NOTE: the old tuning (0.5 best, 1.5 over-suppressed) was under the BUGGED
     # penalty that averaged misclicks over all 88 keys. reward.py now counts wrong
     # keys PER INTENDED NOTE, which is ~40-80x stronger at the same weight, so 0.75
     # here ≈ "one wrong note nearly cancels one right note". Retune off wandb
     # play/precision; drop toward 0.5 if recall collapses.
-    false_press_weight: float = 0.75
+    false_press_weight: float = 0.5   # PUNISH wrong notes hard for PRECISION. Safe now
+    #   ONLY because we BC-warm-start from the IK fingering expert (--bc_init): the policy
+    #   begins in a press-the-right-key basin, so a strong false penalty sharpens precision
+    #   instead of cratering reward/key to -2 (which is what happened from a COLD start).
+    #   If recall collapses, drop toward 0.3.
     energy_weight: float = 0.0005
-    fingering_weight: float = 1.0     # finger->target-key shaping (CRITICAL term)
-    onset_weight: float = 0.5         # crisp attack on note onsets
+    fingering_weight: float = 1.0     # PHASE 2 (hands in): positioning is auxiliary
+    #   now -- the fingers do fine placement while key/onset (pressing) lead. (Phase
+    #   1 used 3.0 for a strong arms-only positioning signal.)
+    onset_weight: float = 2.0         # was 0.5: strongly reward sounding the right
+    #   key on its onset -> the press signal the policy was ignoring (onset ~0.01).
 
     # --- arm gross-positioning shaping (60-DoF only; RoboPianist skips it) ---
     # The arms must place each hand over the right span of keys before the fingers
@@ -124,29 +180,45 @@ class PianoEnvCfg(DirectRLEnvCfg):
     arm_lookahead: int = 5            # steps of upcoming notes used for the centroid
     hand_base_body: str = "robot0_palm"  # Shadow-hand base body (the "hand center")
 
+    # velocity-gated ("hammer") sounding: a key rings only if struck with downward
+    # joint velocity past this (rad/s); a statically-resting hand/forearm (~0 vel)
+    # rings nothing -> fixes the 52-key precision collapse. See _key_pressed_fraction.
+    key_strike_vel: float = 0.15   # was 0.10: nudged up so a finger merely brushing/passing
+    #   over a key doesn't ring it -- only a deliberate downward strike counts. Cuts the
+    #   accidental false-ring count that inflated keys_sounding to ~23. Kept moderate (not
+    #   0.20) so a BC-placed finger can still ring with a small deliberate press.
+
     # Piano "ready" pose: from the raised (z=1.05) bases each hand drapes DOWN so
     # the fingertips rest ~2 cm above the white keys (key top z=0.722), centered
     # over that hand's half of the keyboard. Solved numerically by
     # scripts/tune_arm_pose.py against the current bases -- fingertip mean lands
     # within ~3-4 cm of (x=0.35, y=+/-0.30, z=0.74), i.e. ON the keys. wrist_2/3
     # are held so the palm stays vertical. Per-side (the two arms differ slightly).
+    # FIXED-HANDS hover poses (tune_arm_pose, targets over each window at ~2cm above
+    # the keys): left fingertips land 12mm over window (19,26); right 37mm over
+    # (63,70). The arms HOLD these; only the fingers move to press.
     left_ready_pose = {
-        "shoulder_pan_joint": -0.425,
-        "shoulder_lift_joint": -0.62,
-        "elbow_joint": 1.60,
-        "wrist_1_joint": -1.50,
-        "wrist_2_joint": -1.57,
+        "shoulder_pan_joint": -0.275,
+        "shoulder_lift_joint": -0.525,
+        "elbow_joint": 1.150,
+        "wrist_1_joint": -1.275,
+        "wrist_2_joint": -1.570,
         "wrist_3_joint": 0.0,
         "robot0_.*": 0.0,
     }
     # sweep result: fingertips land z=0.731 (9mm above keys, over y~0.66) -> a
     # ~1cm finger curl presses. Used for the easy-song demo (right hand only).
+    # mirror of the (working) left reach-down pose: the old pose (lift -0.5 /
+    # elbow 1.2 / wrist1 -1.2) left the right hand 30cm ABOVE the keys and 0.5m
+    # off in +Y, so IK couldn't converge (126mm median err). Copy the left arm's
+    # reach-down joints (it lands fingertips at keyboard height) with the
+    # shoulder_pan sign flipped so it reaches toward center from the +Y base.
     right_ready_pose = {
-        "shoulder_pan_joint": 0.5,
-        "shoulder_lift_joint": -0.5,
-        "elbow_joint": 1.2,
-        "wrist_1_joint": -1.2,
-        "wrist_2_joint": -1.57,
+        "shoulder_pan_joint": -0.325,
+        "shoulder_lift_joint": -0.675,
+        "elbow_joint": 1.300,
+        "wrist_1_joint": -1.350,
+        "wrist_2_joint": -1.570,
         "wrist_3_joint": 0.0,
         "robot0_.*": 0.0,
     }

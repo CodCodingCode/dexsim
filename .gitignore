@@ -30,3 +30,8 @@ outputs/
 
 # trained checkpoints (regenerable)
 results/*.pt
+
+# large datasets / run artifacts (regenerable)
+data/rp1m/
+data/corpus/
+wandb/

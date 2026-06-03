@@ -40,6 +40,53 @@ def key_is_black(key_index: int) -> bool:
     return semitone in (1, 3, 6, 8, 10)
 
 
+def fold_into_reach(key_activation: np.ndarray, onsets: np.ndarray,
+                    left_window: tuple[int, int] = (19, 26),
+                    right_window: tuple[int, int] = (63, 70)):
+    """Re-arrange a song so every note lands in a hand's *reachable* key window.
+
+    The bimanual rig has two fixed arm bases (left over key ~22, right over key
+    ~66) that each reach only a narrow ~8-key band; the middle of the keyboard is
+    a no-man's-land neither hand can reach. A wide-range song (e.g. 5 octaves)
+    therefore produces an un-trackable IK reference (fingertip errors of hundreds
+    of mm -> zero-residual F1 ~0.05). This folds each note by OCTAVES toward the
+    nearest hand window (preserving pitch class where the window allows, so the
+    tune stays recognisable), clamping to the window edge when the <12-key window
+    can't represent that pitch class. Notes below the split go to the left hand,
+    notes at/above it to the right -- matching the planner's keyboard-middle split.
+
+    Args:
+        key_activation (T, 88) bool, onsets (T, 88) bool -- the original schedule.
+        left_window, right_window: inclusive (lo, hi) reachable key-index bands.
+    Returns: (new_key_activation, new_onsets), both (T, 88) bool, remapped.
+    """
+    active_keys = np.nonzero(key_activation.any(axis=0))[0]
+    if active_keys.size == 0:
+        return key_activation, onsets
+    split = int(np.median(active_keys))            # low half -> left, high -> right
+
+    def _fold(k: int, lo: int, hi: int) -> int:
+        c = 0.5 * (lo + hi)
+        while k < c - 6:                           # bring within an octave of centre
+            k += 12
+        while k > c + 6:
+            k -= 12
+        return int(min(hi, max(lo, k)))            # clamp into the reachable band
+
+    remap = {}
+    for k in active_keys:
+        lo, hi = (left_window if k < split else right_window)
+        remap[int(k)] = _fold(int(k), lo, hi)
+
+    T = key_activation.shape[0]
+    new_act = np.zeros_like(key_activation)
+    new_ons = np.zeros_like(onsets)
+    for k_old, k_new in remap.items():
+        new_act[:, k_new] |= key_activation[:, k_old]
+        new_ons[:, k_new] |= onsets[:, k_old]
+    return new_act, new_ons
+
+
 @dataclass
 class PianoSong:
     """A MIDI piece sampled onto a fixed control grid."""

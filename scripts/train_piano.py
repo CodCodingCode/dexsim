@@ -17,6 +17,9 @@ parser.add_argument("--midi", default=None, help="path to the song .mid (default
 parser.add_argument("--max_iterations", type=int, default=None)
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--bc_init", default=None, help="BC warm-start checkpoint (scripts/bc_pretrain.py)")
+parser.add_argument("--freeze_hands", action="store_true", help="curriculum phase 1: drive arms only (hands frozen)")
+parser.add_argument("--freeze_arms", action="store_true", help="fixed-hands mode: drive fingers only (arms held)")
+parser.add_argument("--reference", default=None, help="explicit q_ref .npz (e.g. an RP1M reference); overrides the default per-song file")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
@@ -42,6 +45,11 @@ def main():
     env_cfg.seed = args.seed
     if args.midi:
         env_cfg.midi_path = args.midi
+    env_cfg.freeze_hands = args.freeze_hands
+    if args.freeze_arms:
+        env_cfg.freeze_arms = True
+    if args.reference:
+        env_cfg.reference_path = args.reference
 
     agent_cfg = PianoPPORunnerCfg()
     agent_cfg.seed = args.seed
@@ -62,7 +70,9 @@ def main():
     if args.bc_init:
         import torch
         ckpt = torch.load(args.bc_init, map_location=agent_cfg.device)
-        runner.alg.actor_critic.load_state_dict(ckpt["model_state_dict"], strict=False)
+        # rsl_rl stores the actor-critic on alg.policy (older code used .actor_critic)
+        net = getattr(runner.alg, "policy", None) or runner.alg.actor_critic
+        net.load_state_dict(ckpt["model_state_dict"], strict=False)
         print(f"[train_piano] warm-started actor-critic from {args.bc_init}")
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)

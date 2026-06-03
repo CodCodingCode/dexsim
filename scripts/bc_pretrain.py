@@ -30,6 +30,10 @@ parser.add_argument("--ik_iters", type=int, default=3, help="online IK steps per
 parser.add_argument("--epochs", type=int, default=200)
 parser.add_argument("--out", default="logs/bc/piano_bc.pt")
 parser.add_argument("--dump", default=None, help="also save (obs,action) npz for generalist distillation")
+parser.add_argument("--reference", default=None,
+                    help="explicit IK/warm-start reference .npz to clone from "
+                         "(e.g. an RP1M-merged reference from build_rp1m_reference.py); "
+                         "default: derive from the MIDI stem")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
@@ -50,6 +54,12 @@ def main():
     cfg.scene.num_envs = args.num_envs
     if args.midi:
         cfg.midi_path = args.midi
+    if args.reference:
+        # clone from an explicit reference (e.g. RP1M-merged warm-start) instead
+        # of the MIDI-stem default; use_reference makes the env load it as the
+        # residual base so "zero action == follow this reference".
+        cfg.reference_path = args.reference
+        cfg.use_reference = True
     env = PianoEnv(cfg, render_mode=None)
     device = env.device
 
@@ -59,7 +69,13 @@ def main():
     obs_buf, act_buf = [], []
     obs_dict, _ = env.reset()
     obs = obs_dict["policy"]
-    scale = cfg.action_scale
+    # Invert the env's PER-JOINT residual scale, not the legacy global action_scale.
+    # The env applies target = q_ref + joint_scale * action, where joint_scale differs
+    # per joint (arm 0.15 vs hand 0.35) and is ZERO on frozen DoF (freeze_arms/_hands).
+    # Using the global 0.15 here mis-scaled the finger residual (0.35 != 0.15), so the
+    # cloned action overshot and the warm start did NOT reproduce the IK fingering.
+    inv = torch.where(env.joint_scale > 0, 1.0 / env.joint_scale,
+                      torch.zeros_like(env.joint_scale))      # (1,30); frozen DoF -> 0
 
     steps = env.song_len * args.rollout_passes
     print(f"[bc] collecting {steps} steps x {args.num_envs} envs from the IK expert")
@@ -71,7 +87,7 @@ def main():
             q_l = ik_l.solve(press[:, :5])
             q_r = ik_r.solve(press[:, 5:])
         ref = env.q_ref[env.song_step]                      # (E,2,30)
-        expert = torch.cat([(q_l - ref[:, 0]) / scale, (q_r - ref[:, 1]) / scale], dim=-1)
+        expert = torch.cat([(q_l - ref[:, 0]) * inv, (q_r - ref[:, 1]) * inv], dim=-1)
         expert = expert.clamp(-1.0, 1.0)
 
         obs_buf.append(obs.detach().clone())

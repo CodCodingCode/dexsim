@@ -30,7 +30,10 @@ class PianoRewardCfg:
     #                                   RoboPianist F1 stays 0 without this term)
     onset_weight: float = 0.5         # extra reward for sounding a key on its onset
     finger_close_enough: float = 0.01    # m; inside this -> full fingering reward
-    finger_margin_mult: float = 10.0     # gaussian falloff reaches ~0.1 at 10x bound
+    finger_margin_mult: float = 25.0     # gaussian falloff reaches ~0.1 at 25x bound
+    #   (~25 cm). Was 10x (10 cm): fingers start/pass too far from their target key
+    #   so the shaping read ~0 (reward/finger~0.005) and gave no gradient. Widening
+    #   the falloff makes the make-or-break term actually pull from realistic ranges.
     # --- arm gross-positioning shaping (60-DoF embodiment only) ---
     # RoboPianist's hands ride a fixed forearm slider, so it never needs this. Here
     # the UR10e arm must aim the whole hand over the right span of keys *before* the

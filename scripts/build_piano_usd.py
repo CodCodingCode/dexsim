@@ -86,15 +86,40 @@ def main():
     physx_art.CreateSolverPositionIterationCountAttr(16)
     physx_art.CreateSolverVelocityIterationCountAttr(1)
 
-    # static base/frame the keys hinge to
-    base = UsdGeom.Cube.Define(stage, "/Piano/base")
-    base.GetSizeAttr().Set(1.0)
-    base_x = UsdGeom.Xformable(base.GetPrim())
     span_y = sum(1 for k in layout if not k[1]) * WHITE_PITCH
-    base_x.AddTranslateOp().Set(Gf.Vec3d(-WHITE_L / 2 - 0.02, span_y / 2, -0.03))
-    base_x.AddScaleOp().Set(Gf.Vec3f(0.08, span_y + 0.05, 0.05))
-    UsdPhysics.CollisionAPI.Apply(base.GetPrim())
-    UsdPhysics.RigidBodyAPI.Apply(base.GetPrim())
+
+    def _box_body(path, translate, dims, color, mass=None, collide=True):
+        """A rigid-body link whose box dimensions live on a CHILD geom, so the
+        body prim itself carries only a translate (NO xformOp:scale).
+
+        This is the crucial fix. PhysX resolves a joint's localPos in the body's
+        local frame *including that body's scale*. The old build scaled the body
+        prims directly (xformOp:scale on the Cube), so every revolute anchor was
+        multiplied by the key/base scale and landed in the wrong place -- on step
+        1 the solver yanked all 88 keys onto a single collapsed plane (~z=-0.028):
+        they sank below the base (grey slab on top) and the black keys' +9mm
+        raise vanished, so the blacks disappeared. With an unscaled body frame the
+        anchors stay in plain meters and the authored layout is preserved."""
+        body = UsdGeom.Xform.Define(stage, path)
+        UsdGeom.Xformable(body.GetPrim()).AddTranslateOp().Set(Gf.Vec3d(*translate))
+        UsdPhysics.RigidBodyAPI.Apply(body.GetPrim())
+        if mass is not None:
+            UsdPhysics.MassAPI.Apply(body.GetPrim()).CreateMassAttr(mass)
+        geom = UsdGeom.Cube.Define(stage, path + "/geom")
+        geom.GetSizeAttr().Set(1.0)
+        UsdGeom.Xformable(geom.GetPrim()).AddScaleOp().Set(Gf.Vec3f(*dims))
+        geom.GetDisplayColorAttr().Set([color])
+        if collide:
+            UsdPhysics.CollisionAPI.Apply(geom.GetPrim())
+        return body
+
+    # static base/frame the keys hinge to. Coloured dark wood (was uncoloured ->
+    # rendered default grey, the "grey slab"); sits just behind & below the keys.
+    base_z = -0.03
+    _box_body("/Piano/base",
+              translate=(-WHITE_L / 2 - 0.02, span_y / 2, base_z),
+              dims=(0.08, span_y + 0.05, 0.05),
+              color=(0.12, 0.09, 0.07))
     # Fix the base to the world with a fixed joint -> fixed-base articulation.
     # (A kinematic body can't live inside a PhysX articulation, so we pin it.)
     world_fix = UsdPhysics.FixedJoint.Define(stage, "/Piano/base_to_world")
@@ -102,32 +127,35 @@ def main():
 
     for i, black, y, z_top in layout:
         w, l, h = (BLACK_W, BLACK_L, BLACK_H) if black else (WHITE_W, WHITE_L, WHITE_H)
-        # key body
         kpath = f"/Piano/key_{i}"
-        key = UsdGeom.Cube.Define(stage, kpath)
-        key.GetSizeAttr().Set(1.0)
-        kx = UsdGeom.Xformable(key.GetPrim())
-        # front of key at x=0, extends back to +l; hinge at back (x=+l)
-        cx = (l / 2.0) - WHITE_L / 2.0
+        # Align every key at its BACK edge (the common hinge line at x=+WHITE_L/2).
+        # White keys then run full-length to the front; the short black keys sit
+        # toward the BACK and their fronts are recessed -- a real piano. (The old
+        # cx = l/2 - WHITE_L/2 aligned the FRONT edges, which flipped the black
+        # keys to the player side and split the white/black hinge lines.)
+        cx = (WHITE_L / 2.0) - (l / 2.0)
         cz = z_top - h / 2.0
-        kx.AddTranslateOp().Set(Gf.Vec3d(cx, y, cz))
-        kx.AddScaleOp().Set(Gf.Vec3f(l, w, h))
-        UsdPhysics.CollisionAPI.Apply(key.GetPrim())
-        UsdPhysics.RigidBodyAPI.Apply(key.GetPrim())
-        UsdPhysics.MassAPI.Apply(key.GetPrim()).CreateMassAttr(0.04 if not black else 0.02)
-        # colour
-        key.GetDisplayColorAttr().Set([(0.05, 0.05, 0.05) if black else (0.96, 0.96, 0.94)])
+        color = (0.05, 0.05, 0.05) if black else (0.96, 0.96, 0.94)
+        _box_body(kpath, translate=(cx, y, cz), dims=(l, w, h), color=color,
+                  mass=(0.02 if black else 0.04))
 
-        # revolute joint: base -> key, axis Y, located at the back edge
+        # revolute joint: base -> key, axis Y, at the key's BACK edge. Both bodies
+        # are unscaled, so localPos is in METERS and both anchors resolve to the
+        # SAME world hinge point -> joint satisfied at the authored pose, no snap.
+        hinge_world = (cx + l / 2.0, y, cz)          # back edge, key centre height
         jpath = f"/Piano/joint_{i}"
         joint = UsdPhysics.RevoluteJoint.Define(stage, jpath)
         joint.CreateBody0Rel().SetTargets([Sdf.Path("/Piano/base")])
         joint.CreateBody1Rel().SetTargets([Sdf.Path(kpath)])
         joint.CreateAxisAttr("Y")
-        # anchor at back of the key (local frames)
-        back_x = (WHITE_L / 2.0)  # world-ish back position relative to key center handled by local pose
+        # key frame: hinge is +l/2 along x from the key centre.
         joint.CreateLocalPos1Attr().Set(Gf.Vec3f(l / 2.0, 0.0, 0.0))
-        joint.CreateLocalPos0Attr().Set(Gf.Vec3f(back_x + 0.02 - WHITE_L / 2.0, y - span_y / 2.0, 0.03 + cz))
+        # base frame: the SAME world hinge expressed from the (unscaled) base origin.
+        joint.CreateLocalPos0Attr().Set(Gf.Vec3f(
+            hinge_world[0] - (-WHITE_L / 2 - 0.02),
+            hinge_world[1] - (span_y / 2.0),
+            hinge_world[2] - base_z,
+        ))
         joint.CreateLowerLimitAttr(-KEY_MAX_TRAVEL_DEG)  # deg; stops at ~1cm travel
         joint.CreateUpperLimitAttr(0.5)
         # return-spring drive (angular)

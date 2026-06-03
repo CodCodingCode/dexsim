@@ -2,9 +2,19 @@
 
 RoboPianist needs human fingering labels (the PIG dataset) and shows that
 *without* a fingering signal the policy never learns (F1 = 0). PianoMime gets the
-same signal from human video. We have neither, so we synthesize a fingering with
-a simple, robust heuristic — which is exactly the structure-injection that makes
-the high-DoF search tractable.
+same signal from human video. We have neither, so we synthesize the fingering —
+which is exactly the structure-injection that makes the high-DoF search tractable.
+
+Two synthesizers, selected by ``plan_fingering(..., method=...)``:
+
+  * ``"heuristic"`` (default) — the hand-rolled rule below; cheap and stable.
+  * ``"ot"`` — **optimal transport**, the RP1M trick: at each step assign the
+    active keys to fingers by *minimum total movement cost* (a linear-sum /
+    Jonker-Volgenant assignment over the distance from each finger's current
+    position to each candidate key, plus hand-side and black-key penalties).
+    This drops the dependence on human fingering labels entirely — fingering is
+    discovered purely from geometry, exactly as RP1M does for ~2k songs. See
+    :func:`plan_fingering_ot`.
 
 Heuristic (good enough to bootstrap; not claimed optimal):
   * Split the active notes at a pitch boundary: lower notes -> left hand, upper
@@ -29,6 +39,12 @@ import numpy as np
 
 from .midi import NUM_KEYS
 from . import geometry as geom
+
+# Optimal-transport (RP1M-style) assignment uses a min-cost matching solver.
+try:  # SciPy is in the venv; guard so the heuristic path works without it.
+    from scipy.optimize import linear_sum_assignment as _lsa
+except Exception:  # pragma: no cover
+    _lsa = None
 
 NUM_FINGERS = 10
 FINGERS_PER_HAND = 5
@@ -98,12 +114,20 @@ def _assign_hand(keys_sorted: list[int], order: list[int],
             finger_active[t, finger] = True
 
 
-def plan_fingering(key_activation: np.ndarray) -> FingeringPlan:
+def plan_fingering(key_activation: np.ndarray, method: str = "heuristic",
+                   **ot_kwargs) -> FingeringPlan:
     """Assign fingers for every control step.
 
     Args:
         key_activation (T, 88) bool -- which keys should sound each step.
+        method: ``"heuristic"`` (default, the rule below) or ``"ot"`` (RP1M-style
+            optimal-transport assignment, see :func:`plan_fingering_ot`).
+        **ot_kwargs: forwarded to :func:`plan_fingering_ot` when ``method="ot"``.
     """
+    if method == "ot":
+        return plan_fingering_ot(key_activation, **ot_kwargs)
+    if method != "heuristic":
+        raise ValueError(f"unknown fingering method: {method!r}")
     T = key_activation.shape[0]
     finger_key = np.full((T, NUM_FINGERS), -1, dtype=np.int64)
     finger_active = np.zeros((T, NUM_FINGERS), dtype=bool)
@@ -132,14 +156,15 @@ def plan_fingering(key_activation: np.ndarray) -> FingeringPlan:
 
 
 def _balanced_split(active: np.ndarray) -> int:
-    """Pick a pitch boundary (key index) splitting notes into left/right hands.
-    Default: the keyboard midpoint; if all notes sit on one side, split at their
-    own median so a lone melody still uses the nearer hand."""
-    mid = NUM_KEYS // 2
-    if active.max() < mid or active.min() >= mid:
-        # all notes on one side of center -> split at their median
-        return int(np.median(active)) + 1
-    return mid
+    """Pitch boundary (key index) splitting notes into left/right hands.
+
+    ALWAYS the keyboard middle (~spatial center Y=0). The old code split a
+    one-sided cluster at its OWN median, which handed half of a left-side cluster
+    to the RIGHT hand -> a cross-body reach the right arm physically can't make
+    (110mm+ fingertip error). Splitting strictly at the middle keeps each hand in
+    its own reachable half: a left-clustered passage now goes entirely to the
+    left hand (all keys < mid), and vice-versa."""
+    return NUM_KEYS // 2
 
 
 def _rebalance(left: list[int], right: list[int]) -> tuple[list[int], list[int]]:
@@ -168,3 +193,113 @@ def finger_targets_local(plan: FingeringPlan) -> np.ndarray:
         # press depth for active, hover for idle
         out[:, f, 2] += np.where(active, -geom.PRESS_DEPTH, geom.HOVER_CLEARANCE)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Optimal-transport fingering (the RP1M trick — no human labels needed)
+# ---------------------------------------------------------------------------
+
+# Per-hand finger order matching FINGERTIP_BODIES / the global finger indices:
+#   left  = [0..4]  = [thumb, index, middle, ring, little]
+#   right = [5..9]  = [thumb, index, middle, ring, little]
+_LEFT_FINGERS = (L_THUMB, L_INDEX, L_MIDDLE, L_RING, L_LITTLE)
+_RIGHT_FINGERS = (R_THUMB, R_INDEX, R_MIDDLE, R_RING, R_LITTLE)
+_THUMBS = (L_THUMB, R_THUMB)
+
+
+def plan_fingering_ot(
+    key_activation: np.ndarray,
+    *,
+    side_weight: float = 2.5,
+    black_thumb_weight: float = 0.03,
+    home_pull_weight: float = 0.15,
+    smooth: bool = True,
+) -> FingeringPlan:
+    """RP1M-style optimal-transport fingering.
+
+    At each control step the active keys are assigned to fingers by **minimum
+    total movement cost** — a linear-sum (Jonker-Volgenant) assignment, exactly
+    the matching RP1M solves online to auto-finger ~2k pieces without any human
+    labels. The cost from finger ``f`` to key ``k`` is
+
+        ||current_pos[f] - key_pos[k]||                       (move it the least)
+      + side_weight * (how far k is into the *wrong* keyboard half for f)
+      + black_thumb_weight * [k is a black key and f is a thumb]
+
+    Idle fingers are pulled gently back toward their spread "home" so they stay
+    ready (``home_pull_weight``). ``current_pos`` carries across steps (when
+    ``smooth=True``) so fingers prefer to stay put — giving temporally coherent,
+    low-motion fingerings, just like the online RP1M solver.
+
+    Returns the same :class:`FingeringPlan` as the heuristic planner, so it is a
+    drop-in replacement for the IK reference / reward-shaping signal.
+    """
+    if _lsa is None:  # pragma: no cover
+        raise RuntimeError("plan_fingering_ot needs scipy (scipy.optimize). "
+                           "Install scipy or use method='heuristic'.")
+    T = key_activation.shape[0]
+    key_pos = geom.key_local_top_positions()                  # (88, 3)
+    mid_y = float(key_pos[NUM_KEYS // 2, 1])                   # keyboard centre (local Y)
+    home = _home_keys()                                        # (10,) home key idx
+    home_pos = key_pos[home]                                   # (10, 3)
+    is_black = geom.KEY_IS_BLACK                               # (88,)
+
+    finger_key = np.full((T, NUM_FINGERS), -1, dtype=np.int64)
+    finger_active = np.zeros((T, NUM_FINGERS), dtype=bool)
+    cur = home_pos.copy()                                      # (10, 3) live finger pos
+    n_dropped = 0
+
+    for t in range(T):
+        active = np.nonzero(key_activation[t])[0]
+        if active.size == 0:
+            if smooth:                                        # drift idle hands home
+                cur += home_pull_weight * (home_pos - cur)
+            continue
+
+        kp = key_pos[active]                                  # (K, 3)
+        K = active.size
+        # base move cost: every finger -> every active key
+        cost = np.linalg.norm(cur[:, None, :] - kp[None, :, :], axis=2)  # (10, K)
+        # hand-side penalty: left fingers pay for keys above mid, right below.
+        dy = kp[:, 1] - mid_y                                 # (K,) +ve = right half
+        left_pen = np.maximum(dy, 0.0)[None, :]               # left fingers cross up
+        right_pen = np.maximum(-dy, 0.0)[None, :]             # right fingers cross down
+        side = np.zeros((NUM_FINGERS, K), dtype=np.float64)
+        side[list(_LEFT_FINGERS), :] = left_pen
+        side[list(_RIGHT_FINGERS), :] = right_pen
+        cost = cost + side_weight * side
+        # black-key-on-thumb penalty (thumbs are short / awkward on black keys)
+        black = is_black[active][None, :].astype(np.float64)  # (1, K)
+        cost[list(_THUMBS), :] += black_thumb_weight * black[0]
+
+        if K <= NUM_FINGERS:
+            # pad with idle columns so all 10 fingers get a column; idle cost is a
+            # gentle pull home, so unneeded fingers return to a ready spread.
+            n_idle = NUM_FINGERS - K
+            idle = home_pull_weight * np.linalg.norm(cur - home_pos, axis=1)  # (10,)
+            pad = np.repeat(idle[:, None], n_idle, axis=1)    # (10, n_idle)
+            full = np.concatenate([cost, pad], axis=1)        # (10, 10)
+            rows, cols = _lsa(full)
+            for f, c in zip(rows, cols):
+                if c < K:                                     # assigned a real key
+                    k = int(active[c])
+                    finger_key[t, f] = k
+                    finger_active[t, f] = True
+                    cur[f] = key_pos[k]
+                elif smooth:                                  # idle -> drift home
+                    cur[f] += home_pull_weight * (home_pos[f] - cur[f])
+        else:
+            # more simultaneous notes than fingers: cover the cheapest 10, drop rest.
+            rows, cols = _lsa(cost)                            # 10 finger<->key pairs
+            for f, c in zip(rows, cols):
+                k = int(active[c])
+                finger_key[t, f] = k
+                finger_active[t, f] = True
+                cur[f] = key_pos[k]
+            n_dropped += K - NUM_FINGERS
+
+    if n_dropped:
+        print(f"[fingering:ot] {n_dropped} note-instances exceeded 10 fingers "
+              f"and were dropped (>10-key polyphony).")
+    return FingeringPlan(finger_key=finger_key, finger_active=finger_active,
+                         home_key=home)

@@ -35,8 +35,14 @@ BLACK_RAISE = 0.009           # black key top sits this much above white tops
 
 # A finger "rests" this far above a key's top before pressing; the press goal
 # dips below the surface so the spring is compressed past the sounding angle.
-HOVER_CLEARANCE = 0.010       # m above the key top for the "ready" pose
-PRESS_DEPTH = 0.012           # m below the key top for the "pressed" pose
+HOVER_CLEARANCE = 0.030       # m above the key top for idle fingers. Was 0.010:
+#   1cm didn't lift idle fingers clear, so they sounded ~5 wrong keys every step
+#   (reference precision capped at 0.077). 3cm lifts them off the keys.
+PRESS_DEPTH = 0.008           # m below key top for the "pressed" pose. LIGHT press:
+#   15mm drove the flat hand deep into the keyboard -> each finger struck ~2 neighbor
+#   keys (~22 ring, precision capped 0.03). 8mm still crosses the (light, velocity-
+#   gated) sound threshold for the target but barely touches neighbors. (0.040 was
+#   way too deep -> unreachable target.)
 
 
 @dataclass(frozen=True)

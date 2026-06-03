@@ -56,18 +56,51 @@ class PianoEnv(DirectRLEnv):
         self.left_default = self.left_robot.data.default_joint_pos.clone()
         self.right_default = self.right_robot.data.default_joint_pos.clone()
 
-        # The policy only drives the HAND (finger) joints; the arm rigidly holds
-        # its ready pose. Driving the arm with the residual blew it up (NaN obs ->
-        # NaN policy -> "std>=0" crash) and is wrong for piano anyway (the arm
-        # positions the hand, the fingers play). Mask: 1.0 on robot0_* joints.
-        hand_mask = torch.tensor(
+        # Per-joint residual scale. The arm joints are stiff (stiffness 6000): a
+        # large residual jerks them -> solver explodes -> NaN body poses. The hand
+        # joints are weak (stiffness 3) and need a LARGE range to actually travel
+        # between keys and press them. A single global scale can't serve both --
+        # 0.5 blew up the arm; 0.15 was too small for the fingers to play (F1 stuck
+        # ~0.02, fingers just resting on the reference keys). So scale arm joints
+        # gently and hand joints generously.
+        is_hand = torch.tensor(
             [1.0 if "robot0_" in n else 0.0 for n in self.left_robot.data.joint_names],
             device=self.device,
         )
-        self.hand_mask = hand_mask.unsqueeze(0)        # (1, 30)
+        self.joint_scale = (
+            self.cfg.arm_action_scale * (1.0 - is_hand)
+            + self.cfg.hand_action_scale * is_hand
+        ).unsqueeze(0)                                  # (1, 30) broadcast over envs
+        # curriculum phase 1: freeze the hand DoF (zero their residual) so the policy
+        # drives ONLY the 12 arm DoF -> learns to position the hands before pressing.
+        if getattr(self.cfg, "freeze_hands", False):
+            self.joint_scale = self.joint_scale * (1.0 - is_hand).unsqueeze(0)
+            print("[PianoEnv] curriculum phase 1: HANDS FROZEN, arms-only training")
+        # FIXED-HANDS mode: freeze the 12 arm DoF so the arms hold a constant pose
+        # hovering over the keyboard; the policy drives ONLY the 48 finger DoF to
+        # press the keys (RoboPianist-style). Notes are folded into each hand's
+        # reachable window so the fingers have notes to hit.
+        if getattr(self.cfg, "freeze_arms", False):
+            self.joint_scale = self.joint_scale * is_hand.unsqueeze(0)
+            print("[PianoEnv] FIXED ARMS: hands held over keyboard, fingers-only training")
 
         # --- song -> goal / onset tensors ---
         song = load_song(self.cfg.midi_path, control_dt=self.cfg.control_dt)
+        # Fold a wide-range song into the two reachable hand windows so the IK
+        # reference is physically playable (else far keys are unreachable and the
+        # zero-residual F1 collapses to ~0.05). Remap key_activation + onsets
+        # up front so the goal AND the fingering plan below stay consistent.
+        if self.cfg.fold_to_reach:
+            from dexsim.piano.midi import fold_into_reach
+            act, ons = fold_into_reach(
+                song.key_activation, song.onsets,
+                left_window=tuple(self.cfg.left_key_window),
+                right_window=tuple(self.cfg.right_key_window),
+            )
+            song.key_activation, song.onsets = act, ons
+            n_keys = int(act.any(axis=0).sum())
+            print(f"[PianoEnv] folded song into reach: {n_keys} distinct keys, "
+                  f"windows L={tuple(self.cfg.left_key_window)} R={tuple(self.cfg.right_key_window)}")
         self.song_len = song.num_steps
         L = self.cfg.goal_lookahead
         goal = torch.as_tensor(song.key_activation, dtype=torch.float32, device=self.device)
@@ -76,6 +109,9 @@ class PianoEnv(DirectRLEnv):
         self.goal_padded = torch.cat([goal, pad], dim=0)            # (T+L, 88)
         self.onset_padded = torch.cat([onset, pad], dim=0)          # (T+L, 88)
         self.song_step = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        # velocity-gated sounding latch (see _key_pressed_fraction): which keys are
+        # currently ringing (struck and not yet released).
+        self.key_sounding = torch.zeros((self.num_envs, NUM_KEYS), dtype=torch.bool, device=self.device)
 
         # --- fingering plan -> per-step finger->key + active mask ---
         plan = plan_fingering(song.key_activation)
@@ -121,6 +157,16 @@ class PianoEnv(DirectRLEnv):
             arm_close_enough=self.cfg.arm_close_enough,
             arm_margin_mult=self.cfg.arm_margin_mult,
         )
+        # SPLIT REWARD by curriculum phase. Phase 1 (freeze_hands) is the ARM's job:
+        # pure positioning (fingering + arm-position), with NO pressing terms -- the
+        # frozen fingers would otherwise trigger false-press penalties and punish the
+        # arm for exploring. Phase 2 (hands in) keeps the full pressing reward.
+        if getattr(self.cfg, "freeze_hands", False):
+            self.reward_cfg.key_press_weight = 0.0
+            self.reward_cfg.onset_weight = 0.0
+            self.reward_cfg.false_press_weight = 0.0
+            print("[PianoEnv] phase-1 reward: positioning only "
+                  "(fingering+arm; pressing terms OFF)")
         print(f"[PianoEnv] song '{song.name}': {self.song_len} steps "
               f"({song.duration_s:.1f}s @ {1/self.cfg.control_dt:.0f}Hz); "
               f"reference={'loaded' if self._has_reference else 'FALLBACK(ready pose)'}")
@@ -173,10 +219,10 @@ class PianoEnv(DirectRLEnv):
         a_left = self.actions[:, : self.per_arm_dof]
         a_right = self.actions[:, self.per_arm_dof :]
         ref = self.q_ref[self.song_step]                            # (E, 2, 30)
-        # full residual on all joints (the arm repositions the hand per note ->
-        # this is what reached F1=0.29). Targets are clamped to joint limits and
-        # obs are NaN-guarded, so a transient blow-up can't crash PPO.
-        scale = self.cfg.action_scale
+        # residual on all joints, but per-joint scaled (gentle arm / generous hand;
+        # see self.joint_scale). Targets are clamped to joint limits and obs are
+        # NaN-guarded, so a transient blow-up can't crash PPO.
+        scale = self.joint_scale
         lo = self.left_robot.data.soft_joint_pos_limits[..., 0]
         hi = self.left_robot.data.soft_joint_pos_limits[..., 1]
         # mute_right_hand: for left-hand-only songs, hold the right arm at its
@@ -194,21 +240,38 @@ class PianoEnv(DirectRLEnv):
     # --------------------------------------------------------- world helpers
     def _key_pressed_fraction(self) -> torch.Tensor:
         key_angle = self.piano.data.joint_pos            # negative when pressed
-        return (key_angle / KEY_SOUND_ANGLE).clamp(0.0, 2.0)
+        frac = (key_angle / KEY_SOUND_ANGLE).clamp(0.0, 2.0)
+        # a physics blow-up can NaN the key joints; keep it finite so the key/onset
+        # reward terms (and their logged means) don't get poisoned to NaN.
+        frac = torch.nan_to_num(frac, nan=0.0, posinf=2.0, neginf=0.0)
+        # VELOCITY-GATED sounding (real piano hammer). A key only STARTS sounding
+        # when STRUCK -- depressed past threshold AND its joint moving DOWN faster
+        # than key_strike_vel -- and keeps sounding while held, until it returns up.
+        # A hand/forearm resting statically on keys depresses them with ~0 velocity,
+        # so it never triggers a strike -> no false ring (was 52 keys sounding).
+        # NOTE: called exactly once per step (in _get_rewards), so latching here is
+        # safe. Called once per step from _get_rewards, so the latch advances once.
+        vel = torch.nan_to_num(self.piano.data.joint_vel, nan=0.0)   # <0 = pressing down
+        struck = (frac >= 0.5) & (vel < -self.cfg.key_strike_vel)
+        released = frac < 0.25
+        self.key_sounding = (self.key_sounding | struck) & ~released
+        return torch.where(self.key_sounding, frac, torch.zeros_like(frac))
 
     def _key_top_world(self) -> torch.Tensor:
         """(E, 88, 3) world position of each key's top surface."""
         centers = self.piano.data.body_pos_w[:, self.key_body_ids, :]   # (E,88,3)
         top = centers.clone()
         top[..., 2] += self.key_half_h                                  # + half thickness
-        return top
+        return torch.nan_to_num(top, nan=0.0, posinf=10.0, neginf=-10.0)
 
     def _fingertips_world(self) -> torch.Tensor:
         """(E, 10, 3) fingertip world positions in global finger order
         [L_th,L_ff,L_mf,L_rf,L_lf, R_th,R_ff,R_mf,R_rf,R_lf]."""
         l = self.left_robot.data.body_pos_w[:, self.ltip_ids, :]        # (E,5,3)
         r = self.right_robot.data.body_pos_w[:, self.rtip_ids, :]
-        return torch.cat([l, r], dim=1)                                 # (E,10,3)
+        tips = torch.cat([l, r], dim=1)                                 # (E,10,3)
+        # finite-guard: a blown-up env must not NaN-poison the fingering reward.
+        return torch.nan_to_num(tips, nan=0.0, posinf=10.0, neginf=-10.0)
 
     def _finger_targets_world(self, key_top: torch.Tensor):
         """Return (target_surface, target_press, active) for the current step.
@@ -230,7 +293,9 @@ class PianoEnv(DirectRLEnv):
         """(E, 2, 3) world position of each hand base [left, right]."""
         l = self.left_robot.data.body_pos_w[:, self.lpalm_id, :]        # (E,1,3)
         r = self.right_robot.data.body_pos_w[:, self.rpalm_id, :]
-        return torch.cat([l, r], dim=1)                                 # (E,2,3)
+        palms = torch.cat([l, r], dim=1)                                # (E,2,3)
+        # finite-guard: a blown-up env must not NaN-poison the arm reward.
+        return torch.nan_to_num(palms, nan=0.0, posinf=10.0, neginf=-10.0)
 
     def _hand_note_centroids(self):
         """Per-hand gross-positioning target for the arm reward.
@@ -331,6 +396,14 @@ class PianoEnv(DirectRLEnv):
             f1 = 2 * rec * prec / (rec + prec + 1e-9)
         else:
             rec = prec = f1 = torch.zeros((), device=self.device)
+        # Per-component finite guard. The world-pos/key accessors are already
+        # nan-guarded at source, but guard each term here too so (a) one blown-up
+        # env can never NaN-poison the *summed* reward (which nan_to_num would then
+        # zero wholesale, silently deleting the key/onset signal the env earned),
+        # and (b) the logged means below are a single bad env away from reading nan.
+        g = lambda x: torch.nan_to_num(x, nan=0.0, posinf=10.0, neginf=-10.0)
+        r_key, r_finger, r_onset, r_arm = g(r_key), g(r_finger), g(r_onset), g(r_arm)
+
         if not hasattr(self, "extras") or self.extras is None:
             self.extras = {}
         self.extras["log"] = {
@@ -343,7 +416,10 @@ class PianoEnv(DirectRLEnv):
             "reward/onset": float(r_onset.mean()),
             "reward/arm": float(r_arm.mean()),
         }
-        return r_key + r_finger + r_onset + r_arm
+        # final band-clamp: a transient blow-up that slips past the per-term guards
+        # still can't push a NaN/inf advantage -> NaN log_std -> PPO crash.
+        reward = r_key + r_finger + r_onset + r_arm
+        return torch.nan_to_num(reward, nan=0.0, posinf=10.0, neginf=-10.0).clamp(-10.0, 10.0)
 
     # ----------------------------------------------------------------- dones
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -372,3 +448,4 @@ class PianoEnv(DirectRLEnv):
         self.piano.write_joint_state_to_sim(kp, kv, env_ids=env_ids)
 
         self.song_step[env_ids] = 0
+        self.key_sounding[env_ids] = False

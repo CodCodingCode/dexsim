@@ -26,7 +26,11 @@ PIANO_USD_PATH = str(ASSETS_DIR / "piano88.usd")
 #   stiff, and the old -0.10 threshold was BEYOND the physical max travel, so a
 #   key could literally never sound). This was the root cause of F1=0.
 KEY_MAX_TRAVEL_ANGLE = 0.0666           # rad; key hinge stops here (physical max)
-KEY_SOUND_ANGLE = -0.033                # ~50% of max travel -> registers a note
+KEY_SOUND_ANGLE = -0.012                # ~18% travel -> sensitive (good recall).
+#   Precision is handled by VELOCITY-gated sounding (see PianoEnv._key_pressed_
+#   fraction + key_strike_vel): a resting hand depresses keys statically (~0 vel)
+#   so they don't ring, even at this light depth. -0.033 was too stiff (9% sound);
+#   a light threshold + the velocity gate gives both recall AND precision.
 KEY_SPRING_STIFFNESS = 2.0
 KEY_SPRING_DAMPING = 0.05
 

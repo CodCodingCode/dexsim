@@ -14,14 +14,15 @@ from isaaclab_rl.rsl_rl import (
 class PianoPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 32
     max_iterations = 5000
-    save_interval = 100
+    save_interval = 50
     experiment_name = "piano_bimanual"
     empirical_normalization = True
     # --- logging: Weights & Biases (key in ~/.netrc via `wandb login`) ---
     logger = "wandb"
     wandb_project = "dexsim-piano"
     policy = RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
+        init_noise_std=0.5,   # was 1.0 -> 60-DoF residual flailed, slamming the
+        #                       arms (NaN physics -> NaN reward -> std>=0 crash)
         actor_hidden_dims=[512, 256, 128],
         critic_hidden_dims=[512, 256, 128],
         activation="elu",

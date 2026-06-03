@@ -72,6 +72,8 @@ def main():
         # Kinematic IK: teleport joints to each DLS solution and refresh FK, so
         # the fingertips actually converge onto the keys (no PD lag). The
         # recorded pose is what residual RL then tracks with the PD controller.
+        # (Notes are folded into each hand's reachable window upstream, so the
+        # standard all-5 DLS solve converges tightly here.)
         for _ in range(args.ik_substeps):
             q_l = ik_left.solve(left_tgt)
             q_r = ik_right.solve(right_tgt)
@@ -95,8 +97,15 @@ def main():
 
     out = Path(args.out) if args.out else DATA_DIR / "reference" / (Path(cfg.midi_path).stem + ".npz")
     out.parent.mkdir(parents=True, exist_ok=True)
+    # Save the articulation joint-name order so references are self-describing
+    # (the RP1M warm-start needs it to know which q_ref column is which joint).
+    joint_names = list(env.left_robot.data.joint_names)
     np.savez_compressed(out, q_ref=q_ref, tip_err=tip_err,
-                        midi=str(cfg.midi_path), control_dt=cfg.control_dt)
+                        midi=str(cfg.midi_path), control_dt=cfg.control_dt,
+                        joint_names=np.array(joint_names))
+    # cache the joint-name order for offline tooling (RP1M merge runs sim-free)
+    import json
+    (DATA_DIR / "reference" / "joint_names.json").write_text(json.dumps(joint_names, indent=0))
     print(f"[build_reference] wrote {out}  q_ref{q_ref.shape}  "
           f"final-half mean tip err {tip_err[T//2:].mean()*1000:.1f}mm")
     env.close()
