@@ -5,6 +5,32 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
+## 2026-06-03 — tick 2
+- **Question (backlog):** press_threshold vs the piano's true sound-trigger depth
+  (the TODO left in tick 1).
+- **Finding (important):** `PianoEnv._key_pressed_fraction()` is NOT a raw depth —
+  it already applies the simulator's **velocity-gated sounding latch** (key starts
+  sounding only when struck past `KEY_SOUND_ANGLE=-0.012` rad while moving down
+  faster than `key_strike_vel`, stays until `frac<0.25`) and returns **0 for any
+  key not sounding**. So the sim's own ground-truth "this key sounds" == returned
+  fraction > 0. Thresholding the eval at 0.5 re-applied the gate a second time and
+  dropped softly-held sustained notes riding in [0.25, 0.5) → recall deflated.
+- **Change:** `eval_reference.py` scores `sounding = pressed > SOUND_EPS(1e-6)` for
+  both micro and macro (passed threshold into `press_accuracy` too). Compiles;
+  commit `3034758`.
+- **Hypothesis:** zero-residual reference recall will read **higher** than before on
+  any song with held notes (we stop discarding sustains); precision ~unchanged since
+  the gate already suppresses static resting contact. Net F1 should be a more honest,
+  likely higher reference number.
+- **Evaluate:** needs a sim run — `scripts/eval_reference.py --zero --headless`.
+  Still queued as a background Isaac tick; the two metric fixes (tick 1+2) mean that
+  run will finally produce a trustworthy reference F1 to gate warm-start on.
+- **Backlog update:** closed press_threshold item. Next tick → either launch the
+  background pure-reference Isaac eval, or the reward-balance ablation (does sounding
+  the note out-reward mere hovering?).
+
+---
+
 ## 2026-06-03 — tick 1
 - **Question (backlog):** micro- vs macro-averaged F1 in `eval_reference.py`.
 - **Finding:** the old script averaged per-step recall/precision only over steps
