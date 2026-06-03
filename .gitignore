@@ -10,6 +10,8 @@ data/bodex/
 data/dexgraspnet/
 data/midi/*.mid
 data/reference/
+# local reference checkout of RoboPianist (not a submodule):
+#   git clone https://github.com/google-research/robopianist data/robopianist_ref
 data/robopianist_ref/
 !data/**/.gitkeep
 
@@ -28,8 +30,9 @@ __pycache__/
 # hydra run outputs
 outputs/
 
-# trained checkpoints (regenerable)
+# trained checkpoints + rendered demo audio (regenerable; .mid is kept as canonical)
 results/*.pt
+results/*.wav
 
 # large datasets / run artifacts (regenerable)
 data/rp1m/
