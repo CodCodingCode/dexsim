@@ -21,6 +21,8 @@ parser.add_argument("--midi", default=None)
 parser.add_argument("--num_envs", type=int, default=16)
 parser.add_argument("--zero", action="store_true", help="apply zero residual (pure reference)")
 parser.add_argument("--checkpoint", default=None, help="rsl_rl policy checkpoint to roll out")
+parser.add_argument("--out", default=None, help="write metrics as JSON to this path "
+                    "(so a backgrounded eval leaves a machine-readable result)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
@@ -113,6 +115,17 @@ def main():
     print(f"[eval] macro  recall={rec:.3f}  precision={prec:.3f}  F1={f1:.3f}  "
           f"mean_reward/step={rew_sum / T:.3f}")
     print("=" * 60)
+    if args.out:
+        import json
+        with open(args.out, "w") as f:
+            json.dump({
+                "mode": mode, "song": str(cfg.midi_path), "num_envs": env.num_envs,
+                "steps": T,
+                "micro": {"recall": mrec, "precision": mprec, "f1": mf1},
+                "macro": {"recall": rec, "precision": prec, "f1": f1},
+                "mean_reward_per_step": rew_sum / T,
+            }, f, indent=2)
+        print(f"[eval] wrote metrics -> {args.out}")
     env.close()
 
 
