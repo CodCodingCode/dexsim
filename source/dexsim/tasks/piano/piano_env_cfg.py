@@ -167,7 +167,7 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # (the policy never touches the stiff arm joints). Set with freeze_arms=False and
     # use_reference=False. Supersedes freeze_arms (static hold) when both are set.
     arm_ik_follow: bool = False
-    arm_ik_hover: float = 0.09   # m the servoed palm hovers above the key tops. Raised
+    arm_ik_hover: float = 0.11   # m the servoed palm hovers above the key tops. Raised
     #   0.05->0.09: at 0.05 the whole hand (palm+relaxed fingers) sat ON the keyboard and
     #   mashed ~15 keys/step (precision pinned ~0.05, F1 flat). Lifting the palm makes idle
     #   fingers CLEAR the keys so pressing becomes a deliberate finger extension the policy
@@ -216,10 +216,12 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # velocity-gated ("hammer") sounding: a key rings only if struck with downward
     # joint velocity past this (rad/s); a statically-resting hand/forearm (~0 vel)
     # rings nothing -> fixes the 52-key precision collapse. See _key_pressed_fraction.
-    key_strike_vel: float = 0.15   # was 0.10: nudged up so a finger merely brushing/passing
-    #   over a key doesn't ring it -- only a deliberate downward strike counts. Cuts the
-    #   accidental false-ring count that inflated keys_sounding to ~23. Kept moderate (not
-    #   0.20) so a BC-placed finger can still ring with a small deliberate press.
+    key_strike_vel: float = 0.35   # 0.15->0.35: under ARM-IK-FOLLOW the arm servo drives
+    #   the WHOLE hand down onto its ~12-key footprint, ringing all of them with the servo's
+    #   downward velocity (keys_sounding pinned ~12-15 on a 3-key song -> precision ~0.05).
+    #   Requiring a fast deliberate strike decouples "sounding" from the slow servo descent,
+    #   so only a finger the policy actively jabs rings. If recall craters (policy can't
+    #   strike fast enough with the weak hand), drop toward 0.25.
 
     # Piano "ready" pose: from the raised (z=1.05) bases each hand drapes DOWN so
     # the fingertips rest ~2 cm above the white keys (key top z=0.722), centered
