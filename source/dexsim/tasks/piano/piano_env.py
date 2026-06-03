@@ -71,6 +71,9 @@ class PianoEnv(DirectRLEnv):
             self.cfg.arm_action_scale * (1.0 - is_hand)
             + self.cfg.hand_action_scale * is_hand
         ).unsqueeze(0)                                  # (1, 30) broadcast over envs
+        # arm DoF (the non-"robot0_" joints): used by the arm-health diagnostics
+        # (_arm_limit_margin) to score only the 6-per-arm UR10e joints, not fingers.
+        self.arm_joint_mask = (is_hand < 0.5)           # (30,) bool, True for arm joints
         # curriculum phase 1: freeze the hand DoF (zero their residual) so the policy
         # drives ONLY the 12 arm DoF -> learns to position the hands before pressing.
         if getattr(self.cfg, "freeze_hands", False):
@@ -121,6 +124,16 @@ class PianoEnv(DirectRLEnv):
         # velocity-gated sounding latch (see _key_pressed_fraction): which keys are
         # currently ringing (struck and not yet released).
         self.key_sounding = torch.zeros((self.num_envs, NUM_KEYS), dtype=torch.bool, device=self.device)
+        # rising edge of key_sounding -> keys that STARTED sounding this step ("played
+        # onsets"), set in _key_pressed_fraction. Used by the onset-F1 diagnostic.
+        self._just_struck = torch.zeros_like(self.key_sounding)
+        # static left/right key split for per-hand F1: every key assigned to the hand
+        # whose reachable window it falls nearer to (split at the midpoint between the
+        # two windows). Covers all 88 keys, disjoint, so per-hand F1 never drops notes.
+        _split = (self.cfg.left_key_window[1] + self.cfg.right_key_window[0]) / 2.0
+        _kidx = torch.arange(NUM_KEYS, device=self.device)
+        self.left_key_mask = (_kidx <= _split).float()    # (88,) 1.0 for left-hand keys
+        self.right_key_mask = (_kidx > _split).float()     # (88,) 1.0 for right-hand keys
 
         # --- fingering plan -> per-step finger->key + active mask ---
         plan = plan_fingering(song.key_activation)
@@ -152,6 +165,11 @@ class PianoEnv(DirectRLEnv):
 
         # action buffer / targets
         self.actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
+        # previous-step action + its frame-to-frame change, for the action-jerk
+        # diagnostic (policy smoothness: a twitchy policy slams the arm around even
+        # while F1 looks fine). Updated each _pre_physics_step.
+        self.prev_actions = torch.zeros_like(self.actions)
+        self._action_jerk = torch.zeros(self.num_envs, device=self.device)
         self._left_target = self.left_default.clone()
         self._right_target = self.right_default.clone()
 
@@ -231,6 +249,10 @@ class PianoEnv(DirectRLEnv):
     # ------------------------------------------------------------------ step
     def _pre_physics_step(self, actions: torch.Tensor):
         self.actions = torch.nan_to_num(actions, nan=0.0).clamp(-1.0, 1.0)
+        # action jerk = how much the policy's output moved since last step (L1, mean
+        # over action dims). Diagnostic only -- not fed back into reward.
+        self._action_jerk = (self.actions - self.prev_actions).abs().mean(dim=-1)
+        self.prev_actions = self.actions.clone()
         a_left = self.actions[:, : self.per_arm_dof]
         a_right = self.actions[:, self.per_arm_dof :]
         ref = self.q_ref[self.song_step]                            # (E, 2, 30)
@@ -244,28 +266,37 @@ class PianoEnv(DirectRLEnv):
         # ref pose so it can't mash idle keys (kills the false-press noise).
         if getattr(self.cfg, "mute_right_hand", False):
             a_right = a_right * 0.0
-        self._left_target = torch.clamp(ref[:, 0] + scale * a_left, lo, hi)
-        self._right_target = torch.clamp(ref[:, 1] + scale * a_right, lo, hi)
-        # arm DoF are not the policy's job in this mode -- overwrite them with the
-        # online WristPoseIK solution toward each hand's upcoming-note centroid.
+        base_l, base_r = ref[:, 0], ref[:, 1]
+        # ARM-IK-FOLLOW: replace the (ready-pose) base with an analytic one -- arm DoF
+        # servoed to the note centroid (WristPoseIK), finger DoF posed onto their
+        # assigned keys (hand-only FingertipIK). The policy residual then only has to
+        # REFINE pressing from fingers already on the keys, not discover it from a
+        # curled 134mm-off pose.
         if getattr(self, "_arm_ik_follow", False):
-            self._servo_arms()
+            base_l, base_r = self._ik_follow_base()
+        self._left_target = torch.clamp(base_l + scale * a_left, lo, hi)
+        self._right_target = torch.clamp(base_r + scale * a_right, lo, hi)
 
-    def _servo_arms(self):
-        """Drive the 12 arm DoF with WristPoseIK so each hand's palm tracks the
-        centroid of its upcoming notes (hover above the keys, fingers pointing down).
-        Overwrites only the arm columns of the joint targets; the finger columns keep
-        the policy's residual. One DLS step per control step -> closed-loop tracking
-        (the next step re-reads the true palm pose, so iteration happens over time)."""
+    def _ik_follow_base(self):
+        """Analytic base joint pose for ARM-IK-FOLLOW mode, returned as
+        (base_left, base_right) each (E,30). Arm columns = WristPoseIK servoing the
+        palm to the upcoming-note centroid (hover above keys, ready-pose down quat);
+        finger columns = hand-only FingertipIK placing each assigned fingertip on its
+        key (idle fingers -> hover). One DLS step/control step => closed-loop tracking;
+        the policy residual is added on top of this base by the caller."""
         if not hasattr(self, "ik_left"):
-            from dexsim.piano.ik import WristPoseIK
+            from dexsim.piano.ik import WristPoseIK, FingertipIK
             self.ik_left = WristPoseIK(self.left_robot, self.cfg.hand_base_body)
             self.ik_right = WristPoseIK(self.right_robot, self.cfg.hand_base_body)
+            # hand-only finger IK (arm frozen -> the 5-tip solve is well-posed)
+            self.fik_left = FingertipIK(self.left_robot, hand_only=True)
+            self.fik_right = FingertipIK(self.right_robot, hand_only=True)
             # hold the ready-pose palm orientation (fingers down) as the servo target
             _, self._arm_quat_l = self.ik_left.pose_w()
             _, self._arm_quat_r = self.ik_right.pose_w()
             self._arm_quat_l = self._arm_quat_l.clone()
             self._arm_quat_r = self._arm_quat_r.clone()
+        # --- arm servo to the upcoming-note centroid ---
         centroid, active = self._hand_note_centroids()      # (E,2,3), (E,2)
         pl, _ = self.ik_left.pose_w()
         pr, _ = self.ik_right.pose_w()                       # current palm positions
@@ -274,11 +305,18 @@ class PianoEnv(DirectRLEnv):
         # a hand with no upcoming notes holds station (target = where it already is)
         tgt_l = torch.where(active[:, 0:1], tgt_l, pl)
         tgt_r = torch.where(active[:, 1:2], tgt_r, pr)
-        q_l = self.ik_left.solve(tgt_l, self._arm_quat_l)    # (E,30); only arm cols move
-        q_r = self.ik_right.solve(tgt_r, self._arm_quat_r)
-        m = self._arm_dof_mask                               # (30,) -> arm columns
-        self._left_target = torch.where(m, q_l, self._left_target)
-        self._right_target = torch.where(m, q_r, self._right_target)
+        arm_l = self.ik_left.solve(tgt_l, self._arm_quat_l)  # (E,30); only arm cols move
+        arm_r = self.ik_right.solve(tgt_r, self._arm_quat_r)
+        # --- finger IK to each assigned key (press depth); idle fingers -> hover ---
+        key_top = self._key_top_world()                      # (E,88,3)
+        _, press, _ = self._finger_targets_world(key_top)    # (E,10,3) global finger order
+        fing_l = self.fik_left.solve(press[:, :NUM_FINGERS // 2])   # (E,30); only finger cols move
+        fing_r = self.fik_right.solve(press[:, NUM_FINGERS // 2:])
+        # combine: arm columns from the arm servo, finger columns from the finger IK
+        m = self._arm_dof_mask                               # (30,) True = arm joint
+        base_l = torch.where(m, arm_l, fing_l)
+        base_r = torch.where(m, arm_r, fing_r)
+        return base_l, base_r
 
     def _apply_action(self):
         self.left_robot.set_joint_position_target(self._left_target)
@@ -302,7 +340,11 @@ class PianoEnv(DirectRLEnv):
         vel = torch.nan_to_num(self.piano.data.joint_vel, nan=0.0)   # <0 = pressing down
         struck = (frac >= 0.5) & (vel < -self.cfg.key_strike_vel)
         released = frac < 0.25
+        prev_sounding = self.key_sounding
         self.key_sounding = (self.key_sounding | struck) & ~released
+        # rising edge: keys that went silent->sounding this step = the onsets the
+        # hands actually played (vs onset_now() = the onsets they SHOULD have played).
+        self._just_struck = self.key_sounding & ~prev_sounding
         return torch.where(self.key_sounding, frac, torch.zeros_like(frac))
 
     def _key_top_world(self) -> torch.Tensor:
@@ -410,6 +452,37 @@ class PianoEnv(DirectRLEnv):
         obs = torch.nan_to_num(torch.cat(parts, dim=-1), nan=0.0, posinf=50.0, neginf=-50.0)
         return {"policy": obs.clamp(-50.0, 50.0)}
 
+    def _arm_limit_margin(self) -> torch.Tensor:
+        """(E,) normalized distance of the WORST arm joint to its nearest joint limit.
+        1.0 = mid-range (healthy), 0.0 = pinned against a limit (contorting / about to
+        fail, won't transfer to hardware). Scored over the 6-per-arm UR10e DoF only
+        (fingers excluded via arm_joint_mask), across both arms."""
+        margins = []
+        for robot in (self.left_robot, self.right_robot):
+            q = robot.data.joint_pos
+            lo = robot.data.soft_joint_pos_limits[..., 0]
+            hi = robot.data.soft_joint_pos_limits[..., 1]
+            frac = (q - lo) / (hi - lo).clamp(min=1e-6)             # 0 at lo, 1 at hi
+            m = 2.0 * torch.minimum(frac, 1.0 - frac)              # 1 mid-range, 0 at a limit
+            margins.append(m[:, self.arm_joint_mask])              # (E, n_arm)
+        m = torch.cat(margins, dim=1).clamp(0.0, 1.0)              # (E, 2*n_arm)
+        m = torch.nan_to_num(m, nan=0.0, posinf=1.0, neginf=0.0)
+        return m.min(dim=1).values                                 # (E,) worst joint
+
+    def _hand_f1(self, pressed: torch.Tensor, goal: torch.Tensor,
+                 key_mask: torch.Tensor) -> torch.Tensor:
+        """Per-step F1 restricted to one hand's keys (key_mask: (88,) 1.0/0.0).
+        Masking both pressed and goal to the hand's keys reuses press_accuracy as-is:
+        keys outside the mask read as not-sounding and not-wanted, so they drop out of
+        TP/precision/recall. Averaged over envs that have a note for this hand now."""
+        from dexsim.piano.reward import press_accuracy
+        rec, prec = press_accuracy(pressed * key_mask, goal * key_mask)
+        has = (goal * key_mask).sum(-1) > 0
+        if not has.any():
+            return torch.zeros((), device=self.device)
+        r = rec[has].mean(); p = prec[has].mean()
+        return 2 * r * p / (r + p + 1e-9)
+
     # ---------------------------------------------------------------- reward
     def _get_rewards(self) -> torch.Tensor:
         pressed = self._key_pressed_fraction()
@@ -444,6 +517,23 @@ class PianoEnv(DirectRLEnv):
             f1 = 2 * rec * prec / (rec + prec + 1e-9)
         else:
             rec = prec = f1 = torch.zeros((), device=self.device)
+        # --- onset recall: of the notes that START this step, how many did the hands
+        # actually strike now (rising edge of sounding)? Catches late/smeared timing
+        # that the held-note F1 above hides. ---
+        onset_goal = self._onset_now()
+        played_on = self._just_struck.float()
+        n_on = onset_goal.sum(-1)
+        has_on = n_on > 0
+        if has_on.any():
+            on_rec = ((played_on * onset_goal).sum(-1) / (n_on + 1e-9))[has_on].mean()
+        else:
+            on_rec = torch.zeros((), device=self.device)
+        # --- per-hand F1: is one arm carrying the song while the other fails? ---
+        f1_left = self._hand_f1(pressed, goal, self.left_key_mask)
+        f1_right = self._hand_f1(pressed, goal, self.right_key_mask)
+        # --- arm health (motion quality, invisible to F1) ---
+        limit_margin = self._arm_limit_margin().mean()
+        action_jerk = self._action_jerk.mean()
         # Per-component finite guard. The world-pos/key accessors are already
         # nan-guarded at source, but guard each term here too so (a) one blown-up
         # env can never NaN-poison the *summed* reward (which nan_to_num would then
@@ -459,6 +549,11 @@ class PianoEnv(DirectRLEnv):
             "play/recall": float(rec),
             "play/precision": float(prec),
             "play/keys_sounding": float((pressed >= 0.5).float().sum(-1).mean()),
+            "play/onset_recall": float(on_rec),
+            "play/F1_left": float(f1_left),
+            "play/F1_right": float(f1_right),
+            "arm/limit_margin": float(limit_margin),
+            "arm/action_jerk": float(action_jerk),
             "reward/key": float(r_key.mean()),
             "reward/finger": float(r_finger.mean()),
             "reward/onset": float(r_onset.mean()),

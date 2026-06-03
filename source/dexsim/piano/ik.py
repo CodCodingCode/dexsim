@@ -26,10 +26,24 @@ from .fingering import FINGERTIP_BODIES
 
 
 class FingertipIK:
-    def __init__(self, articulation, damping: float = 0.05, max_step: float = 0.05):
+    def __init__(self, articulation, damping: float = 0.05, max_step: float = 0.05,
+                 hand_only: bool = False, arm_prefixes=("shoulder", "elbow", "wrist_")):
         self.robot = articulation
         self.damping = damping
         self.max_step = max_step
+
+        # hand_only: freeze the arm joints so this solver moves ONLY the fingers
+        # (the arm is positioned separately by WristPoseIK). This is what makes the
+        # 5-fingertip solve WELL-POSED -- the over-constraint/divergence came from
+        # recruiting the 6-DoF arm; with the arm frozen each finger drives its own tip.
+        names = articulation.data.joint_names
+        if hand_only:
+            self.dof_mask = torch.tensor(
+                [not any(p in n for p in arm_prefixes) for n in names],
+                device=articulation.device)
+        else:
+            self.dof_mask = torch.ones(articulation.num_joints, dtype=torch.bool,
+                                       device=articulation.device)
 
         # fingertip body indices (order = FINGERTIP_BODIES = [th, ff, mf, rf, lf])
         self.tip_ids = []
@@ -75,6 +89,8 @@ class FingertipIK:
         e = err.reshape(E, -1)                                  # (E, 15)
 
         Jp = self._position_jacobians().reshape(E, -1, self.num_dof)  # (E, 15, D)
+        Jp = Jp.clone()
+        Jp[:, :, ~self.dof_mask] = 0.0                          # freeze masked (arm) dofs
         Jt = Jp.transpose(-1, -2)                               # (E, D, 15)
         JJt = Jp @ Jt                                           # (E, 15, 15)
         eye = torch.eye(JJt.shape[-1], device=JJt.device).expand_as(JJt)
