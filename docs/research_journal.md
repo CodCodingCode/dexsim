@@ -5,6 +5,29 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
+## 2026-06-03 — tick 6
+- **Question (backlog #1, narrowed):** confirm stale-vs-fresh reference — is precision
+  0.018 just a stale artifact, or a real IK problem?
+- **Setup found:** stale `twinkle.npz` and fresh `twinkle_rp1m.npz` are both
+  (480,2,30) → clean same-length A/B. (`twinkle_rous_ik.npz` is only 159 frames — a
+  different length, left out of this comparison to avoid confounds.)
+- **Change:** added `--reference <npz>` to `eval_reference.py` (sets
+  `cfg.reference_path`), so we can point eval at any q_ref. Compiles; commit `e0febe7`.
+- **Experiment launched (background, sequential):** PID 327023 runs two zero-residual
+  evals on twinkle —
+  * stale default `twinkle.npz` → `logs/autoloop/ab_stale.json`
+  * fresh `twinkle_rp1m.npz` → `logs/autoloop/ab_fresh.json`
+- **NEXT TICK MUST:** read both JSONs (tail `logs/autoloop/ab_*.log` if absent — two
+  Isaac boots, takes a few min). Decision rule:
+  * fresh precision ≫ 0.018 (e.g. >0.1) → **CONFIRMED stale artifact.** Promote
+    "rebuild ALL references with current geometry + make the default twinkle.npz the
+    fresh build" to #1, then resume warm-start track. Reference pipeline is fine.
+  * fresh precision still ~0.018 → staleness was NOT it; the IK/finger-placement
+    itself mis-places idle fingers → dig into the reference builder / HOVER targets.
+- **Backlog:** unchanged pending result.
+
+---
+
 ## 2026-06-03 — tick 5
 - **Question (backlog #1):** why is reference precision 1.8% — where do false presses
   come from?
