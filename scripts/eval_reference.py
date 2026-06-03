@@ -21,6 +21,8 @@ parser.add_argument("--midi", default=None)
 parser.add_argument("--num_envs", type=int, default=16)
 parser.add_argument("--zero", action="store_true", help="apply zero residual (pure reference)")
 parser.add_argument("--checkpoint", default=None, help="rsl_rl policy checkpoint to roll out")
+parser.add_argument("--reference", default=None, help="explicit q_ref .npz to load "
+                    "(overrides the default data/reference/<midi-stem>.npz)")
 parser.add_argument("--out", default=None, help="write metrics as JSON to this path "
                     "(so a backgrounded eval leaves a machine-readable result)")
 AppLauncher.add_app_launcher_args(parser)
@@ -42,6 +44,8 @@ def main():
     cfg.scene.num_envs = args.num_envs
     if args.midi:
         cfg.midi_path = args.midi
+    if args.reference:
+        cfg.reference_path = args.reference
 
     env = PianoEnv(cfg, render_mode=None)
     policy = None
