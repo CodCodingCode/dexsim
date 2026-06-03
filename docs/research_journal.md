@@ -3,6 +3,11 @@
 Append-only. Newest entries at the top. One entry per loop tick.
 Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not reward).
 
+> **LOOP PAUSED after tick 13 (user decision).** Diagnosis complete — root cause is
+> the `FingertipIK` solver (see STATUS ticks 7–13). Cron `3f8f18cd` cancelled.
+> Implementation of the arm-servo reference builder proceeds **interactively**, not
+> via autonomous ticks. To resume the loop later: re-run `/loop 5m <tick prompt>`.
+
 ---
 
 ## 2026-06-03 — tick 13 (GATE RESOLVED: it's the SOLVER, not reach/mount)
