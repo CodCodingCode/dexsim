@@ -38,26 +38,31 @@ fully reversible** (git-committed, no pushes, no destructive ops).
   propose-only: write the diff into the journal instead of applying it.
 - Stay inside `~/dexsim`. No system/global changes.
 
-## ACTIVE MISSION (user-authorized 2026-06-03, tick 8)
-Root cause of F1≈0 is traced: **left-arm mount rotation is wrong → left-arm IK
-diverges (52% of active steps >100mm, median 286mm) → reference unplayable.** Right
-hand is fine (~45mm DLS blur floor). The user has authorized the loop to **fix this
-autonomously across ticks** — so for this mission the "one small edit per tick" rule
-is relaxed to "one coherent step per tick" (an edit may be a real mount/cfg change),
-but ALL hard safety rails still apply (no push, no deletes, no killing healthy runs,
-git-commit every step, stay in ~/dexsim). Grade progress OFFLINE with
-`scripts/diag_tip_err.py` (seconds) before spending a full sim eval.
+## ACTIVE MISSION (user-authorized 2026-06-03; re-scoped tick 9)
+User authorized the loop to **fix the reference IK autonomously across ticks** — for
+this mission the "one small edit per tick" rule is relaxed to "one coherent step per
+tick" (an edit may be a real cfg/IK change), but ALL hard safety rails still apply
+(no push, no deletes, no killing healthy runs, git-commit every step, stay in
+~/dexsim). Grade progress OFFLINE with `scripts/diag_tip_err.py` before any sim eval.
 
-Plan (each step = one tick; verify before advancing):
-1. [ ] Locate where the left arm/hand mount orientation is set (combined-USD build
-       `scripts/build_*usd*.py`, or `left_robot_cfg` rot in `piano_env_cfg.py`).
-       Identify the ~90° error. (research-only tick is fine)
-2. [ ] Apply the mount-rotation fix (small cfg/build edit). Commit.
-3. [ ] Rebuild the twinkle reference (background) with the fixed mount; re-grade with
-       `diag_tip_err.py`. Target: left-hand median → ~right-hand's ~45mm, divergence→~0.
-4. [ ] If left≈right at the 45mm floor: attack the shared blur floor — switch the
-       reference IK to WristPoseIK arm-servo + RP1M-clamped hand (ik.py's own
-       recommendation) to get fingertips within a white-key width (~11mm).
+**Tick-9 correction:** the tick-8 "left mount rotation is wrong" conclusion was a
+GRADING ARTIFACT — `twinkle.npz` (the default reference) was built 17:09, *before* the
+IK fixes landed (commit `6e15516`, 17:56: ik_damping 0.02→0.05, key-windows). Post-fix
+builds (`twinkle_rous_ik.npz`) already cut left-hand median 286mm→72mm. There is **no
+live ~90° mount bug** (no rotation is set in `piano_env_cfg`; the STATUS note is stale).
+Real current state on the POST-fix reference: both hands limited by a shared **~45mm
+DLS blur floor** (over-constrained FingertipIK), left still ~2× right (72 vs 31mm).
+
+Re-scoped plan (each step = one tick; verify before advancing):
+1. [x] (tick 9) Located mount handling: none set; left divergence was stale artifact.
+2. [ ] Rebuild a CURRENT-IK twinkle reference to a fresh file (background; do NOT
+       overwrite existing npz) and re-grade with `diag_tip_err.py` — establish the
+       honest current left/right tip_err with today's cfg.
+3. [ ] Attack the shared ~45mm blur floor: switch the reference IK from FingertipIK
+       (over-constrains 6-DoF arm w/ 5 tips) to WristPoseIK arm-servo + RP1M-clamped
+       hand (ik.py's OWN recommendation), so active fingertips land within a
+       white-key width (~11mm). This is the highest-leverage change for F1.
+4. [ ] If left still lags right after that, revisit left base pose / window reach.
 5. [ ] Re-eval F1 (`eval_reference.py --zero`); confirm it moved off ~0.03.
 6. [ ] THEN resume warm-start track (KL-to-frozen-BC etc.).
 

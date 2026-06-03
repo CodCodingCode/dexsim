@@ -5,6 +5,35 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
+## 2026-06-03 — tick 9 (mission step 1: locate left mount → CORRECTION)
+- **Question:** where is the left mount orientation set; what's the ~90° error?
+- **Finding — there is no live mount bug; tick 8 was misled by a STALE file:**
+  * `piano_env_cfg` sets NO rotation for either arm — both derive from the same
+    `UR10E_SHADOW_CFG`, only `*_base_pos` (y ∓0.30) differ. The STATUS:17,84 "~90°
+    mount-rotation" note is stale.
+  * The IK fixes (ik_damping 0.02→0.05 + key-windows) landed in commit `6e15516` at
+    **17:56**. The default reference I graded, `twinkle.npz`, has mtime **17:09** —
+    built ~47 min EARLIER, in the damping-0.02 era that the cfg comment itself says
+    "diverges the LEFT arm (145mm+)." So the 286mm left divergence = stale artifact.
+  * Post-fix builds already converge the left far better: `twinkle_rous_ik.npz`
+    (18:08) left-hand median **72mm** (vs stale 286mm), divergence 24% (vs 52%).
+- **=> Re-scope:** drop the mount-rotation hunt. The real current ceiling is the
+  shared **~45mm DLS blur floor** (over-constrained FingertipIK), with left still ~2×
+  right (72 vs 31mm). `ik.py`'s own docstring already recommends the fix: arm-servo
+  (WristPoseIK) on the wrist + clamp the hand, instead of over-constraining a 6-DoF
+  arm with 5 fingertip targets.
+- **Change:** re-scoped the ACTIVE MISSION in `RESEARCH_LOOP.md` (mount step → done/
+  obsolete; new priority = rebuild-current + switch reference IK to arm-servo) and
+  logged this correction. (Lesson: always grade the file the env actually LOADS, and
+  check its build time vs the last IK commit — `diag_tip_err.py` should arguably print
+  the file mtime.)
+- **NEXT TICK (step 2):** background-rebuild a current-IK twinkle reference to a FRESH
+  filename (not overwriting any existing npz; check `build_reference.py` for an output
+  flag — add one if absent, that's the tick's change), then `diag_tip_err.py` it to
+  get the honest current-cfg left/right split.
+
+---
+
 ## 2026-06-03 — tick 8
 - **Question (backlog #1):** WHY does the IK miss by ~5cm (p90 446mm)?
 - **Finding 1 — over-constrained solver floor:** `build_reference.py` drives
