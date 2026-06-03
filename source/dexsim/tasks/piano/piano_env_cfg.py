@@ -167,6 +167,9 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # (the policy never touches the stiff arm joints). Set with freeze_arms=False and
     # use_reference=False. Supersedes freeze_arms (static hold) when both are set.
     arm_ik_follow: bool = False
+    idle_hand_retract: float = 0.20  # m above the keys an INACTIVE hand (no upcoming
+    #   notes) lifts to, so its resting fingers stop ringing keys (the muted right hand
+    #   on a left-only song was mashing ~5-7 false keys from holding station at key level).
     arm_ik_hover: float = 0.11   # m the servoed palm hovers above the key tops. Raised
     #   0.05->0.09: at 0.05 the whole hand (palm+relaxed fingers) sat ON the keyboard and
     #   mashed ~15 keys/step (precision pinned ~0.05, F1 flat). Lifting the palm makes idle

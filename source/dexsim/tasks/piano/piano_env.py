@@ -320,9 +320,16 @@ class PianoEnv(DirectRLEnv):
         pr, _ = self.ik_right.pose_w()                       # current palm positions
         tgt_l = centroid[:, 0].clone(); tgt_l[:, 2] += self.cfg.arm_ik_hover
         tgt_r = centroid[:, 1].clone(); tgt_r[:, 2] += self.cfg.arm_ik_hover
-        # a hand with no upcoming notes holds station (target = where it already is)
-        tgt_l = torch.where(active[:, 0:1], tgt_l, pl)
-        tgt_r = torch.where(active[:, 1:2], tgt_r, pr)
+        # a hand with NO upcoming notes RETRACTS up off the keyboard (keeping its xy)
+        # so its resting fingers stop ringing keys -- e.g. the muted right hand on a
+        # left-only song was holding station AT key level, ringing ~5-7 false keys and
+        # masking every left-hand tweak. Retract height = keyboard top + idle_hand_retract.
+        kb_z = self._key_top_world()[..., 2].amax(dim=-1, keepdim=True)   # (E,1)
+        retract_z = kb_z + getattr(self.cfg, "idle_hand_retract", 0.20)
+        hi_l = pl.clone(); hi_l[:, 2:3] = retract_z
+        hi_r = pr.clone(); hi_r[:, 2:3] = retract_z
+        tgt_l = torch.where(active[:, 0:1], tgt_l, hi_l)
+        tgt_r = torch.where(active[:, 1:2], tgt_r, hi_r)
         arm_l = self.ik_left.solve(tgt_l, self._arm_quat_l)  # (E,30); only arm cols move
         arm_r = self.ik_right.solve(tgt_r, self._arm_quat_r)
         m = self._arm_dof_mask                               # (30,) True = arm joint
