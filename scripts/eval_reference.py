@@ -58,6 +58,12 @@ def main():
     T = env.song_len
     rec_sum = prec_sum = rew_sum = 0.0
     n_scored = 0
+    # micro-averaged accumulators (RoboPianist/RP1M standard): sum TP/FP/FN over
+    # ALL timesteps and envs, then compute P/R/F1 once. Robust to steps with few
+    # active keys, and (unlike the macro avg) it charges false presses during
+    # rests — exactly the precision leak the per-step mean over goal-steps hid.
+    tp_tot = fp_tot = fn_tot = 0.0
+    thresh = 0.5  # TODO(autoloop): pull from the piano's true sound-trigger depth
 
     for _ in range(T):
         if policy is not None:
@@ -70,6 +76,13 @@ def main():
 
         pressed = env._key_pressed_fraction()
         goal = env._goal_now()
+        # micro counts over every env/key this step
+        sounding = pressed >= thresh
+        goal_b = goal.bool()
+        tp_tot += float((sounding & goal_b).sum())
+        fp_tot += float((sounding & ~goal_b).sum())
+        fn_tot += float((~sounding & goal_b).sum())
+
         recall, precision = press_accuracy(pressed, goal)
         has_goal = goal.sum(-1) > 0
         if has_goal.any():
@@ -78,13 +91,21 @@ def main():
             n_scored += 1
         rew_sum += float(rew.mean())
 
+    # micro (headline)
+    eps = 1e-9
+    mrec = tp_tot / (tp_tot + fn_tot + eps)
+    mprec = tp_tot / (tp_tot + fp_tot + eps)
+    mf1 = 2 * mrec * mprec / (mrec + mprec + eps)
+    # macro (per-step mean over goal-steps; kept for comparison)
     rec = rec_sum / max(1, n_scored)
     prec = prec_sum / max(1, n_scored)
-    f1 = 2 * rec * prec / (rec + prec + 1e-9)
+    f1 = 2 * rec * prec / (rec + prec + eps)
     mode = "ZERO-RESIDUAL (pure IK reference)" if policy is None else f"policy {args.checkpoint}"
     print("=" * 60)
     print(f"[eval] {mode}  song={cfg.midi_path}  envs={env.num_envs}")
-    print(f"[eval] recall={rec:.3f}  precision={prec:.3f}  F1={f1:.3f}  "
+    print(f"[eval] MICRO  recall={mrec:.3f}  precision={mprec:.3f}  F1={mf1:.3f}  "
+          f"(headline; vs MIDI over all steps)")
+    print(f"[eval] macro  recall={rec:.3f}  precision={prec:.3f}  F1={f1:.3f}  "
           f"mean_reward/step={rew_sum / T:.3f}")
     print("=" * 60)
     env.close()
