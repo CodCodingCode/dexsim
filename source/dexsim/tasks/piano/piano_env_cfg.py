@@ -194,6 +194,13 @@ class PianoEnvCfg(DirectRLEnvCfg):
     #   instead of catching the target amid ~15 rung keys (precision was pinned ~0.05).
     #   If recall collapses (policy stops pressing at all), drop back toward 0.5.
     energy_weight: float = 0.0005
+    # IDLE-FINGER CLEARANCE ("the fingered thing"): penalize fingers NOT assigned a
+    # note this step for hanging low enough to strike keys. fingering_reward already
+    # pulls ACTIVE fingers onto their key; this is the symmetric term that lifts the
+    # other 4 out of the way, so pressing one finger stops ringing the whole ~12-key
+    # hand footprint (the mash that pins precision ~0.05). 0 = off.
+    idle_clear_weight: float = 0.0
+    idle_clear_margin: float = 0.02   # m above the key tops an idle fingertip must stay
     fingering_weight: float = 1.0     # PHASE 2 (hands in): positioning is auxiliary
     #   now -- the fingers do fine placement while key/onset (pressing) lead. (Phase
     #   1 used 3.0 for a strong arms-only positioning signal.)

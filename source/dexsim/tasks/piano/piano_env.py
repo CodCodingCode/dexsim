@@ -515,6 +515,20 @@ class PianoEnv(DirectRLEnv):
         r_finger = fingering_reward(tips, surface, active, self.reward_cfg)
         r_onset = onset_reward(pressed, self._onset_now(), self.reward_cfg)
 
+        # IDLE-FINGER CLEARANCE: penalize fingers NOT assigned a note for hanging at
+        # or below the key surface (where they mash). Lifts the 4 idle fingers out of
+        # the way so pressing one finger doesn't ring the whole ~12-key hand footprint.
+        icw = getattr(self.cfg, "idle_clear_weight", 0.0)
+        if icw > 0.0:
+            kb_top = key_top[..., 2].amax(dim=-1, keepdim=True)      # (E,1) keyboard surface z
+            clear_plane = kb_top + getattr(self.cfg, "idle_clear_margin", 0.02)
+            below = (clear_plane - tips[..., 2]).clamp(min=0.0)      # (E,10) how far below the plane
+            idle = (~active.bool()).float()                          # (E,10) fingers with no note now
+            n_idle = idle.sum(-1).clamp(min=1.0)
+            r_idle = -icw * (below * idle).sum(-1) / n_idle          # mean dip over idle fingers
+        else:
+            r_idle = torch.zeros_like(r_key)
+
         # arm gross-positioning: aim each hand base over its upcoming notes (the
         # 60-DoF extra over RoboPianist's slider-mounted hands). Skip the work when
         # the term is off.
@@ -562,6 +576,7 @@ class PianoEnv(DirectRLEnv):
         # and (b) the logged means below are a single bad env away from reading nan.
         g = lambda x: torch.nan_to_num(x, nan=0.0, posinf=10.0, neginf=-10.0)
         r_key, r_finger, r_onset, r_arm = g(r_key), g(r_finger), g(r_onset), g(r_arm)
+        r_idle = g(r_idle)
 
         if not hasattr(self, "extras") or self.extras is None:
             self.extras = {}
@@ -579,10 +594,11 @@ class PianoEnv(DirectRLEnv):
             "reward/finger": float(r_finger.mean()),
             "reward/onset": float(r_onset.mean()),
             "reward/arm": float(r_arm.mean()),
+            "reward/idle_clear": float(r_idle.mean()),
         }
         # final band-clamp: a transient blow-up that slips past the per-term guards
         # still can't push a NaN/inf advantage -> NaN log_std -> PPO crash.
-        reward = r_key + r_finger + r_onset + r_arm
+        reward = r_key + r_finger + r_onset + r_arm + r_idle
         return torch.nan_to_num(reward, nan=0.0, posinf=10.0, neginf=-10.0).clamp(-10.0, 10.0)
 
     # ----------------------------------------------------------------- dones

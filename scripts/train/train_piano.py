@@ -20,6 +20,10 @@ parser.add_argument("--bc_init", default=None, help="BC warm-start checkpoint (s
 parser.add_argument("--freeze_hands", action="store_true", help="curriculum phase 1: drive arms only (hands frozen)")
 parser.add_argument("--freeze_arms", action="store_true", help="fixed-hands mode: drive fingers only (arms held)")
 parser.add_argument("--arm_ik_follow", action="store_true", help="arms servoed online by WristPoseIK to the fingering centroid; policy drives only the 48 finger DoF (no q_ref)")
+parser.add_argument("--arm_ik_hover", type=float, default=None, help="override arm_ik_hover (m palm hovers above keys)")
+parser.add_argument("--strike_vel", type=float, default=None, help="override key_strike_vel (rad/s gate for a key to sound)")
+parser.add_argument("--idle_clear_weight", type=float, default=None, help="penalty weight for idle fingers hanging low (anti-mash)")
+parser.add_argument("--tag", default=None, help="run label -> wandb run name + log subdir (for parallel A/B/C runs)")
 parser.add_argument("--reference", default=None, help="explicit q_ref .npz (e.g. an RP1M reference); enables use_reference and overrides the default per-song file")
 parser.add_argument("--no_fold", action="store_true", help="disable fold_to_reach (use the song's real key positions, e.g. for RP1M)")
 parser.add_argument("--no_mute", action="store_true", help="disable mute_right_hand (needed for two-handed songs)")
@@ -55,6 +59,12 @@ def main():
         env_cfg.arm_ik_follow = True
         env_cfg.freeze_arms = False     # arms move (IK-driven), not held static
         env_cfg.use_reference = False   # no q_ref trajectory needed in this mode
+    if args.arm_ik_hover is not None:
+        env_cfg.arm_ik_hover = args.arm_ik_hover
+    if args.strike_vel is not None:
+        env_cfg.key_strike_vel = args.strike_vel
+    if args.idle_clear_weight is not None:
+        env_cfg.idle_clear_weight = args.idle_clear_weight
     if args.reference:
         env_cfg.reference_path = args.reference
         env_cfg.use_reference = True   # <-- without this the q_ref is ignored
@@ -75,7 +85,8 @@ def main():
         agent_cfg.algorithm.learning_rate = 1.0e-4
         agent_cfg.policy.init_noise_std = 0.3
 
-    log_dir = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name, f"seed{args.seed}")
+    leaf = args.tag if args.tag else f"seed{args.seed}"
+    log_dir = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name, leaf)
     os.makedirs(os.path.join(log_dir, "params"), exist_ok=True)
 
     env = gym.make(TASK, cfg=env_cfg, render_mode=None)
