@@ -5,6 +5,36 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
+## 2026-06-03 — tick 7
+- **A/B result (tick 6) — hypothesis REFUTED:** fresh `twinkle_rp1m.npz` ≈ stale
+  `twinkle.npz` (precision 0.020 vs 0.018, recall 0.135 vs 0.114, F1 0.035 vs 0.031).
+  Staleness was NOT the cause. The reference mis-places fingers even freshly built.
+- **ROOT CAUSE (now quantified offline):** `tip_err` in the reference shows the
+  assigned fingertips never reach their target keys. `scripts/diag_tip_err.py
+  data/reference/twinkle.npz` → active finger-steps median **48mm**, p90 **446mm**,
+  only **0.4% within 11mm** (a white-key half-width), 1.8% within 22mm. So recall
+  ~13% (fingers occasionally close) and precision ~2% (misplaced hand mashes
+  neighbors) are both explained by **IK that doesn't reach the keyboard**, NOT the
+  metric / hover / staleness. `twinkle_rous_ik.npz` is marginally better (6.8%
+  within 11mm) but still far.
+- **Change:** added `scripts/diag_tip_err.py` — offline (no-Isaac) IK-quality
+  check from a reference's stored `tip_err`. Commit `52cb51a`. Now any tick can
+  grade a reference in seconds instead of a multi-min sim eval.
+- **Why this matters:** the warm-start track (KL-to-BC etc.) is fully blocked until
+  the reference reaches keys. No PPO warm-start can fix a reference whose fingertips
+  sit 5cm off. F1 ceiling is set by IK reach.
+- **NEXT TICK — diagnose WHY IK misses (p90=446mm, max ~1m suggests targets are
+  unreachable / wrong, not mild under-convergence):** candidates —
+  (a) run `scripts/diag_reach.py` (Isaac, background) to test whether target keys are
+      even reachable from each hand's base pose / keyboard span;
+  (b) inspect `source/dexsim/piano/ik.py` solver iterations + target coords, and the
+      hand→key span assignment (is one hand assigned keys outside its workspace?);
+  (c) check arm base placement vs keyboard width in `piano_env_cfg.py`.
+- **Backlog — NEW #1:** "IK reference does not reach keys (median 48mm)". Demote
+  precision/false-press (it's a symptom of this). Warm-start track: ON HOLD.
+
+---
+
 ## 2026-06-03 — tick 6
 - **Question (backlog #1, narrowed):** confirm stale-vs-fresh reference — is precision
   0.018 just a stale artifact, or a real IK problem?
