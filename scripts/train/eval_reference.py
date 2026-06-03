@@ -26,6 +26,8 @@ parser.add_argument("--reference", default=None, help="explicit q_ref .npz to lo
 parser.add_argument("--arm_ik_follow", action="store_true", help="arms servoed online "
                     "by WristPoseIK to the fingering centroid; no q_ref needed")
 parser.add_argument("--idle_finger_curl", type=float, default=None, help="curl idle fingers up in the base pose (rad; sign-test the anti-mash)")
+parser.add_argument("--hand_stiffness", type=float, default=None, help="override hand actuator stiffness")
+parser.add_argument("--hand_effort", type=float, default=None, help="override hand actuator effort_limit")
 parser.add_argument("--out", default=None, help="write metrics as JSON to this path "
                     "(so a backgrounded eval leaves a machine-readable result)")
 AppLauncher.add_app_launcher_args(parser)
@@ -55,6 +57,14 @@ def main():
         cfg.arm_ik_follow = True
         if args.idle_finger_curl is not None:
             cfg.idle_finger_curl = args.idle_finger_curl
+    if args.hand_stiffness is not None or args.hand_effort is not None:
+        for rc in (cfg.left_robot_cfg, cfg.right_robot_cfg):
+            ha = rc.actuators["hand"]
+            if args.hand_stiffness is not None:
+                ha.stiffness = args.hand_stiffness
+                ha.damping = max(0.1, 0.05 * args.hand_stiffness)
+            if args.hand_effort is not None:
+                ha.effort_limit = args.hand_effort
         cfg.freeze_arms = False
         cfg.use_reference = False
 

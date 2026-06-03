@@ -234,6 +234,11 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # velocity-gated ("hammer") sounding: a key rings only if struck with downward
     # joint velocity past this (rad/s); a statically-resting hand/forearm (~0 vel)
     # rings nothing -> fixes the 52-key precision collapse. See _key_pressed_fraction.
+    # a key SOUNDS only when pressed PAST the sound angle (frac>=1.0). These latch the
+    # velocity-gated sounding to the REAL sound angle (was hardcoded 0.5/0.25 = half/
+    # quarter depth, which counted merely-brushed keys as sounding forever).
+    key_struck_frac: float = 1.0    # frac to start sounding (1.0 = at the sound angle)
+    key_release_frac: float = 0.8   # frac to stop sounding as the key springs back up
     key_strike_vel: float = 0.35   # 0.15->0.35: under ARM-IK-FOLLOW the arm servo drives
     #   the WHOLE hand down onto its ~12-key footprint, ringing all of them with the servo's
     #   downward velocity (keys_sounding pinned ~12-15 on a 3-key song -> precision ~0.05).

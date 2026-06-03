@@ -1,0 +1,39 @@
+{
+  "mode": "ZERO-RESIDUAL (pure IK reference)",
+  "song": "data/midi/twinkle.mid",
+  "num_envs": 4,
+  "steps": 480,
+  "micro": {
+    "recall": 0.2050561797751657,
+    "precision": 0.02825077399380586,
+    "f1": 0.04965986373271942
+  },
+  "macro": {
+    "recall": 0.20505598421846882,
+    "precision": 0.0302635038083189,
+    "f1": 0.05274286957683968
+  },
+  "per_hand": {
+    "left": {
+      "recall": 0.11577181208034266,
+      "precision": 0.017982799061762318,
+      "f1": 0.031130159929663344
+    },
+    "right": {
+      "recall": 0.24999999999978886,
+      "precision": 0.03258835186611994,
+      "f1": 0.05766046536524444
+    }
+  },
+  "onset": {
+    "recall": 0.0,
+    "precision": 0.0,
+    "f1": 0.0
+  },
+  "arm_health": {
+    "limit_margin": 0.5841661162674427,
+    "action_jerk": 0.0
+  },
+  "mean_reward_per_step": -2.0587322600651534,
+  "tip_mm": 121.52711975942837
+}

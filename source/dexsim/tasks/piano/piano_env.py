@@ -383,8 +383,13 @@ class PianoEnv(DirectRLEnv):
         # NOTE: called exactly once per step (in _get_rewards), so latching here is
         # safe. Called once per step from _get_rewards, so the latch advances once.
         vel = torch.nan_to_num(self.piano.data.joint_vel, nan=0.0)   # <0 = pressing down
-        struck = (frac >= 0.5) & (vel < -self.cfg.key_strike_vel)
-        released = frac < 0.25
+        # frac=1.0 IS the sound angle (frac = angle / KEY_SOUND_ANGLE). A key only
+        # SOUNDS when pressed PAST it (frac>=1). The old 0.5/0.25 thresholds latched
+        # keys merely BRUSHED to half the sound depth (never actually sounding) and
+        # never released them -> keys_sounding inflated ~8 with nothing on the keys,
+        # cratering precision. Align the latch to the real sound angle.
+        struck = (frac >= getattr(self.cfg, "key_struck_frac", 1.0)) & (vel < -self.cfg.key_strike_vel)
+        released = frac < getattr(self.cfg, "key_release_frac", 0.8)
         prev_sounding = self.key_sounding
         self.key_sounding = (self.key_sounding | struck) & ~released
         # rising edge: keys that went silent->sounding this step = the onsets the
