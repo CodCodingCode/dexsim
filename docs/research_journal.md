@@ -8,6 +8,19 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 > Implementation of the arm-servo reference builder proceeds **interactively**, not
 > via autonomous ticks. To resume the loop later: re-run `/loop 5m <tick prompt>`.
 
+> **2026-06-03 — ARM-IK-FOLLOW mode implemented (interactive, post-loop).** Rather
+> than rebuild a `q_ref`, decouple: `WristPoseIK` servos the 12 arm DoF online to the
+> per-hand fingering centroid (`PianoEnv._servo_arms`); policy action masked to the 48
+> finger DoF. Wired into the env (`arm_ik_follow`/`arm_ik_hover` cfg), `eval_reference`
+> (`--arm_ik_follow` + online fingertip→key-distance metric), and `train_piano`
+> (`--arm_ik_follow`). Commits `5bd41fa`, `7a22a12`.
+> **Smoke test (easy.mid, --arm_ik_follow --zero):** stable 839 steps, no NaN; **recall
+> 0.633** (FingertipIK reference was 0.114 → 5.5×) from arm positioning ALONE. precision
+> ~0.02 / fingertip→key ~134 mm at zero residual (fingers don't press selectively yet —
+> that's the RL job now). Architecture thesis confirmed: the arm positioning was the
+> bottleneck, and the well-posed arm-servo removes it. **Next: short PPO run with
+> `--arm_ik_follow` to confirm the policy lifts precision/F1 off the 0.03 ceiling.**
+
 ---
 
 ## 2026-06-03 — tick 13 (GATE RESOLVED: it's the SOLVER, not reach/mount)

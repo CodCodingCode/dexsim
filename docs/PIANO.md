@@ -76,6 +76,38 @@ python scripts/play_piano.py  --num_envs 1 --video --midi data/midi/your_song.mi
 `play_piano.py` records the keys the policy actually pressed and writes them to a
 MIDI file so you can hear what it learned.
 
+## ARM-IK-FOLLOW mode (recommended — math moves the arms, RL the fingers)
+
+The original design learns a **60-DoF residual on a precomputed `q_ref`**. But the
+`q_ref` arm trajectory is built with `FingertipIK`, which over-constrains the 6-DoF
+arm with 5 fingertip targets and **diverges** (left hand ~305 mm off), capping
+zero-residual F1 at **0.03**. Diagnosis (`scripts/diag_wrist_ik.py`) proved the arms
+*can* reach within ~1 cm everywhere using the **well-posed** `WristPoseIK` (one palm
+target on the 6-DoF arm). So decouple the two jobs:
+
+- **Arms (analytic, no learning):** every control step, `PianoEnv._servo_arms()`
+  drives the 12 arm DoF with `WristPoseIK` so each palm tracks the **centroid of its
+  upcoming notes** (`_hand_note_centroids`), hovering `arm_ik_hover` above the keys at
+  the ready-pose down orientation. One DLS step/step = closed-loop tracking.
+- **Fingers (learned):** the policy action is masked to the **48 finger DoF**; it
+  never touches the stiff arm joints, so the arm-residual blow-up (NaN) mode is gone.
+
+Enable with `--arm_ik_follow` (sets `arm_ik_follow`, clears `freeze_arms` +
+`use_reference`):
+
+```bash
+python scripts/eval_reference.py --midi data/midi/easy.mid --arm_ik_follow --zero --headless   # sanity
+python scripts/train_piano.py    --midi data/midi/easy.mid --arm_ik_follow --headless --num_envs 2048
+```
+
+**Validated (easy.mid, zero finger residual, 2026-06-03):** stable over 839 steps,
+no NaN; **recall 0.633** (vs the FingertipIK reference's 0.114 — 5.5× better) purely
+from arm positioning. precision is still low (~0.02) and the assigned fingertip→key
+distance ~134 mm because zero-residual fingers don't press selectively — **that is the
+exact job RL now learns**, on a smaller, well-conditioned action space with the hands
+already on the keys. `eval_reference.py` reports the fingertip→key distance (mm) so
+finger-placement progress is visible independent of pressing.
+
 ## What's solid vs. what needs tuning
 
 **Solid / done:** Isaac Sim + Isaac Lab on this H100 (incl. the Vulkan fix, see
