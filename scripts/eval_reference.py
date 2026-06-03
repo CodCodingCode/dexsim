@@ -63,7 +63,12 @@ def main():
     # active keys, and (unlike the macro avg) it charges false presses during
     # rests — exactly the precision leak the per-step mean over goal-steps hid.
     tp_tot = fp_tot = fn_tot = 0.0
-    thresh = 0.5  # TODO(autoloop): pull from the piano's true sound-trigger depth
+    # SOUND TRUTH: env._key_pressed_fraction() already applies the simulator's
+    # velocity-gated sounding latch (struck past KEY_SOUND_ANGLE while moving down,
+    # held until frac<0.25) and returns 0 for any key that is NOT sounding. So a key
+    # sounds iff its returned fraction is > 0 -- thresholding at 0.5 double-counted
+    # the gate and dropped softly-held sustained notes in [0.25,0.5), deflating recall.
+    SOUND_EPS = 1e-6
 
     for _ in range(T):
         if policy is not None:
@@ -77,13 +82,13 @@ def main():
         pressed = env._key_pressed_fraction()
         goal = env._goal_now()
         # micro counts over every env/key this step
-        sounding = pressed >= thresh
+        sounding = pressed > SOUND_EPS
         goal_b = goal.bool()
         tp_tot += float((sounding & goal_b).sum())
         fp_tot += float((sounding & ~goal_b).sum())
         fn_tot += float((~sounding & goal_b).sum())
 
-        recall, precision = press_accuracy(pressed, goal)
+        recall, precision = press_accuracy(pressed, goal, threshold=SOUND_EPS)
         has_goal = goal.sum(-1) > 0
         if has_goal.any():
             rec_sum += float(recall[has_goal].mean())
