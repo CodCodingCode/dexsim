@@ -31,20 +31,21 @@ KEY_SOUND_ANGLE = -0.012                # ~18% travel -> sensitive (good recall)
 #   fraction + key_strike_vel): a resting hand depresses keys statically (~0 vel)
 #   so they don't ring, even at this light depth. -0.033 was too stiff (9% sound);
 #   a light threshold + the velocity gate gives both recall AND precision.
-KEY_SPRING_STIFFNESS = 20.0   # 2.0 was TOO WEAK: keys SAGGED under their own gravity to
-#   -0.0137 rad (frac 1.14) at REST -- already PAST KEY_SOUND_ANGLE, so every key counted
-#   as permanently "sounding" with nothing on it (~4 baked-in false presses, precision
-#   capped ~0.05 regardless of policy). At 20 the keys rest at ~frac 0 (verified via
-#   scripts/prep/diag_contact.py), so keys_sounding reflects only real presses. The diag
-#   sweep showed 15 already gives 0 false at rest; 20 leaves margin while staying pressable.
-KEY_SPRING_DAMPING = 0.5      # raised with the stiffness to keep the key critically damped
+KEY_SPRING_STIFFNESS = 4.0    # gentle: with key gravity DISABLED keys rest at the spring's
+#   zero regardless of stiffness, so this only needs to RETURN a key after a press. Kept low
+#   so the weak fingers (stiffness 3) can still depress a key past KEY_SOUND_ANGLE (stiffness
+#   20 prevented sag but the fingers couldn't press it -> recall cratered to ~0.04).
+KEY_SPRING_DAMPING = 0.2
 
 PIANO_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         usd_path=PIANO_USD_PATH,
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            disable_gravity=False,
+            disable_gravity=True,   # real piano keys are balanced (~zero net gravity). With
+            #   gravity ON, the key mass sagged each key past KEY_SOUND_ANGLE at rest (frac
+            #   1.14) -> permanent false "sounding". OFF, keys rest at the spring's zero so a
+            #   GENTLE spring (pressable by the weak fingers) both holds them up and returns them.
             max_depenetration_velocity=2.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
