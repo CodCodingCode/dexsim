@@ -23,6 +23,8 @@ parser.add_argument("--arm_ik_follow", action="store_true", help="arms servoed o
 parser.add_argument("--arm_ik_hover", type=float, default=None, help="override arm_ik_hover (m palm hovers above keys)")
 parser.add_argument("--strike_vel", type=float, default=None, help="override key_strike_vel (rad/s gate for a key to sound)")
 parser.add_argument("--idle_clear_weight", type=float, default=None, help="penalty weight for idle fingers hanging low (anti-mash)")
+parser.add_argument("--hand_stiffness", type=float, default=None, help="override Shadow hand actuator stiffness (finger authority)")
+parser.add_argument("--hand_effort", type=float, default=None, help="override Shadow hand actuator effort_limit")
 parser.add_argument("--tag", default=None, help="run label -> wandb run name + log subdir (for parallel A/B/C runs)")
 parser.add_argument("--reference", default=None, help="explicit q_ref .npz (e.g. an RP1M reference); enables use_reference and overrides the default per-song file")
 parser.add_argument("--no_fold", action="store_true", help="disable fold_to_reach (use the song's real key positions, e.g. for RP1M)")
@@ -65,6 +67,19 @@ def main():
         env_cfg.key_strike_vel = args.strike_vel
     if args.idle_clear_weight is not None:
         env_cfg.idle_clear_weight = args.idle_clear_weight
+    if args.hand_stiffness is not None or args.hand_effort is not None:
+        # override the Shadow hand actuator authority on BOTH arms (the "hand" group
+        # = robot0_.* joints). Weak fingers (stiffness 3) may be why the policy can't
+        # lift one finger while pressing another -> tests if finger authority unlocks it.
+        for rc in (env_cfg.left_robot_cfg, env_cfg.right_robot_cfg):
+            hand_act = rc.actuators["hand"]
+            if args.hand_stiffness is not None:
+                hand_act.stiffness = args.hand_stiffness
+                hand_act.damping = max(0.1, 0.05 * args.hand_stiffness)  # ~crit-ish damping
+            if args.hand_effort is not None:
+                hand_act.effort_limit = args.hand_effort
+        print(f"[train_piano] hand actuator override: stiffness={args.hand_stiffness} "
+              f"effort={args.hand_effort}")
     if args.reference:
         env_cfg.reference_path = args.reference
         env_cfg.use_reference = True   # <-- without this the q_ref is ignored
