@@ -41,6 +41,22 @@ def report(path: str) -> None:
           f"  p90={pct(90):.1f}  p99={pct(99):.1f}  max={active.max():.1f}")
     for tol in (WHITE_HALF_W_MM, 22.0, 50.0):
         print(f"  within {tol:.0f}mm: {100*np.mean(active < tol):.1f}%")
+    # Separate the two failure modes: a ~45mm "blur floor" (over-constrained DLS) is
+    # tunable; a tail >100mm means unreachable/divergent targets (wrong hand-key
+    # assignment or out-of-workspace) and needs a structural fix, not more iterations.
+    blur = active[active <= 100.0]
+    div = active[active > 100.0]
+    print(f"  blur floor (<=100mm): {blur.size} steps, median={np.median(blur):.1f}mm"
+          if blur.size else "  blur floor (<=100mm): none")
+    print(f"  DIVERGENT/unreachable (>100mm): {div.size} steps "
+          f"({100*div.size/active.size:.1f}% of active), median={np.median(div):.0f}mm"
+          if div.size else "  DIVERGENT/unreachable (>100mm): none")
+    if a.ndim == 2 and a.shape[1] == 2:  # per-hand columns
+        for h, name in ((0, "L"), (1, "R")):
+            col = a[:, h][a[:, h] > 1e-9]
+            if col.size:
+                print(f"  hand {name}: median={np.median(col):.1f}mm  p90={np.percentile(col,90):.0f}mm"
+                      f"  >100mm={100*np.mean(col>100):.0f}%")
     verdict = ("USABLE-ish" if np.median(active) < WHITE_HALF_W_MM
                else "TOO FAR — IK does not reach the keys")
     print(f"  verdict: {verdict}")
