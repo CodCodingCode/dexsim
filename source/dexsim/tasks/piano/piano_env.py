@@ -167,9 +167,11 @@ class PianoEnv(DirectRLEnv):
             self.reward_cfg.false_press_weight = 0.0
             print("[PianoEnv] phase-1 reward: positioning only "
                   "(fingering+arm; pressing terms OFF)")
+        _ref_desc = (f"{self._ref_path.name} ({self.q_ref.shape[0]} frames)"
+                     if self._has_reference else "FALLBACK(ready pose)")
         print(f"[PianoEnv] song '{song.name}': {self.song_len} steps "
               f"({song.duration_s:.1f}s @ {1/self.cfg.control_dt:.0f}Hz); "
-              f"reference={'loaded' if self._has_reference else 'FALLBACK(ready pose)'}")
+              f"reference={_ref_desc}")
 
     # ------------------------------------------------------------- reference
     def _reference_file(self) -> Path:
@@ -182,6 +184,7 @@ class PianoEnv(DirectRLEnv):
         Falls back to the static ready pose if no reference file is present."""
         L = self.cfg.goal_lookahead
         self._has_reference = False
+        self._ref_path = None
         path = self._reference_file()
         if self.cfg.use_reference and path.exists():
             data = np.load(path)
@@ -191,6 +194,9 @@ class PianoEnv(DirectRLEnv):
                 q = torch.cat([q, q[-1:].repeat(self.song_len - q.shape[0], 1, 1)], 0)
             q = q[: self.song_len]
             self._has_reference = True
+            self._ref_path = path  # remember WHICH file (and report it) -- a stale
+            #   reference silently loaded here is invisible otherwise; that is exactly
+            #   how a pre-HOVER_CLEARANCE-fix q_ref got evaluated (precision 0.018).
         else:
             ref_l = self.left_default[0]
             ref_r = self.right_default[0]
