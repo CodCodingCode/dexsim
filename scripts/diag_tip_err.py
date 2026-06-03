@@ -14,7 +14,9 @@ warm-start can bootstrap from it. Fix the reference/reach before spending GPU.
 
 from __future__ import annotations
 
+import os
 import sys
+import time
 import numpy as np
 
 WHITE_HALF_W_MM = 11.0  # ~half a white-key width; "on the key" tolerance
@@ -30,7 +32,10 @@ def report(path: str) -> None:
     flat = a.reshape(-1)
     # idle finger/hand steps are stored as 0; "active" ~= strictly positive error.
     active = flat[flat > 1e-9]
-    print(f"== {path}  (q_ref {q}, tip_err {a.shape}) ==")
+    # print mtime: a reference built before the last IK fix is stale -- grading the
+    # wrong (default) file is exactly how tick 8 mis-concluded "left mount broken".
+    mt = time.strftime("%Y-%m-%d %H:%M", time.localtime(os.path.getmtime(path)))
+    print(f"== {path}  (q_ref {q}, tip_err {a.shape}, built {mt}) ==")
     if active.size == 0:
         print("  all tip_err == 0 (no active targets recorded?)")
         return
