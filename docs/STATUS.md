@@ -49,6 +49,19 @@ Reward can be *positive while F1≈0* → **reward is not evidence of playing.**
 > are the Shadow Hand's coupled distal `*J0` joints (driven by their parent). The
 > `-0.10`/`-0.056` diagnostic below is STALE.
 
+> **UPDATE 2026-06-03 (autoloop ticks 7–13) — root cause isolated to the IK SOLVER:**
+> The reference's assigned fingertips never reach their keys (`diag_tip_err.py`:
+> active median 48–58mm, only 0.4% within an 11mm key-width; the LEFT hand diverges,
+> median ~305mm, 54% of steps >100mm under `build_reference.py`/`FingertipIK`). This
+> is **NOT a reach gap and NOT the mount**: `diag_wrist_ik.py` proves the *well-posed*
+> arm-servo solver (`WristPoseIK`, one palm target on the 6-DoF arm) places the palm
+> within **4–14mm across the ENTIRE keyboard span, both hands** (left keys 0–43:
+> 3.7–10.2mm). The culprit is `FingertipIK` **over-constraining the 6-DoF arm with 5
+> fingertip targets** → singular-config divergence. **Fix:** build the reference with
+> arm-servo IK (drive the palm/wrist with `WristPoseIK`, then set the assigned finger
+> to a press pose), per `ik.py`'s own design note — not FingertipIK. The diagnosis
+> phase is done; this is the implementation step that should finally move F1 off 0.03.
+
 ### Root-cause diagnostic (`scripts/key_press_diag.py`, Twinkle) — STALE, see update above
 ```
 over 445 note-steps:  goal key depressed at all = 1%,  sounded = 0%

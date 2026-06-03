@@ -59,13 +59,18 @@ Re-scoped plan (each step = one tick; verify before advancing):
        54%) under build_reference.py/FingertipIK → left issue is LIVE, not stale
        (tick 9 over-corrected). The 72mm rous_ik came from build_rp1m_ik_reference.py's
        `_arm_only_dls` (arm-only, hand clamped) = the arm-servo design, 4× better.
-3. [ ] (IN PROGRESS) GATE: is the left a REACH gap or a SOLVER artifact? Reading
-       `diag_wrist_ik.py` (well-posed WristPoseIK sweep across each hand's span).
-       - small left-span err → SOLVER: adopt arm-servo (rp1m_ik) for plain MIDI refs.
-       - large left-span err → REACH: move left_base_pos / shrink left_key_window first.
-4. [ ] Apply whichever fix the gate selects; rebuild + re-grade with diag_tip_err
-       (target active median → ~key width 11mm, left≈right, divergence→~0).
-5. [ ] Re-eval F1 (`eval_reference.py --zero`); confirm it moved off ~0.03.
+3. [x] (tick 13) GATE RESOLVED = **SOLVER**, not reach. `diag_wrist_ik.py` shows
+       WristPoseIK arm-servo places the palm within **4–14mm across the whole span,
+       BOTH hands** (left keys 0–43: 3.7–10.2mm). FingertipIK's 5-tips-on-6-DoF-arm
+       over-constraint is the divergence source. No mount/reach/base change needed.
+4. [ ] **IMPLEMENT arm-servo reference builder** (the F1-moving step): a builder that
+       per control step (a) uses `WristPoseIK` to servo each hand's palm over its
+       active key(s) at the down orientation, (b) sets the assigned finger to a press
+       pose (others to hover). Likely a new `scripts/build_reference_wrist.py` or a
+       `--solver wrist` path in `build_reference.py`. Build to a FRESH npz; do not
+       overwrite. NOTE: this is a multi-tick implementation — scope carefully.
+5. [ ] Grade with `diag_tip_err.py` (target active median → ~11mm, divergence→~0),
+       then `eval_reference.py --zero` — confirm F1 moves off ~0.03.
 6. [ ] THEN resume warm-start track (KL-to-frozen-BC etc.).
 
 ## Parked backlog (after the mission, or if blocked)

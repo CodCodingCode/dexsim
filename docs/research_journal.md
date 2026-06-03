@@ -5,7 +5,25 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
-## 2026-06-03 — tick 12 (reachability sweep crashed → made it crash-legible, relaunched)
+## 2026-06-03 — tick 13 (GATE RESOLVED: it's the SOLVER, not reach/mount)
+- **Decisive result** (`diag_wrist2.log`, full 18-row sweep): WristPoseIK arm-servo
+  places the palm within **4–14mm across the ENTIRE keyboard, both hands** (LEFT keys
+  0–43: pos_err 3.7–10.2mm, ori_err ~1–2°; RIGHT 7–14mm). The arms physically reach
+  everywhere to ~1cm.
+- **=> Conclusion locked:** the unplayable reference is a **SOLVER artifact** —
+  `FingertipIK` over-constrains the 6-DoF arm with 5 fingertip targets and diverges at
+  singular configs (LEFT 305mm). It is NOT a reach gap, NOT the mount, NOT staleness,
+  NOT the metric. Every other hypothesis is now eliminated by direct measurement.
+- **Change:** recorded the conclusion in `STATUS.md` (source-of-truth update, ticks
+  7–13 block) and marked mission step 3 done / step 4 = implement arm-servo builder.
+- **THE DIAGNOSIS PHASE IS COMPLETE.** Remaining work = implement an arm-servo
+  reference builder (WristPoseIK palm servo + finger press pose), rebuild, re-grade,
+  re-eval F1. That is a multi-tick *implementation*, structurally different from the
+  measure-one-thing-per-tick diagnosis the loop has been doing.
+- **NEXT TICK (step 4):** begin the arm-servo builder. Smallest first slice: stand up
+  `scripts/build_reference_wrist.py` skeleton that, for one hand, servos the palm to
+  the active-key hover target with WristPoseIK and dumps q_ref+tip_err to a FRESH npz
+  (no overwrite); grade it. Iterate finger-press posing in following ticks.
 - **Tick-11 experiment FAILED:** `diag_wrist_ik.py` log was 42 lines, ended at Isaac
   boot, no results, no traceback. Diagnosis: stdout was block-buffered and a **C-level
   crash in `env.sim.step`** (no Python traceback ⇒ segfault) flushed nothing. The
