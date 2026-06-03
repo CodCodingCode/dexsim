@@ -5,6 +5,24 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
+## 2026-06-03 — tick 3
+- **Question (backlog):** launch the background pure-reference Isaac eval — the gate
+  we've been deferring — now that the metric (ticks 1+2) is trustworthy.
+- **Change:** added `--out <json>` to `eval_reference.py` so a backgrounded eval
+  leaves a machine-readable result instead of stdout-only. Compiles; commit `ba3155e`.
+- **Experiment launched (background):** `python scripts/eval_reference.py
+  --midi data/midi/twinkle.mid --zero --headless --num_envs 16
+  --out logs/autoloop/ref_twinkle.json` (PID 326153 at launch; stdout ->
+  `logs/autoloop/ref_twinkle.log`). Isaac boots in minutes; result outlives this tick.
+- **NEXT TICK MUST:** read `logs/autoloop/ref_twinkle.json` (and tail the .log if the
+  json isn't there yet — Isaac may still be booting or may have errored). If F1>0:
+  reference is a usable warm-start; record per-metric numbers, move to reward/warm-
+  start work. If F1≈0 or the run errored: the reference/IK/mount is the blocker —
+  that becomes the top backlog item (warm-start is pointless without it).
+- **Backlog update:** "Is the RP1M/IK reference good?" → IN PROGRESS (awaiting run).
+
+---
+
 ## 2026-06-03 — tick 2
 - **Question (backlog):** press_threshold vs the piano's true sound-trigger depth
   (the TODO left in tick 1).
