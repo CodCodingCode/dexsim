@@ -34,6 +34,8 @@ parser.add_argument("--reference", default=None,
                     help="explicit IK/warm-start reference .npz to clone from "
                          "(e.g. an RP1M-merged reference from build_rp1m_reference.py); "
                          "default: derive from the MIDI stem")
+parser.add_argument("--no_fold", action="store_true", help="disable fold_to_reach (RP1M real keys)")
+parser.add_argument("--no_mute", action="store_true", help="disable mute_right_hand (two-handed)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
@@ -60,6 +62,10 @@ def main():
         # residual base so "zero action == follow this reference".
         cfg.reference_path = args.reference
         cfg.use_reference = True
+    if args.no_fold:
+        cfg.fold_to_reach = False
+    if args.no_mute:
+        cfg.mute_right_hand = False
     env = PianoEnv(cfg, render_mode=None)
     device = env.device
 
@@ -97,7 +103,13 @@ def main():
 
     X = torch.cat(obs_buf, 0)
     Y = torch.cat(act_buf, 0)
-    print(f"[bc] dataset: obs {tuple(X.shape)}, act {tuple(Y.shape)}")
+    # A single NaN in the collected obs/expert (a physics blip, or expert=inf*0)
+    # propagates through BC and produces an ALL-NaN actor -> every downstream run
+    # crashes with "std>=0". Scrub them and drop any non-finite rows.
+    finite = torch.isfinite(X).all(1) & torch.isfinite(Y).all(1)
+    dropped = int((~finite).sum())
+    X = torch.nan_to_num(X[finite]); Y = torch.nan_to_num(Y[finite]).clamp(-1.0, 1.0)
+    print(f"[bc] dataset: obs {tuple(X.shape)}, act {tuple(Y.shape)} (dropped {dropped} non-finite rows)")
 
     if args.dump:
         import numpy as np
@@ -116,20 +128,31 @@ def main():
         activation=pol.activation, init_noise_std=pol.init_noise_std,
     ).to(device)
 
-    opt = torch.optim.Adam(ac.actor.parameters(), lr=1e-3)
-    n = X.shape[0]
+    # Standardize obs for BC: raw 1236-dim obs at lr 1e-3 diverged to NaN. Zero-mean
+    # unit-var also matches training's empirical_normalization (so the warm-started
+    # actor sees a similar input distribution at train time).
+    mu = X.mean(0, keepdim=True)
+    sd = X.std(0, keepdim=True).clamp_min(1e-6)
+    Xn = (X - mu) / sd
+    opt = torch.optim.Adam(ac.actor.parameters(), lr=5e-4)
+    n = Xn.shape[0]
     bs = 4096
     for ep in range(args.epochs):
         perm = torch.randperm(n, device=device)
         tot = 0.0
         for i in range(0, n, bs):
             idx = perm[i:i + bs]
-            pred = ac.actor(X[idx])
+            pred = ac.actor(Xn[idx])
             loss = torch.nn.functional.mse_loss(pred, Y[idx])
-            opt.zero_grad(); loss.backward(); opt.step()
+            opt.zero_grad(); loss.backward()
+            torch.nn.utils.clip_grad_norm_(ac.actor.parameters(), 1.0)
+            opt.step()
             tot += loss.item() * idx.numel()
         if ep % max(1, args.epochs // 10) == 0:
             print(f"[bc] epoch {ep:4d}  mse={tot / n:.5f}")
+    # refuse to save a NaN actor (the bug that crashed every downstream run)
+    if any(not torch.isfinite(p).all() for p in ac.actor.parameters()):
+        raise RuntimeError("[bc] actor diverged to NaN even after standardization+clip; aborting save")
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     torch.save({"model_state_dict": ac.state_dict()}, args.out)

@@ -19,7 +19,9 @@ parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--bc_init", default=None, help="BC warm-start checkpoint (scripts/bc_pretrain.py)")
 parser.add_argument("--freeze_hands", action="store_true", help="curriculum phase 1: drive arms only (hands frozen)")
 parser.add_argument("--freeze_arms", action="store_true", help="fixed-hands mode: drive fingers only (arms held)")
-parser.add_argument("--reference", default=None, help="explicit q_ref .npz (e.g. an RP1M reference); overrides the default per-song file")
+parser.add_argument("--reference", default=None, help="explicit q_ref .npz (e.g. an RP1M reference); enables use_reference and overrides the default per-song file")
+parser.add_argument("--no_fold", action="store_true", help="disable fold_to_reach (use the song's real key positions, e.g. for RP1M)")
+parser.add_argument("--no_mute", action="store_true", help="disable mute_right_hand (needed for two-handed songs)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
@@ -50,11 +52,23 @@ def main():
         env_cfg.freeze_arms = True
     if args.reference:
         env_cfg.reference_path = args.reference
+        env_cfg.use_reference = True   # <-- without this the q_ref is ignored
+    if args.no_fold:
+        env_cfg.fold_to_reach = False
+    if args.no_mute:
+        env_cfg.mute_right_hand = False
 
     agent_cfg = PianoPPORunnerCfg()
     agent_cfg.seed = args.seed
     if args.max_iterations is not None:
         agent_cfg.max_iterations = args.max_iterations
+    if args.bc_init:
+        # A BC-warm-started actor + fresh critic makes the FIRST PPO update explode
+        # (huge value loss -> NaN grads -> log_std=NaN -> "std>=0" crash). Start
+        # gentle: smaller LR, smaller initial exploration noise. The adaptive KL
+        # schedule ramps LR back up once the critic catches up.
+        agent_cfg.algorithm.learning_rate = 1.0e-4
+        agent_cfg.policy.init_noise_std = 0.3
 
     log_dir = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name, f"seed{args.seed}")
     os.makedirs(os.path.join(log_dir, "params"), exist_ok=True)
@@ -72,8 +86,15 @@ def main():
         ckpt = torch.load(args.bc_init, map_location=agent_cfg.device)
         # rsl_rl stores the actor-critic on alg.policy (older code used .actor_critic)
         net = getattr(runner.alg, "policy", None) or runner.alg.actor_critic
-        net.load_state_dict(ckpt["model_state_dict"], strict=False)
-        print(f"[train_piano] warm-started actor-critic from {args.bc_init}")
+        # Drop the action-noise std param: bc_pretrain builds the actor-critic with
+        # the default SCALAR 'std', but training uses the 'log_std' parameterization
+        # (noise_std_type='log'). Loading the scalar std corrupts the noise param so
+        # PPO samples std<0 and crashes ("normal expects std>=0"). Keep only the
+        # actor/critic weights; let the model keep its own (valid) log_std init.
+        sd = {k: v for k, v in ckpt["model_state_dict"].items() if "std" not in k}
+        missing = net.load_state_dict(sd, strict=False)
+        print(f"[train_piano] warm-started actor-critic from {args.bc_init} "
+              f"(loaded {len(sd)} tensors; std param kept from fresh init)")
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
 

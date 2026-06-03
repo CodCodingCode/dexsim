@@ -28,6 +28,8 @@ parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--ik_substeps", type=int, default=10,
                     help="physics+IK iterations per control step")
 parser.add_argument("--out", default=None, help="output .npz (default: data/reference/<stem>.npz)")
+parser.add_argument("--no_fold", action="store_true", help="disable fold_to_reach (real key positions, e.g. for RP1M songs)")
+parser.add_argument("--no_mute", action="store_true", help="disable mute_right_hand (two-handed songs)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
@@ -48,6 +50,10 @@ def main():
     cfg = PianoEnvCfg()
     cfg.scene.num_envs = args.num_envs
     cfg.use_reference = False                 # we are *generating* it
+    if args.no_fold:
+        cfg.fold_to_reach = False
+    if args.no_mute:
+        cfg.mute_right_hand = False
     if args.midi:
         cfg.midi_path = args.midi
 

@@ -16,7 +16,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sim import SimulationCfg
+from isaaclab.sim import SimulationCfg, PhysxCfg
 from isaaclab.utils import configclass
 
 from dexsim.assets import UR10E_SHADOW_CFG, PIANO_CFG
@@ -51,7 +51,18 @@ class PianoEnvCfg(DirectRLEnvCfg):
     #                                   "where fingers should go" conditioning)
     obs_goal_sdf: bool = True         # 88 analytic SDF of the current goal
 
-    sim: SimulationCfg = SimulationCfg(dt=SIM_DT, render_interval=DECIMATION)
+    # PhysX GPU buffers: the default rigid-patch/contact buffers overflow when many
+    # fingers contact many keys across thousands of envs ("Patch buffer overflow,
+    # increase to at least 167936"). Bump the contact/patch caps generously.
+    sim: SimulationCfg = SimulationCfg(
+        dt=SIM_DT, render_interval=DECIMATION,
+        physx=PhysxCfg(
+            gpu_max_rigid_patch_count=2 ** 20,        # was ~163840 default -> overflow
+            gpu_max_rigid_contact_count=2 ** 23,
+            gpu_found_lost_pairs_capacity=2 ** 22,
+            gpu_found_lost_aggregate_pairs_capacity=2 ** 23,
+        ),
+    )
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
         num_envs=1024, env_spacing=4.0, replicate_physics=True
     )
