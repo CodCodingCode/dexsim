@@ -25,11 +25,11 @@ the ingester at a folder of `.mid` (a GiantMIDI-Piano download, the RoboPianist
 
 ```bash
 source env.sh
-python scripts/build_corpus.py \
+python scripts/prep/build_corpus.py \
     --roots data/midi data/robopianist_ref/robopianist/music/data \
     --out data/corpus/manifest.json
 # filter to short, reachable, easy pieces for a first curriculum:
-python scripts/build_corpus.py --roots data/corpus/giantmidi \
+python scripts/prep/build_corpus.py --roots data/corpus/giantmidi \
     --max-difficulty 0.5 --max-duration 40
 ```
 
@@ -82,18 +82,18 @@ our own validated IK reference** (which already positions each hand over its
 keys) and injects only the RP1M finger configuration. The wrist-target hook is
 there for a future IK pass that nudges arm placement to match RP1M exactly.
 
-### c) assemble the warm-start (`scripts/build_rp1m_reference.py`)
+### c) assemble the warm-start (`scripts/prep/build_rp1m_reference.py`)
 Sim-free. Merges the decoded hand pose into an existing reference's 24 hand
 columns (time-resampled), keeping its 6 arm columns:
 
 ```bash
 source env.sh
 # decode only -> name-keyed hand trajectory (no reference needed):
-python scripts/build_rp1m_reference.py \
+python scripts/prep/build_rp1m_reference.py \
     --actions data/robopianist_ref/examples/twinkle_twinkle_actions.npy
 
 # full warm-start: inject RP1M finger pose into our twinkle IK reference:
-python scripts/build_rp1m_reference.py \
+python scripts/prep/build_rp1m_reference.py \
     --actions data/robopianist_ref/examples/twinkle_twinkle_actions.npy \
     --reference data/reference/twinkle.npz \
     --out data/reference/twinkle_rp1m.npz
@@ -101,7 +101,7 @@ python scripts/build_rp1m_reference.py \
 
 It needs the articulation's joint-name order (to know which `q_ref` column is
 which joint). New references store it; otherwise it reads
-`data/reference/joint_names.json` (written by `scripts/dump_joint_names.py` or
+`data/reference/joint_names.json` (written by `scripts/prep/dump_joint_names.py` or
 `build_reference.py`). The merge is fully sim-free once that cache exists.
 
 ---
@@ -110,10 +110,10 @@ which joint). New references store it; otherwise it reads
 
 ```bash
 # clone the warm-start reference into the PPO actor (needs Isaac):
-python scripts/bc_pretrain.py --midi data/midi/twinkle.mid --headless \
+python scripts/train/bc_pretrain.py --midi data/midi/twinkle.mid --headless \
     --reference data/reference/twinkle_rp1m.npz --out logs/bc/twinkle_rp1m.pt
 # RL fine-tuning to actually close the physics gap (out of scope of this setup):
-python scripts/train_piano.py --midi data/midi/twinkle.mid \
+python scripts/train/train_piano.py --midi data/midi/twinkle.mid \
     --bc_init logs/bc/twinkle_rp1m.pt
 ```
 
@@ -127,7 +127,7 @@ using it in a pipeline.**
 
 ## Self-check
 
-`python scripts/test_pretrain_pipeline.py` runs all three parts sim-free and
+`python scripts/smoke/test_pretrain_pipeline.py` runs all three parts sim-free and
 asserts correctness (16 checks). No GPU needed.
 
 ## Honest status

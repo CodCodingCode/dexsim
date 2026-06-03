@@ -29,7 +29,7 @@ import sys
 import numpy as np
 import torch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "source"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "source"))
 from dexsim.piano.generalist import ConditionalDDPM
 
 

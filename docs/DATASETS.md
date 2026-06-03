@@ -33,11 +33,11 @@ does the permutation. Verified on real files (mug: 31 frames, 30 DoF).
 ```bash
 source env.sh
 # replay a real BODex grasp on the combined UR10e+Shadow embodiment
-python scripts/replay_bodex.py --headless \
+python scripts/prep/replay_bodex.py --headless \
   --traj ~/DexGraspBench/downloads/ur10e_shadow_extracted/bodex_ur10e_shadow/succ_collect/core_mug_*/scale*_pose000.npy
 ```
 
-`scripts/download_bodex.py --local` symlinks the on-disk data into `data/bodex/`
+`scripts/prep/download_bodex.py --local` symlinks the on-disk data into `data/bodex/`
 for convenience; pass `--list` to browse, or a `--repo-id` to fetch fresh from
 the Hub if you ever need to.
 

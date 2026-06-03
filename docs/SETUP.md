@@ -63,7 +63,7 @@ vulkaninfo --summary | grep -E "deviceName|driverName"
 ```
 
 After this, Isaac Sim reports `Graphics API: Vulkan / Driver 580.105.08`, the GPU
-foundation initializes, and `scripts/smoke_test.py` passes (24-DOF Shadow hand
+foundation initializes, and `scripts/smoke/smoke_test.py` passes (24-DOF Shadow hand
 simulates on GPU). **First run is slow** (cold RTX shader compile, a few minutes);
 subsequent runs are fast once the shader cache is warm.
 
@@ -76,5 +76,5 @@ subsequent runs are fast once the shader cache is warm.
 
 ```bash
 source env.sh                       # venv + EULA + Vulkan env + PYTHONPATH
-python scripts/smoke_test.py --headless --device cuda:0
+python scripts/smoke/smoke_test.py --headless --device cuda:0
 ```

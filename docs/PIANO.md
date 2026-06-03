@@ -7,12 +7,12 @@ spring-loaded piano, trained with PPO to play a specific MIDI song.
 
 ```
 data/midi/<song>.mid
-        │  scripts/make_test_midi.py writes a stand-in (Twinkle) for development
+        │  scripts/prep/make_test_midi.py writes a stand-in (Twinkle) for development
         ▼
 dexsim.piano.load_song(...)        -> (T,88) key goal + (T,88) onsets
 dexsim.piano.plan_fingering(...)   -> per-step finger->key assignment (10 fingers)
         ▼
-scripts/build_reference.py  (multi-fingertip IK)  -> data/reference/<song>.npz
+scripts/prep/build_reference.py  (multi-fingertip IK)  -> data/reference/<song>.npz
         │  drives the fingertips onto their assigned keys, records q_ref(T,2,30)
         ▼
 Dexsim-Piano-Bimanual-v0  (DirectRLEnv)            [PianoMime-style]
@@ -23,11 +23,11 @@ Dexsim-Piano-Bimanual-v0  (DirectRLEnv)            [PianoMime-style]
   reward:       key-press (right keys, none wrong) + FINGERING shaping
                 (finger→assigned key, the make-or-break term) + onset + energy
         ▼
-scripts/bc_pretrain.py   (optional: BC the IK expert -> actor warm-start)
-scripts/train_piano.py   (rsl_rl PPO, --bc_init optional)
-scripts/eval_reference.py(F1/recall/precision of reference or a policy)
-scripts/play_piano.py    (roll out + EXPORT what it played back to .mid)
-scripts/distill_generalist.py (PianoMime generalist: distill songs -> diffusion)
+scripts/train/bc_pretrain.py   (optional: BC the IK expert -> actor warm-start)
+scripts/train/train_piano.py   (rsl_rl PPO, --bc_init optional)
+scripts/train/eval_reference.py(F1/recall/precision of reference or a policy)
+scripts/train/play_piano.py    (roll out + EXPORT what it played back to .mid)
+scripts/train/distill_generalist.py (PianoMime generalist: distill songs -> diffusion)
 ```
 
 ## PianoMime port (what makes the 60-DoF problem trainable)
@@ -52,25 +52,25 @@ shaped reward gives an immediate, strong learning signal.
 
 ### Typical workflow
 ```bash
-python scripts/build_reference.py --midi data/midi/twinkle.mid --headless   # once per song
-python scripts/eval_reference.py  --midi data/midi/twinkle.mid --zero --headless  # sanity
-python scripts/train_piano.py --headless --num_envs 4096 --midi data/midi/twinkle.mid
+python scripts/prep/build_reference.py --midi data/midi/twinkle.mid --headless   # once per song
+python scripts/train/eval_reference.py  --midi data/midi/twinkle.mid --zero --headless  # sanity
+python scripts/train/train_piano.py --headless --num_envs 4096 --midi data/midi/twinkle.mid
 ```
 
 Key assets (generated once, already built here):
 - `assets/piano88.usd` — 88 keys, each a sprung hinge (`joint_0..joint_87`,
   index = MIDI−21). A key "sounds" when its hinge angle ≤ `KEY_SOUND_ANGLE`.
-  Rebuild: `python scripts/build_piano_usd.py`.
+  Rebuild: `python scripts/build/build_piano_usd.py`.
 - `assets/ur10e_shadow.usd` — UR10e + Shadow bonded into one articulation
   (`wrist_3_link → robot0_forearm`). Rebuild:
-  `python scripts/build_combined_usd.py --inspect` then without `--inspect`.
+  `python scripts/build/build_combined_usd.py --inspect` then without `--inspect`.
 
 ## Use your own song
 
 ```bash
 cp /path/to/your_song.mid data/midi/your_song.mid
-python scripts/train_piano.py --headless --num_envs 2048 --midi data/midi/your_song.mid
-python scripts/play_piano.py  --num_envs 1 --video --midi data/midi/your_song.mid \
+python scripts/train/train_piano.py --headless --num_envs 2048 --midi data/midi/your_song.mid
+python scripts/train/play_piano.py  --num_envs 1 --video --midi data/midi/your_song.mid \
        --export_midi logs/your_song_played.mid
 ```
 `play_piano.py` records the keys the policy actually pressed and writes them to a
@@ -96,8 +96,8 @@ Enable with `--arm_ik_follow` (sets `arm_ik_follow`, clears `freeze_arms` +
 `use_reference`):
 
 ```bash
-python scripts/eval_reference.py --midi data/midi/easy.mid --arm_ik_follow --zero --headless   # sanity
-python scripts/train_piano.py    --midi data/midi/easy.mid --arm_ik_follow --headless --num_envs 2048
+python scripts/train/eval_reference.py --midi data/midi/easy.mid --arm_ik_follow --zero --headless   # sanity
+python scripts/train/train_piano.py    --midi data/midi/easy.mid --arm_ik_follow --headless --num_envs 2048
 ```
 
 **Validated (easy.mid, zero finger residual, 2026-06-03):** stable over 839 steps,

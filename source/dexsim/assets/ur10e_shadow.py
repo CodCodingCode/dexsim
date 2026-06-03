@@ -192,19 +192,6 @@ embodiment of the BODex-Tabletop trajectories. Requires the composed USD;
 run ``python scripts/build_combined_usd.py`` once to generate it."""
 
 
-# ---------------------------------------------------------------------------
-# Combined UR10e + LEFT Shadow Hand  (mirrored hand for the left arm)
-# ---------------------------------------------------------------------------
-# Isaac ships only a right Shadow hand, so the left hand is the MuJoCo
-# `left_shadow_hand` imported to USD and renamed robot0_* (drop-in body/joint
-# names). Built by ``scripts/build_left_arm.py`` -> assets/ur10e_shadow_left.usd.
-COMBINED_LEFT_USD_PATH = str(ASSETS_DIR / "ur10e_shadow_left.usd")
-
-UR10E_SHADOW_LEFT_CFG = UR10E_SHADOW_CFG.replace(
-    spawn=UR10E_SHADOW_CFG.spawn.replace(usd_path=COMBINED_LEFT_USD_PATH),
-)
-"""UR10e with a LEFT Shadow hand. Same robot0_* convention as the right combined
-arm, so it drops into the env wherever UR10E_SHADOW_CFG is used. NOTE: the
-hand->flange mount orientation still needs tuning (--mount-rpy in
-build_left_arm.py) for full stability, since the MuJoCo hand's forearm frame
-differs from the Isaac right hand's."""
+# NOTE: the bimanual env builds BOTH arms from UR10E_SHADOW_CFG (the right
+# combined USD), placed at different base positions -- there is no separate
+# left-arm asset. The abandoned combined-left build is kept only in git history.

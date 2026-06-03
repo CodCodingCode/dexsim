@@ -6,11 +6,11 @@ H100. Two things live here:
 ### 🎹 Current goal — bimanual piano (see [docs/PIANO.md](docs/PIANO.md))
 Two UR10e + Shadow arms (**60 action DoF**) over an 88-key piano, trained with
 PPO to play a specific MIDI song. The env builds and steps on GPU today
-(`scripts/piano_env_smoke.py` passes). Drop your `.mid` in `data/midi/` and:
+(`scripts/smoke/piano_env_smoke.py` passes). Drop your `.mid` in `data/midi/` and:
 ```bash
 source env.sh
-python scripts/train_piano.py --headless --num_envs 2048 --midi data/midi/<song>.mid
-python scripts/play_piano.py  --num_envs 1 --video --export_midi logs/played.mid
+python scripts/train/train_piano.py --headless --num_envs 2048 --midi data/midi/<song>.mid
+python scripts/train/play_piano.py  --num_envs 1 --video --export_midi logs/played.mid
 ```
 
 ### Foundation — manipulation on the same embodiment
@@ -36,17 +36,19 @@ dexsim/
     tasks/grasp/               # tabletop scene + BODex trajectory loader
   scripts/
     setup_nvidia_gl.sh         # stage NVIDIA Vulkan/GLX driver locally (the env fix)
-    smoke_test.py              # boot Isaac Sim, spawn Shadow Hand, step (sanity)
-    build_piano_usd.py         # generate the 88-key sprung piano USD
-    build_combined_usd.py      # compose UR10e + Shadow into ONE articulation USD
-    make_test_midi.py          # write data/midi/twinkle.mid for development
-    piano_env_smoke.py         # integration test: build+step the bimanual piano env
-    train_piano.py / play_piano.py  # PPO train / playback (+ export played .mid)
-    spawn_scene.py             # build the full tabletop scene and settle it
-    train_rl.py / play_rl.py   # PPO train / playback for reorientation
-    replay_bodex.py            # replay a BODex trajectory on the embodiment
-    download_bodex.py          # fetch BODex-Tabletop
-    download_dexgraspnet.py    # fetch DexGraspNet
+    train/                     # PPO/SFT/BC train + playback + eval + run monitoring
+                               #   train_piano.py / play_piano.py, train_rl.py / play_rl.py,
+                               #   sft_rp1m.py, bc_pretrain.py, eval_reference.py, ...
+    build/                     # one-shot USD asset builders
+                               #   build_combined_usd.py, build_piano_usd.py,
+                               #   build_shadow_slider_usd.py, *_left_hand asset provenance
+    prep/                      # MIDI/corpus/reference prep + dataset downloads
+                               #   make_test_midi.py, build_corpus.py, build_reference.py,
+                               #   download_bodex.py, replay_bodex.py, ...
+    render/                    # rendering, video, and camera-rig tools
+                               #   render_scene.py, record_rollout.py / render_rollout.py, ...
+    smoke/                     # sanity / integration tests (no training)
+                               #   smoke_test.py, piano_env_smoke.py, smoke_slider.py, ...
   assets/                      # composed USDs land here (gitignored)
   data/                        # datasets (gitignored)
   IsaacLab/                    # Isaac Lab v2.1.0 checkout (installed editable)
@@ -60,18 +62,18 @@ cd ~/dexsim
 source env.sh
 
 # 0. sanity: boot the sim and spawn the hand
-python scripts/smoke_test.py --headless
+python scripts/smoke/smoke_test.py --headless
 
 # 1a. RL reorientation (no dataset needed) — just hit run
-python scripts/train_rl.py --headless --num_envs 8192
-python scripts/play_rl.py --num_envs 16 --video
+python scripts/train/train_rl.py --headless --num_envs 8192
+python scripts/train/play_rl.py --num_envs 16 --video
 
 # 1b. imitation path — get the dataset, then replay it on the embodiment
-python scripts/download_bodex.py --list          # inspect the repo first
-python scripts/download_bodex.py --include "..."  # grab a subset
-python scripts/build_combined_usd.py --inspect    # verify mount frames
-python scripts/build_combined_usd.py              # build assets/ur10e_shadow.usd
-python scripts/replay_bodex.py --traj data/bodex/<file>.npz --headless
+python scripts/prep/download_bodex.py --list          # inspect the repo first
+python scripts/prep/download_bodex.py --include "..."  # grab a subset
+python scripts/build/build_combined_usd.py --inspect    # verify mount frames
+python scripts/build/build_combined_usd.py              # build assets/ur10e_shadow.usd
+python scripts/prep/replay_bodex.py --traj data/bodex/<file>.npz --headless
 ```
 
 The combined UR10e+Shadow articulation is built once by `build_combined_usd.py`
