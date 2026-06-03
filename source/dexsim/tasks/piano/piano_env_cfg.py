@@ -157,6 +157,19 @@ class PianoEnvCfg(DirectRLEnvCfg):
     #   and generate pure false-press noise. MUST be reverted to False for the two-handed
     #   song.mid (its notes cross into the right window).
 
+    # --- ARM-IK-FOLLOW mode (the clean decoupling: math moves the arms, RL the fingers) ---
+    # Instead of learning a 60-DoF residual on a precomputed q_ref (whose FingertipIK
+    # arm trajectory diverges, capping zero-residual F1 at 0.03), drive the 12 arm DoF
+    # ONLINE with WristPoseIK: each control step the well-posed palm-servo (proven to
+    # reach within ~1cm across the whole keyboard, scripts/diag_wrist_ik.py) tracks the
+    # per-hand fingering centroid, while the policy action is masked to the 48 finger
+    # DoF only. No reference trajectory needed; the arm-blowup failure mode disappears
+    # (the policy never touches the stiff arm joints). Set with freeze_arms=False and
+    # use_reference=False. Supersedes freeze_arms (static hold) when both are set.
+    arm_ik_follow: bool = False
+    arm_ik_hover: float = 0.05   # m the servoed palm hovers above the key tops (matches
+    #   diag_wrist_ik's 0.05, which converged the palm to 4-14mm). Fingers reach down from there.
+
     # reward weights (PianoMime/RoboPianist composite)
     key_press_weight: float = 2.0   # was 1.0: PRESSING the right key must dominate
     #   the (positioning) shaping, else the policy hovers near keys for finger

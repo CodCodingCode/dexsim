@@ -83,6 +83,15 @@ class PianoEnv(DirectRLEnv):
         if getattr(self.cfg, "freeze_arms", False):
             self.joint_scale = self.joint_scale * is_hand.unsqueeze(0)
             print("[PianoEnv] FIXED ARMS: hands held over keyboard, fingers-only training")
+        # ARM-IK-FOLLOW mode: the policy drives ONLY the 48 finger DoF (zero arm
+        # residual); the 12 arm DoF are servoed online by WristPoseIK to the per-hand
+        # fingering centroid in _servo_arms(). Math positions the hands, RL presses.
+        self._arm_ik_follow = bool(getattr(self.cfg, "arm_ik_follow", False))
+        if self._arm_ik_follow:
+            self.joint_scale = self.joint_scale * is_hand.unsqueeze(0)
+            self._arm_dof_mask = (is_hand < 0.5)            # (30,) bool: the arm joints
+            print("[PianoEnv] ARM-IK-FOLLOW: WristPoseIK servos arms to the fingering "
+                  "centroid; policy drives only the 48 finger DoF")
 
         # --- song -> goal / onset tensors ---
         song = load_song(self.cfg.midi_path, control_dt=self.cfg.control_dt)
@@ -237,6 +246,39 @@ class PianoEnv(DirectRLEnv):
             a_right = a_right * 0.0
         self._left_target = torch.clamp(ref[:, 0] + scale * a_left, lo, hi)
         self._right_target = torch.clamp(ref[:, 1] + scale * a_right, lo, hi)
+        # arm DoF are not the policy's job in this mode -- overwrite them with the
+        # online WristPoseIK solution toward each hand's upcoming-note centroid.
+        if getattr(self, "_arm_ik_follow", False):
+            self._servo_arms()
+
+    def _servo_arms(self):
+        """Drive the 12 arm DoF with WristPoseIK so each hand's palm tracks the
+        centroid of its upcoming notes (hover above the keys, fingers pointing down).
+        Overwrites only the arm columns of the joint targets; the finger columns keep
+        the policy's residual. One DLS step per control step -> closed-loop tracking
+        (the next step re-reads the true palm pose, so iteration happens over time)."""
+        if not hasattr(self, "ik_left"):
+            from dexsim.piano.ik import WristPoseIK
+            self.ik_left = WristPoseIK(self.left_robot, self.cfg.hand_base_body)
+            self.ik_right = WristPoseIK(self.right_robot, self.cfg.hand_base_body)
+            # hold the ready-pose palm orientation (fingers down) as the servo target
+            _, self._arm_quat_l = self.ik_left.pose_w()
+            _, self._arm_quat_r = self.ik_right.pose_w()
+            self._arm_quat_l = self._arm_quat_l.clone()
+            self._arm_quat_r = self._arm_quat_r.clone()
+        centroid, active = self._hand_note_centroids()      # (E,2,3), (E,2)
+        pl, _ = self.ik_left.pose_w()
+        pr, _ = self.ik_right.pose_w()                       # current palm positions
+        tgt_l = centroid[:, 0].clone(); tgt_l[:, 2] += self.cfg.arm_ik_hover
+        tgt_r = centroid[:, 1].clone(); tgt_r[:, 2] += self.cfg.arm_ik_hover
+        # a hand with no upcoming notes holds station (target = where it already is)
+        tgt_l = torch.where(active[:, 0:1], tgt_l, pl)
+        tgt_r = torch.where(active[:, 1:2], tgt_r, pr)
+        q_l = self.ik_left.solve(tgt_l, self._arm_quat_l)    # (E,30); only arm cols move
+        q_r = self.ik_right.solve(tgt_r, self._arm_quat_r)
+        m = self._arm_dof_mask                               # (30,) -> arm columns
+        self._left_target = torch.where(m, q_l, self._left_target)
+        self._right_target = torch.where(m, q_r, self._right_target)
 
     def _apply_action(self):
         self.left_robot.set_joint_position_target(self._left_target)
