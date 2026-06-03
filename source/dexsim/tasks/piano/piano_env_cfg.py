@@ -169,6 +169,11 @@ class PianoEnvCfg(DirectRLEnvCfg):
     arm_ik_follow: bool = False
     arm_ik_hover: float = 0.05   # m the servoed palm hovers above the key tops (matches
     #   diag_wrist_ik's 0.05, which converged the palm to 4-14mm). Fingers reach down from there.
+    finger_ik_base: bool = False  # PARKED: also pose the fingers analytically (hand-only
+    #   FingertipIK) instead of leaving them at ready pose for RL. A relative one-step DLS
+    #   target can't drive the weak hand actuators (stiffness 3) the way it drives the stiff
+    #   arm, so it made no measurable difference; finger pressing is the policy's job. Kept
+    #   for experimentation (e.g. if paired with a stiffer hand or iterated-to-convergence IK).
 
     # reward weights (PianoMime/RoboPianist composite)
     key_press_weight: float = 2.0   # was 1.0: PRESSING the right key must dominate
