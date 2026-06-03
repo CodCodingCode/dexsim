@@ -5,6 +5,35 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
+## 2026-06-03 — tick 4
+- **Question (backlog):** read tick-3's background reference eval; is the IK
+  reference good enough to warm-start from?
+- **RESULT (the gate):** pure IK reference, twinkle, corrected metric →
+  **micro F1 = 0.031, recall 0.114, precision 0.018**, reward/step −1.9
+  (`logs/autoloop/ref_twinkle.json`). Verdict: **reference is NOT yet a usable
+  warm-start.** But it's no longer 0 — recall went 0→11% (the earlier
+  KEY_SOUND_ANGLE −0.10→−0.012 fix let keys physically sound).
+- **Red herring ruled out:** the log's `30 != 26` actuator warning is **benign** —
+  the 4 unactuated joints/hand are Shadow's coupled distal `*J0` joints (driven by
+  parent), per `ur10e_shadow.py:40`. NOT undriven fingers. Good that I checked
+  before "fixing" the actuator cfg.
+- **Real diagnosis:** precision 1.8% ≫ dominates — the reference *mashes ~50× more
+  wrong keys than right ones*. Bottleneck = **finger-placement precision / false
+  presses**, NOT key physics or actuation. recall 11% = fingers reach the right key
+  only sometimes.
+- **Change:** corrected `docs/STATUS.md` (was citing the buggy-metric 0.006 and the
+  since-fixed −0.10 sound angle) — new measured table + benign-warning note + marked
+  the −0.10 diagnostic STALE. Commit `056d530`. (Source-of-truth fix so this isn't
+  re-chased.)
+- **Backlog update — NEW #1:** *why precision 1.8%?* Where do the false presses come
+  from — idle/passing fingers resting on keys, IK targeting wrong keys, or the
+  hover/clearance pose too low? Candidate next ticks: (a) eval on `easy.mid` to see
+  if it's song-specific; (b) inspect IK target assignment vs fingering; (c) raise
+  idle-finger hover clearance. Warm-start work (KL-to-BC etc.) is **on hold** until
+  reference precision is fixed — warm-starting from a 0.03-F1 reference is pointless.
+
+---
+
 ## 2026-06-03 — tick 3
 - **Question (backlog):** launch the background pure-reference Isaac eval — the gate
   we've been deferring — now that the metric (ticks 1+2) is trustworthy.
