@@ -5,6 +5,41 @@ Protocol: `docs/RESEARCH_LOOP.md`. Goal: key-press **F1 → 0.6–0.8** (not rew
 
 ---
 
+## 2026-06-03 — tick 8
+- **Question (backlog #1):** WHY does the IK miss by ~5cm (p90 446mm)?
+- **Finding 1 — over-constrained solver floor:** `build_reference.py` drives
+  `FingertipIK` (10 substeps). But `ik.py` itself documents FingertipIK
+  over-constrains the 6-DoF arm with 5 fingertip targets → **~45mm residual + occasional
+  divergence**. Our 48mm median IS that inherent floor; more iterations won't fix it
+  (max_step 5cm × 10 already allows 50cm of travel).
+- **Finding 2 (the big one) — it's the LEFT hand, and it DIVERGES:** enhanced
+  `diag_tip_err.py` to split blur(<=100mm)/divergence(>100mm) per hand. On
+  `twinkle.npz`:
+  * **hand R: median 48mm, p90 72mm, 1% >100mm** → just the blur floor, basically fine.
+  * **hand L: median 286mm, p90 947mm, 52% of active steps >100mm** → DIVERGENT.
+  The left arm is failing on half its notes (median 29cm off). This is NOT generic IK
+  blur — it's the **known-unfinished left-arm mount-rotation** (`STATUS.md:17,84`:
+  "LEFT hand … still needs a ~90° mount-rotation tune"). The mis-oriented mount makes
+  left-arm IK targets unreachable/divergent.
+- **=> Root cause chain is now complete:** F1≈0 ← reference unplayable ← left-arm IK
+  diverges ← left-hand mount rotation wrong. (Right hand is at the tunable 45mm floor.)
+- **Change:** `diag_tip_err.py` now reports blur-vs-divergence + per-hand split
+  (commit `b7f9011`) — this is what made the asymmetry legible offline.
+- **NEXT STEP IS LARGER THAN ONE TICK — surfaced to user:** fixing the left mount
+  (in the combined-USD build or `left_robot_cfg` orientation) + rebuilding references
+  is a multi-step structural change, not a one-small-edit. Plan:
+  1. fix left-arm mount rotation so left fingertips can reach keys (target: left-hand
+     median tip_err → ~right-hand's 45mm, divergence→~0);
+  2. rebuild twinkle reference, re-grade with `diag_tip_err.py` (offline, seconds);
+  3. if left ≈ right (~45mm floor), attack the shared 45mm blur floor (e.g.
+     WristPoseIK arm-servo + RP1M-clamped hand, per ik.py's own recommendation) to
+     get fingertips within a key width;
+  4. only THEN re-eval F1 and resume the warm-start track.
+- **Backlog — NEW #1:** "fix left-arm mount rotation (left IK diverges, 52% steps
+  >100mm)". #2: "shared 45mm DLS blur floor → switch reference IK to arm-servo".
+
+---
+
 ## 2026-06-03 — tick 7
 - **A/B result (tick 6) — hypothesis REFUTED:** fresh `twinkle_rp1m.npz` ≈ stale
   `twinkle.npz` (precision 0.020 vs 0.018, recall 0.135 vs 0.114, F1 0.035 vs 0.031).
