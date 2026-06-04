@@ -29,6 +29,10 @@ parser.add_argument("--key_stiffness", type=float, default=None, help="override 
 parser.add_argument("--false_press_weight", type=float, default=None, help="override false-press penalty weight")
 parser.add_argument("--hand_action_scale", type=float, default=None, help="override finger residual scale (lower = less jitter/blowup)")
 parser.add_argument("--init_noise", type=float, default=None, help="override PPO initial action-noise std")
+parser.add_argument("--key_press_weight", type=float, default=None, help="reward for sounding the right key")
+parser.add_argument("--onset_weight", type=float, default=None, help="reward for sounding a key on its onset")
+parser.add_argument("--fingering_weight", type=float, default=None, help="shaping: fingertip near assigned key (lower = less hovering)")
+parser.add_argument("--arm_base_weight", type=float, default=None, help="shaping: arm over note centroid (lower = less hovering)")
 parser.add_argument("--tag", default=None, help="run label -> wandb run name + log subdir (for parallel A/B/C runs)")
 parser.add_argument("--reference", default=None, help="explicit q_ref .npz (e.g. an RP1M reference); enables use_reference and overrides the default per-song file")
 parser.add_argument("--no_fold", action="store_true", help="disable fold_to_reach (use the song's real key positions, e.g. for RP1M)")
@@ -77,6 +81,10 @@ def main():
         env_cfg.false_press_weight = args.false_press_weight
     if args.hand_action_scale is not None:
         env_cfg.hand_action_scale = args.hand_action_scale
+    for _w in ("key_press_weight", "onset_weight", "fingering_weight", "arm_base_weight"):
+        _v = getattr(args, _w)
+        if _v is not None:
+            setattr(env_cfg, _w, _v)
     if args.hand_stiffness is not None or args.hand_effort is not None:
         # override the Shadow hand actuator authority on BOTH arms (the "hand" group
         # = robot0_.* joints). Weak fingers (stiffness 3) may be why the policy can't
