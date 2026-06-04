@@ -167,6 +167,17 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # (the policy never touches the stiff arm joints). Set with freeze_arms=False and
     # use_reference=False. Supersedes freeze_arms (static hold) when both are set.
     arm_ik_follow: bool = False
+    # ONE-FINGER-PER-NOTE mode (monophonic redesign). The arm centroid-servo positions the
+    # hand only GROSSLY -> the assigned fingertip lands ~13cm from its key (precision capped).
+    # Here we instead aim ONE designated fingertip directly at the current note (offset the
+    # palm target by the palm->fingertip vector), curl the other 4 fingers up, and let that
+    # finger strike. For a monophonic melody this plays each note cleanly. Requires arm_ik_follow.
+    single_finger: bool = False
+    primary_finger: int = 1       # which finger presses, per-hand order [0=th,1=ff,2=mf,3=rf,4=lf]
+    single_press_z: float = -0.006  # m vs key top to drive the fingertip to (negative = into key -> strike)
+    single_curl: float = 2.0      # rad to curl the 4 non-primary fingers up out of the way
+    single_align_thresh: float = 0.015  # m xy-distance under which the finger dips to press (else hovers)
+    single_hover: float = 0.012   # m above key top the finger hovers while moving between notes
     idle_hand_retract: float = 0.20  # m above the keys an INACTIVE hand (no upcoming
     #   notes) lifts to, so its resting fingers stop ringing keys (the muted right hand
     #   on a left-only song was mashing ~5-7 false keys from holding station at key level).

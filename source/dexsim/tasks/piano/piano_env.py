@@ -323,6 +323,8 @@ class PianoEnv(DirectRLEnv):
             _, self._arm_quat_r = self.ik_right.pose_w()
             self._arm_quat_l = self._arm_quat_l.clone()
             self._arm_quat_r = self._arm_quat_r.clone()
+        if getattr(self.cfg, "single_finger", False):
+            return self._single_finger_base(base_l, base_r)
         # --- arm servo to the upcoming-note centroid ---
         centroid, active = self._hand_note_centroids()      # (E,2,3), (E,2)
         pl, _ = self.ik_left.pose_w()
@@ -362,6 +364,51 @@ class PianoEnv(DirectRLEnv):
                     idle = (~fa[:, hand_i * 5 + fi].bool()).float().unsqueeze(-1)  # (E,1)
                     base[:, cols] = base[:, cols] + curl * idle
         return base_l, base_r
+
+    def _single_finger_base(self, base_l, base_r):
+        """ONE-FINGER-PER-NOTE base pose. Aim the PRIMARY fingertip directly at the
+        current note (not the palm at a window centroid), curl the other 4 fingers up,
+        retract a hand with no current note. For a monophonic melody this places the
+        striking finger on the right key -> high precision (vs ~13cm gross-centroid error)."""
+        pf = int(self.cfg.primary_finger)
+        key_top = self._key_top_world()                       # (E,88,3)
+        goal = self.goal_padded[self.song_step]               # (E,88) keys active NOW
+        palms = self._palms_world()                           # (E,2,3) [L,R]
+        tips = self._fingertips_world()                        # (E,10,3) global order
+        kb_z = key_top[..., 2].amax(dim=-1, keepdim=True)      # (E,1) keyboard surface
+        m = self._arm_dof_mask
+        out = []
+        for hand_i, (mask, ik, quat, base) in enumerate((
+                (self.left_key_mask, self.ik_left, self._arm_quat_l, base_l),
+                (self.right_key_mask, self.ik_right, self._arm_quat_r, base_r))):
+            ak = goal * mask                                   # (E,88) this hand's active keys
+            has = ak.sum(-1, keepdim=True) > 0                 # (E,1)
+            kpos = (key_top * ak.unsqueeze(-1)).sum(1) / ak.sum(-1, keepdim=True).clamp(min=1e-6)  # (E,3)
+            ft = tips[:, hand_i * 5 + pf]                      # (E,3) primary fingertip
+            palm = palms[:, hand_i]                            # (E,3)
+            # LIFT-MOVE-PRESS: only dip to press depth when the fingertip is already over
+            # the target key (xy aligned); otherwise hover ABOVE the keys so moving between
+            # notes doesn't DRAG the finger across every key at press depth (precision killer).
+            xy_dist = torch.linalg.norm(ft[:, :2] - kpos[:, :2], dim=-1, keepdim=True)  # (E,1)
+            aligned = xy_dist < getattr(self.cfg, "single_align_thresh", 0.015)
+            z_off = torch.where(aligned, torch.full_like(xy_dist, self.cfg.single_press_z),
+                                torch.full_like(xy_dist, getattr(self.cfg, "single_hover", 0.012)))
+            ft_tgt = kpos.clone(); ft_tgt[:, 2:3] = kpos[:, 2:3] + z_off
+            palm_tgt = ft_tgt + (palm - ft)                    # drive palm so the tip reaches ft_tgt
+            retract = palm.clone(); retract[:, 2] = (kb_z + self.cfg.idle_hand_retract).squeeze(-1)
+            palm_tgt = torch.where(has, palm_tgt, retract)
+            arm = ik.solve(palm_tgt, quat)                     # (E,30); arm cols only
+            b = torch.where(m, arm, base)
+            # curl fingers up out of the way. Non-primary: always. Primary: only when this
+            # hand is IDLE (no note) -- an idle hand (e.g. the muted right hand) must lift ALL
+            # fingers clear of its window keys; the active hand keeps the primary straight to press.
+            idle_h = (~has).float()                            # (E,1) 1 where hand has no note
+            for fi in range(5):
+                cols = self._finger_flex_cols[fi]
+                w = idle_h if fi == pf else torch.ones_like(idle_h)
+                b[:, cols] = b[:, cols] + self.cfg.single_curl * w
+            out.append(b)
+        return out[0], out[1]
 
     def _apply_action(self):
         self.left_robot.set_joint_position_target(self._left_target)

@@ -26,6 +26,12 @@ parser.add_argument("--reference", default=None, help="explicit q_ref .npz to lo
 parser.add_argument("--arm_ik_follow", action="store_true", help="arms servoed online "
                     "by WristPoseIK to the fingering centroid; no q_ref needed")
 parser.add_argument("--idle_finger_curl", type=float, default=None, help="curl idle fingers up in the base pose (rad; sign-test the anti-mash)")
+parser.add_argument("--arm_ik_hover", type=float, default=None, help="palm hover height above keys")
+parser.add_argument("--arm_lookahead", type=int, default=None, help="steps of upcoming notes for the arm centroid (1=track current note tightly)")
+parser.add_argument("--single_finger", action="store_true", help="one-finger-per-note: aim the primary fingertip at the current note")
+parser.add_argument("--primary_finger", type=int, default=None, help="which finger presses (0=th,1=ff,2=mf,3=rf,4=lf)")
+parser.add_argument("--single_press_z", type=float, default=None, help="m vs key top to drive the fingertip (neg=into key)")
+parser.add_argument("--single_curl", type=float, default=None, help="rad to curl the non-primary fingers up")
 parser.add_argument("--hand_stiffness", type=float, default=None, help="override hand actuator stiffness")
 parser.add_argument("--hand_effort", type=float, default=None, help="override hand actuator effort_limit")
 parser.add_argument("--out", default=None, help="write metrics as JSON to this path "
@@ -57,6 +63,18 @@ def main():
         cfg.arm_ik_follow = True
         if args.idle_finger_curl is not None:
             cfg.idle_finger_curl = args.idle_finger_curl
+        if args.arm_ik_hover is not None:
+            cfg.arm_ik_hover = args.arm_ik_hover
+        if args.arm_lookahead is not None:
+            cfg.arm_lookahead = args.arm_lookahead
+        if args.single_finger:
+            cfg.single_finger = True
+        if args.primary_finger is not None:
+            cfg.primary_finger = args.primary_finger
+        if args.single_press_z is not None:
+            cfg.single_press_z = args.single_press_z
+        if args.single_curl is not None:
+            cfg.single_curl = args.single_curl
     if args.hand_stiffness is not None or args.hand_effort is not None:
         for rc in (cfg.left_robot_cfg, cfg.right_robot_cfg):
             ha = rc.actuators["hand"]

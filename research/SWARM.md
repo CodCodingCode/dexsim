@@ -71,3 +71,10 @@ A run "wins" if it BEATS the base bar (F1>0.19) OR holds recall>0.5 with rising 
 | thread | tag | key flags | survived | F1 | recall | precision | keys_snd | note |
 |--------|-----|-----------|----------|----|--------|-----------|---------|------|
 | base   | -   | zero-residual reference | yes | 0.19 | 0.67 | 0.11 | 4.7 | the bar to beat |
+
+## ROUND 2 finding (orchestrator)
+- WINNING LEVER: idle_finger_curl = +2.0 (lift NON-assigned fingers up). r2_curlP: F1 0.166,
+  recall 0.34, prec 0.111, keys 1.82 — best of round, ~base level. +curl >> -curl (sign confirmed).
+  no-shaping and very-low-action-scale both worse. Recipe: +curl + moderate hand_action_scale(0.06)
+  + press-dominant reward. recall still drifts 0.67->0.34 (curl lifts idle so fewer presses).
+- NEXT: refine around curlP (stronger curl, a touch more action scale, maybe higher hover for precision).

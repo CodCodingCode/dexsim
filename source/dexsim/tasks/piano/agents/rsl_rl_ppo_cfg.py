@@ -14,7 +14,7 @@ from isaaclab_rl.rsl_rl import (
 class PianoPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 32
     max_iterations = 5000
-    save_interval = 50
+    save_interval = 10
     experiment_name = "piano_bimanual"
     empirical_normalization = True
     # --- logging: Weights & Biases (key in ~/.netrc via `wandb login`) ---

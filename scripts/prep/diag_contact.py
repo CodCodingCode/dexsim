@@ -13,6 +13,7 @@ parser.add_argument("--hover", type=float, default=None)
 parser.add_argument("--retract", type=float, default=None)
 parser.add_argument("--curl", type=float, default=None)
 parser.add_argument("--key_stiffness", type=float, default=None)
+parser.add_argument("--single_finger", action="store_true")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 app = AppLauncher(args).app
@@ -39,6 +40,10 @@ def main():
         cfg.idle_finger_curl = args.curl
     if args.key_stiffness is not None:
         cfg.piano_cfg.actuators["keys"].stiffness = args.key_stiffness
+    if args.single_finger:
+        cfg.single_finger = True
+        cfg.single_press_z = -0.015
+        cfg.single_curl = 3.0
     env = PianoEnv(cfg, render_mode=None)
     obs, _ = env.reset()
     a = torch.zeros(env.num_envs, cfg.action_space, device=env.device)

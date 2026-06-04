@@ -29,6 +29,7 @@ parser.add_argument("--key_stiffness", type=float, default=None, help="override 
 parser.add_argument("--false_press_weight", type=float, default=None, help="override false-press penalty weight")
 parser.add_argument("--hand_action_scale", type=float, default=None, help="override finger residual scale (lower = less jitter/blowup)")
 parser.add_argument("--init_noise", type=float, default=None, help="override PPO initial action-noise std")
+parser.add_argument("--lr", type=float, default=None, help="override PPO learning rate (lower = less degradation)")
 parser.add_argument("--idle_finger_curl", type=float, default=None, help="curl NON-assigned fingers up in the base pose (rad; lift idle fingers off neighbor keys)")
 parser.add_argument("--key_press_weight", type=float, default=None, help="reward for sounding the right key")
 parser.add_argument("--onset_weight", type=float, default=None, help="reward for sounding a key on its onset")
@@ -113,6 +114,8 @@ def main():
     agent_cfg.seed = args.seed
     if args.init_noise is not None:
         agent_cfg.policy.init_noise_std = args.init_noise
+    if args.lr is not None:
+        agent_cfg.algorithm.learning_rate = args.lr
     if args.max_iterations is not None:
         agent_cfg.max_iterations = args.max_iterations
     if args.bc_init:

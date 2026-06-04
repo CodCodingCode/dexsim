@@ -19,6 +19,14 @@ parser.add_argument("--midi", default=None)
 parser.add_argument("--video", action="store_true")
 parser.add_argument("--export_midi", default="logs/played.mid",
                     help="write the keys the policy actually sounded to this .mid")
+parser.add_argument("--zero", action="store_true", help="roll out zero action (the engineered reference, no checkpoint)")
+parser.add_argument("--arm_ik_follow", action="store_true")
+parser.add_argument("--single_finger", action="store_true")
+parser.add_argument("--primary_finger", type=int, default=None)
+parser.add_argument("--single_press_z", type=float, default=None)
+parser.add_argument("--single_curl", type=float, default=None)
+parser.add_argument("--hand_stiffness", type=float, default=None)
+parser.add_argument("--hand_effort", type=float, default=None)
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 if args.video:
@@ -79,6 +87,21 @@ def main():
     cfg.scene.num_envs = args.num_envs
     if args.midi:
         cfg.midi_path = args.midi
+    if args.arm_ik_follow:
+        cfg.arm_ik_follow = True; cfg.freeze_arms = False; cfg.use_reference = False
+    if args.single_finger:
+        cfg.single_finger = True
+    for k in ("primary_finger", "single_press_z", "single_curl"):
+        v = getattr(args, k)
+        if v is not None:
+            setattr(cfg, k, v)
+    if args.hand_stiffness is not None or args.hand_effort is not None:
+        for rc in (cfg.left_robot_cfg, cfg.right_robot_cfg):
+            if args.hand_stiffness is not None:
+                rc.actuators["hand"].stiffness = args.hand_stiffness
+                rc.actuators["hand"].damping = max(0.1, 0.05 * args.hand_stiffness)
+            if args.hand_effort is not None:
+                rc.actuators["hand"].effort_limit = args.hand_effort
     agent_cfg = PianoPPORunnerCfg()
 
     env = gym.make(TASK, cfg=cfg, render_mode="rgb_array" if args.video else None)
@@ -88,19 +111,24 @@ def main():
             step_trigger=lambda s: s == 0, video_length=cfg_len(env), disable_logger=True)
     env = RslRlVecEnvWrapper(env)
 
-    ckpt = args.checkpoint or get_checkpoint_path("logs/rsl_rl/piano_bimanual", ".*", "model_.*.pt")
-    print(f"[play_piano] checkpoint: {ckpt}")
-    _ad = agent_cfg.to_dict(); _ad.setdefault("policy", {})["noise_std_type"] = "log"
-    runner = OnPolicyRunner(env, _ad, log_dir=None, device=agent_cfg.device)
-    runner.load(ckpt)
-    policy = runner.get_inference_policy(device=env.unwrapped.device)
-
     le = env.unwrapped
+    policy = None
+    if not args.zero:
+        ckpt = args.checkpoint or get_checkpoint_path("logs/rsl_rl/piano_bimanual", ".*", "model_.*.pt")
+        print(f"[play_piano] checkpoint: {ckpt}")
+        _ad = agent_cfg.to_dict(); _ad.setdefault("policy", {})["noise_std_type"] = "log"
+        runner = OnPolicyRunner(env, _ad, log_dir=None, device=agent_cfg.device)
+        runner.load(ckpt)
+        policy = runner.get_inference_policy(device=le.device)
+    else:
+        print("[play_piano] ZERO action (engineered reference)")
+
     obs, _ = env.get_observations()
     sounded = []
     for _ in range(le.song_len):
         with torch.inference_mode():
-            obs, _, _, _ = env.step(policy(obs))
+            act = policy(obs) if policy is not None else torch.zeros(le.num_envs, cfg.action_space, device=le.device)
+            obs, _, _, _ = env.step(act)
         snd = (le.piano.data.joint_pos[0] <= KEY_SOUND_ANGLE).cpu().numpy()
         sounded.append(snd)
     export_played_midi(sounded, cfg.control_dt, args.export_midi)
