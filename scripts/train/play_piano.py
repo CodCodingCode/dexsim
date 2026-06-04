@@ -23,6 +23,7 @@ parser.add_argument("--zero", action="store_true", help="roll out zero action (t
 parser.add_argument("--arm_ik_follow", action="store_true")
 parser.add_argument("--single_finger", action="store_true")
 parser.add_argument("--arm_ik_hover", type=float, default=None)
+parser.add_argument("--hand_tilt", type=float, default=None)
 parser.add_argument("--primary_finger", type=int, default=None)
 parser.add_argument("--single_press_z", type=float, default=None)
 parser.add_argument("--single_curl", type=float, default=None)
@@ -94,6 +95,8 @@ def main():
         cfg.single_finger = True
     if args.arm_ik_hover is not None:
         cfg.arm_ik_hover = args.arm_ik_hover
+    if args.hand_tilt is not None:
+        cfg.hand_tilt = args.hand_tilt; cfg.hand_tilt_axis = 0
     for k in ("primary_finger", "single_press_z", "single_curl"):
         v = getattr(args, k)
         if v is not None:
