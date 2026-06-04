@@ -31,11 +31,12 @@ KEY_SOUND_ANGLE = -0.012                # ~18% travel -> sensitive (good recall)
 #   fraction + key_strike_vel): a resting hand depresses keys statically (~0 vel)
 #   so they don't ring, even at this light depth. -0.033 was too stiff (9% sound);
 #   a light threshold + the velocity gate gives both recall AND precision.
-KEY_SPRING_STIFFNESS = 4.0    # gentle: with key gravity DISABLED keys rest at the spring's
-#   zero regardless of stiffness, so this only needs to RETURN a key after a press. Kept low
-#   so the weak fingers (stiffness 3) can still depress a key past KEY_SOUND_ANGLE (stiffness
-#   20 prevented sag but the fingers couldn't press it -> recall cratered to ~0.04).
-KEY_SPRING_DAMPING = 0.2
+KEY_SPRING_STIFFNESS = 8.0    # gentle (gravity DISABLED so keys rest at spring zero regardless):
+#   only needs to RETURN a key. 8 stays pressable by the weak fingers but resists being rammed
+#   to the hard travel-stop (which exploded PhysX at low hover). 20 was unpressable (recall 0.04).
+KEY_SPRING_DAMPING = 4.0      # HIGH damping absorbs a fast finger SLAM so the key can't hit its
+#   travel-stop violently -> kills the low-hover PhysX contact explosion, while a slow press
+#   still depresses the key. Lets us use the low hover where fingers actually reach (recall 0.6).
 
 PIANO_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
@@ -46,7 +47,8 @@ PIANO_CFG = ArticulationCfg(
             #   gravity ON, the key mass sagged each key past KEY_SOUND_ANGLE at rest (frac
             #   1.14) -> permanent false "sounding". OFF, keys rest at the spring's zero so a
             #   GENTLE spring (pressable by the weak fingers) both holds them up and returns them.
-            max_depenetration_velocity=2.0,
+            max_depenetration_velocity=1.0,   # lower -> gentler push-out of finger/key overlap
+            #   (2.0 let a deep finger-key penetration eject violently -> contact explosion).
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
             enabled_self_collisions=False,   # keys never touch each other
