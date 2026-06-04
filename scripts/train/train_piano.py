@@ -30,6 +30,7 @@ parser.add_argument("--false_press_weight", type=float, default=None, help="over
 parser.add_argument("--hand_action_scale", type=float, default=None, help="override finger residual scale (lower = less jitter/blowup)")
 parser.add_argument("--init_noise", type=float, default=None, help="override PPO initial action-noise std")
 parser.add_argument("--lr", type=float, default=None, help="override PPO learning rate (lower = less degradation)")
+parser.add_argument("--hand_tilt", type=float, default=None, help="tilt the hand toward pianist posture (rad, X axis)")
 parser.add_argument("--idle_finger_curl", type=float, default=None, help="curl NON-assigned fingers up in the base pose (rad; lift idle fingers off neighbor keys)")
 parser.add_argument("--key_press_weight", type=float, default=None, help="reward for sounding the right key")
 parser.add_argument("--onset_weight", type=float, default=None, help="reward for sounding a key on its onset")
@@ -83,6 +84,8 @@ def main():
         env_cfg.false_press_weight = args.false_press_weight
     if args.hand_action_scale is not None:
         env_cfg.hand_action_scale = args.hand_action_scale
+    if args.hand_tilt is not None:
+        env_cfg.hand_tilt = args.hand_tilt; env_cfg.hand_tilt_axis = 0
     if args.idle_finger_curl is not None:
         env_cfg.idle_finger_curl = args.idle_finger_curl
     for _w in ("key_press_weight", "onset_weight", "fingering_weight", "arm_base_weight"):

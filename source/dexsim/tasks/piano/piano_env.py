@@ -323,6 +323,17 @@ class PianoEnv(DirectRLEnv):
             _, self._arm_quat_r = self.ik_right.pose_w()
             self._arm_quat_l = self._arm_quat_l.clone()
             self._arm_quat_r = self._arm_quat_r.clone()
+            # HAND-TILT: rotate the servo target orientation away from palm-straight-down
+            # toward a pianist posture, so a finger curl strikes the key (vs lowering all).
+            tilt = float(getattr(self.cfg, "hand_tilt", 0.0))
+            if tilt != 0.0:
+                ax = int(getattr(self.cfg, "hand_tilt_axis", 1))
+                a = torch.zeros(3, device=self.device); a[ax] = 1.0
+                half = tilt * 0.5
+                qrot = torch.cat([torch.cos(torch.tensor([half], device=self.device)),
+                                  a * torch.sin(torch.tensor(half, device=self.device))])  # (4,) wxyz
+                self._arm_quat_l = self._quat_mul(qrot.unsqueeze(0), self._arm_quat_l)
+                self._arm_quat_r = self._quat_mul(qrot.unsqueeze(0), self._arm_quat_r)
         if getattr(self.cfg, "single_finger", False):
             return self._single_finger_base(base_l, base_r)
         # --- arm servo to the upcoming-note centroid ---
@@ -364,6 +375,17 @@ class PianoEnv(DirectRLEnv):
                     idle = (~fa[:, hand_i * 5 + fi].bool()).float().unsqueeze(-1)  # (E,1)
                     base[:, cols] = base[:, cols] + curl * idle
         return base_l, base_r
+
+    @staticmethod
+    def _quat_mul(a, b):
+        """Hamilton product of wxyz quats (broadcast over leading dim)."""
+        aw, ax, ay, az = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
+        bw, bx, by, bz = b[..., 0], b[..., 1], b[..., 2], b[..., 3]
+        return torch.stack([
+            aw * bw - ax * bx - ay * by - az * bz,
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw], dim=-1)
 
     def _single_finger_base(self, base_l, base_r):
         """ONE-FINGER-PER-NOTE base pose. Aim the PRIMARY fingertip directly at the

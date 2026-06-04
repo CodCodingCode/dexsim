@@ -178,6 +178,11 @@ class PianoEnvCfg(DirectRLEnvCfg):
     single_curl: float = 2.0      # rad to curl the 4 non-primary fingers up out of the way
     single_align_thresh: float = 0.015  # m xy-distance under which the finger dips to press (else hovers)
     single_hover: float = 0.012   # m above key top the finger hovers while moving between notes
+    # HAND-TILT redesign: rotate the servoed hand from palm-straight-down toward a real
+    # pianist posture so a finger CURL drives its tip DOWN onto a key (individual keystroke),
+    # instead of pressing by lowering the whole hand (which mashes all fingers -> precision wall).
+    hand_tilt: float = 0.0        # rad to tilt the hand-servo target orientation
+    hand_tilt_axis: int = 1       # world axis to tilt about (0=x,1=y,2=z) -- empirically chosen
     idle_hand_retract: float = 0.20  # m above the keys an INACTIVE hand (no upcoming
     #   notes) lifts to, so its resting fingers stop ringing keys (the muted right hand
     #   on a left-only song was mashing ~5-7 false keys from holding station at key level).

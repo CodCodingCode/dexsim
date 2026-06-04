@@ -22,6 +22,7 @@ parser.add_argument("--export_midi", default="logs/played.mid",
 parser.add_argument("--zero", action="store_true", help="roll out zero action (the engineered reference, no checkpoint)")
 parser.add_argument("--arm_ik_follow", action="store_true")
 parser.add_argument("--single_finger", action="store_true")
+parser.add_argument("--arm_ik_hover", type=float, default=None)
 parser.add_argument("--primary_finger", type=int, default=None)
 parser.add_argument("--single_press_z", type=float, default=None)
 parser.add_argument("--single_curl", type=float, default=None)
@@ -91,6 +92,8 @@ def main():
         cfg.arm_ik_follow = True; cfg.freeze_arms = False; cfg.use_reference = False
     if args.single_finger:
         cfg.single_finger = True
+    if args.arm_ik_hover is not None:
+        cfg.arm_ik_hover = args.arm_ik_hover
     for k in ("primary_finger", "single_press_z", "single_curl"):
         v = getattr(args, k)
         if v is not None:

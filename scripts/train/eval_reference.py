@@ -32,6 +32,9 @@ parser.add_argument("--single_finger", action="store_true", help="one-finger-per
 parser.add_argument("--primary_finger", type=int, default=None, help="which finger presses (0=th,1=ff,2=mf,3=rf,4=lf)")
 parser.add_argument("--single_press_z", type=float, default=None, help="m vs key top to drive the fingertip (neg=into key)")
 parser.add_argument("--single_curl", type=float, default=None, help="rad to curl the non-primary fingers up")
+parser.add_argument("--idle_hand_retract", type=float, default=None, help="m an idle hand lifts off the keys")
+parser.add_argument("--hand_tilt", type=float, default=None)
+parser.add_argument("--hand_tilt_axis", type=int, default=None)
 parser.add_argument("--hand_stiffness", type=float, default=None, help="override hand actuator stiffness")
 parser.add_argument("--hand_effort", type=float, default=None, help="override hand actuator effort_limit")
 parser.add_argument("--out", default=None, help="write metrics as JSON to this path "
@@ -75,6 +78,12 @@ def main():
             cfg.single_press_z = args.single_press_z
         if args.single_curl is not None:
             cfg.single_curl = args.single_curl
+        if args.idle_hand_retract is not None:
+            cfg.idle_hand_retract = args.idle_hand_retract
+        if args.hand_tilt is not None:
+            cfg.hand_tilt = args.hand_tilt
+        if args.hand_tilt_axis is not None:
+            cfg.hand_tilt_axis = args.hand_tilt_axis
     if args.hand_stiffness is not None or args.hand_effort is not None:
         for rc in (cfg.left_robot_cfg, cfg.right_robot_cfg):
             ha = rc.actuators["hand"]
