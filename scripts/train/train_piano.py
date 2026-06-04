@@ -27,6 +27,8 @@ parser.add_argument("--hand_stiffness", type=float, default=None, help="override
 parser.add_argument("--hand_effort", type=float, default=None, help="override Shadow hand actuator effort_limit")
 parser.add_argument("--key_stiffness", type=float, default=None, help="override piano key return-spring stiffness")
 parser.add_argument("--false_press_weight", type=float, default=None, help="override false-press penalty weight")
+parser.add_argument("--hand_action_scale", type=float, default=None, help="override finger residual scale (lower = less jitter/blowup)")
+parser.add_argument("--init_noise", type=float, default=None, help="override PPO initial action-noise std")
 parser.add_argument("--tag", default=None, help="run label -> wandb run name + log subdir (for parallel A/B/C runs)")
 parser.add_argument("--reference", default=None, help="explicit q_ref .npz (e.g. an RP1M reference); enables use_reference and overrides the default per-song file")
 parser.add_argument("--no_fold", action="store_true", help="disable fold_to_reach (use the song's real key positions, e.g. for RP1M)")
@@ -73,6 +75,8 @@ def main():
         env_cfg.piano_cfg.actuators["keys"].stiffness = args.key_stiffness
     if args.false_press_weight is not None:
         env_cfg.false_press_weight = args.false_press_weight
+    if args.hand_action_scale is not None:
+        env_cfg.hand_action_scale = args.hand_action_scale
     if args.hand_stiffness is not None or args.hand_effort is not None:
         # override the Shadow hand actuator authority on BOTH arms (the "hand" group
         # = robot0_.* joints). Weak fingers (stiffness 3) may be why the policy can't
@@ -96,6 +100,8 @@ def main():
 
     agent_cfg = PianoPPORunnerCfg()
     agent_cfg.seed = args.seed
+    if args.init_noise is not None:
+        agent_cfg.policy.init_noise_std = args.init_noise
     if args.max_iterations is not None:
         agent_cfg.max_iterations = args.max_iterations
     if args.bc_init:
