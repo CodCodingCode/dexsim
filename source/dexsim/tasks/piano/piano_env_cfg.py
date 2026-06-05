@@ -143,8 +143,8 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # IN FRONT of the keys (large +X) and are rotated 180deg about Z (base_rot below) to
     # FACE the piano, raised above key height -> arm_ik_follow reaches down-and-back onto
     # the keys with a big elbow bend, bodies pointing at the piano (no draping over).
-    piano_pos = (0.59, -0.598, 0.746)
-    piano_rot = (1.0, 0.0, 0.0, 0.0)     # identity (keys face +X / the robots)
+    piano_pos = (0.59, -0.598, 0.746)    # keyboard centered at (0.60, 0, 0.756)
+    piano_rot = (1.0, 0.0, 0.0, 0.0)     # identity (keys face +X / the robots); piano is NOT the problem
     # bases in front of the keyboard (+X), facing it; left hand over the LOW keys (now -Y),
     # right hand over the HIGH keys (+Y). base_rot makes each UR10e reach -X toward the piano.
     left_base_pos = (1.25, -0.30, 1.05)
@@ -331,11 +331,14 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # FIXED-HANDS hover poses (tune_arm_pose, targets over each window at ~2cm above
     # the keys): left fingertips land 12mm over window (19,26); right 37mm over
     # (63,70). The arms HOLD these; only the fingers move to press.
+    # ELBOW-DOWN / EE-STRAIGHT-DOWN seed (grid-searched): bigger elbow bend + wrist_1
+    # rotated so the hand drops onto the keys from ABOVE instead of leaning over them.
+    # palm lands over the keys with the flange ~0.29m above it (fingers point -Z).
     left_ready_pose = {
         "shoulder_pan_joint": -0.275,
-        "shoulder_lift_joint": -0.525,
-        "elbow_joint": 1.150,
-        "wrist_1_joint": -1.275,
+        "shoulder_lift_joint": -1.20,
+        "elbow_joint": 2.00,
+        "wrist_1_joint": -2.20,
         "wrist_2_joint": -1.570,
         "wrist_3_joint": 0.0,
         "robot0_.*": 0.0,
@@ -348,10 +351,10 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # reach-down joints (it lands fingertips at keyboard height) with the
     # shoulder_pan sign flipped so it reaches toward center from the +Y base.
     right_ready_pose = {
-        "shoulder_pan_joint": -0.325,
-        "shoulder_lift_joint": -0.675,
-        "elbow_joint": 1.300,
-        "wrist_1_joint": -1.350,
+        "shoulder_pan_joint": -0.275,
+        "shoulder_lift_joint": -1.20,
+        "elbow_joint": 2.00,
+        "wrist_1_joint": -2.20,
         "wrist_2_joint": -1.570,
         "wrist_3_joint": 0.0,
         "robot0_.*": 0.0,

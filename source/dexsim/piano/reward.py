@@ -34,14 +34,6 @@ class PianoRewardCfg:
     #   (~25 cm). Was 10x (10 cm): fingers start/pass too far from their target key
     #   so the shaping read ~0 (reward/finger~0.005) and gave no gradient. Widening
     #   the falloff makes the make-or-break term actually pull from realistic ranges.
-    # --- arm gross-positioning shaping (60-DoF embodiment only) ---
-    # RoboPianist's hands ride a fixed forearm slider, so it never needs this. Here
-    # the UR10e arm must aim the whole hand over the right span of keys *before* the
-    # fingers can reach them; without a coarse term the arm DoF wander and fight the
-    # (fingertip-only) fingering reward. Layered UNDER fingering_weight.
-    arm_base_weight: float = 0.0      # pull each hand base toward its upcoming notes
-    arm_close_enough: float = 0.05    # m; within this of the note span -> full reward
-    arm_margin_mult: float = 6.0      # gaussian falloff reaches ~0.1 at 6x bound (~30cm)
 
 
 # dm_control-style tolerance kernel (gaussian), vectorized & backend-agnostic.
@@ -132,38 +124,6 @@ def fingering_reward(fingertip_pos, target_pos, active_mask, cfg: PianoRewardCfg
     eps = 1e-6
     mean_over_active = (shaped * m).sum(-1) / (n + eps)
     return cfg.fingering_weight * mean_over_active
-
-
-def arm_position_reward(hand_base_pos, target_pos, active_mask,
-                        cfg: PianoRewardCfg = PianoRewardCfg()):
-    """Gross-positioning shaping: pull each HAND BASE toward the horizontal region
-    of the keys that hand must play soon.
-
-    The 60-DoF embodiment (UR10e arm + Shadow hand per side) has to aim the arm so
-    the hand sits over the right span of keys before the fingers can play them;
-    RoboPianist skips this entirely (its hands ride a fixed forearm slider). This
-    term is the coarse counterpart to ``fingering_reward``: the arm gets the hand to
-    the right neighbourhood, the fingers do the fine reach -- so it's meant to carry
-    a SMALLER weight (it would otherwise dominate the fingering signal). Horizontal
-    (xy) distance only; vertical placement is the fingers' job.
-
-    Args:
-        hand_base_pos (E, H, 3): world position of each hand base (H=2: [left, right]).
-        target_pos    (E, H, 3): centroid of that hand's upcoming target keys.
-        active_mask   (E, H)   : whether the hand has any upcoming notes (else neutral).
-    Returns: (E,) reward in [0, arm_base_weight], averaged over hands with notes.
-    """
-    xp, is_torch = _backend(hand_base_pos)
-    dxy = hand_base_pos[..., :2] - target_pos[..., :2]
-    dist = (dxy ** 2).sum(-1) ** 0.5                                   # (E, H)
-    shaped = tolerance(
-        dist, lower=0.0, upper=cfg.arm_close_enough,
-        margin=cfg.arm_close_enough * cfg.arm_margin_mult,
-    )                                                                  # (E, H)
-    m = active_mask.float() if is_torch else active_mask.astype("float32")
-    n = m.sum(-1)
-    eps = 1e-6
-    return cfg.arm_base_weight * (shaped * m).sum(-1) / (n + eps)
 
 
 def onset_reward(pressed, onsets, cfg: PianoRewardCfg = PianoRewardCfg()):

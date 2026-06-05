@@ -47,6 +47,7 @@ dexsim/
                                #   download_bodex.py, replay_bodex.py, ...
     render/                    # rendering, video, and camera-rig tools
                                #   render_scene.py, record_rollout.py / render_rollout.py, ...
+                               #   render_server.py + render.py  <- WARM cache (boot once, render in s)
     smoke/                     # sanity / integration tests (no training)
                                #   smoke_test.py, piano_env_smoke.py, smoke_slider.py, ...
   assets/                      # composed USDs land here (gitignored)
@@ -75,6 +76,36 @@ python scripts/build/build_combined_usd.py --inspect    # verify mount frames
 python scripts/build/build_combined_usd.py              # build assets/ur10e_shadow.usd
 python scripts/prep/replay_bodex.py --traj data/bodex/<file>.npz --headless
 ```
+
+### Fast iteration — the warm render server (cache the Isaac boot)
+
+Every cold render/diagnostic script (`render_scene.py`, `render_rollout.py`,
+`diag_*.py`, `verify_palm.py`) boots the **whole** Isaac Sim app (~30 s, longer
+under GPU contention) and rebuilds the scene from scratch on *every* run. The
+warm server pays that cost **once**, then serves jobs from a file-queue so each
+render/measurement takes seconds. (`render_scene.py` etc. still work standalone —
+the server is the fast path on top of the shared `dexsim.render.studio` builders.)
+
+```bash
+source env.sh
+# boot ONCE (~30 s), leave it running in the background:
+python scripts/render/render_server.py --headless > logs/render_server.log 2>&1 &
+#   ...wait for "READY" in logs/render_server.log (or logs/render_jobs/server.ready)
+
+# then iterate — each job is seconds, no reboot, no scene rebuild:
+python scripts/render/render.py scene   --eye 2.2,-1.5,1.8 --target 0.45,0,0.78 --spp 160 --out logs/x.png
+python scripts/render/render.py rollout --rollout logs/rollout.npz --out results/v.mp4 --spp 96
+python scripts/render/render.py query   --kind layout  --out logs/layout.json   # diag_layout
+python scripts/render/render.py query   --kind orient  --out logs/orient.json   # diag_hand_orient
+python scripts/render/render.py query   --kind palm --rollout logs/r.npz --out logs/palm.json  # verify_palm
+python scripts/render/render.py shutdown            # stop the server
+```
+
+Measured on this box (while a training swarm shared the GPU): boot 28 s; then a
+`layout` query 1.6 s, an `orient` query 1.7 s, a 64-spp still 10 s (pure
+path-tracing — drop `--spp` for faster previews). The RTX *shader* cache
+(`~/.cache/ov`) already persists across runs; the server adds the missing
+app-process + built-scene cache, which is what dominated cold iteration.
 
 The combined UR10e+Shadow articulation is built once by `build_combined_usd.py`
 (the genuinely fiddly part — two separate articulations bonded into one tree by

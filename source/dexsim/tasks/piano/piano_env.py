@@ -36,7 +36,7 @@ from dexsim.piano import (
     load_song, plan_fingering, geometry, FINGERTIP_BODIES, NUM_FINGERS, NUM_KEYS,
 )
 from dexsim.piano.reward import (
-    piano_reward, fingering_reward, onset_reward, arm_position_reward,
+    piano_reward, fingering_reward, onset_reward,
     PianoRewardCfg,
 )
 from dexsim.piano.goal_encoding import nearest_active_distance
@@ -212,12 +212,9 @@ class PianoEnv(DirectRLEnv):
             energy_weight=self.cfg.energy_weight,
             fingering_weight=self.cfg.fingering_weight,
             onset_weight=self.cfg.onset_weight,
-            arm_base_weight=self.cfg.arm_base_weight,
-            arm_close_enough=self.cfg.arm_close_enough,
-            arm_margin_mult=self.cfg.arm_margin_mult,
         )
         # SPLIT REWARD by curriculum phase. Phase 1 (freeze_hands) is the ARM's job:
-        # pure positioning (fingering + arm-position), with NO pressing terms -- the
+        # pure fingering positioning, with NO pressing terms -- the
         # frozen fingers would otherwise trigger false-press penalties and punish the
         # arm for exploring. Phase 2 (hands in) keeps the full pressing reward.
         if getattr(self.cfg, "freeze_hands", False):
@@ -885,12 +882,8 @@ class PianoEnv(DirectRLEnv):
         # arm gross-positioning: aim each hand base over its upcoming notes (the
         # 60-DoF extra over RoboPianist's slider-mounted hands). Skip the work when
         # the term is off.
-        if self.reward_cfg.arm_base_weight > 0.0:
-            centroid, hand_active = self._hand_note_centroids()
-            r_arm = arm_position_reward(self._palms_world(), centroid, hand_active,
-                                        self.reward_cfg)
-        else:
-            r_arm = torch.zeros_like(r_key)
+        # arm_position_reward was removed from dexsim.piano.reward; term disabled.
+        r_arm = torch.zeros_like(r_key)
 
         # --- log the REAL metric to wandb: is it actually sounding notes (F1)? ---
         # (reward can be high while F1=0; F1 is the truth.)
