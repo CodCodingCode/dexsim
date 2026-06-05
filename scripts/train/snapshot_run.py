@@ -30,7 +30,6 @@ METRICS = {
     "keys_sounding": re.compile(r"play/keys_sounding:\s*([-\d.eE]+)"),
     "r_key": re.compile(r"reward/key:\s*([-\d.eE]+)"),
     "r_finger": re.compile(r"reward/finger:\s*([-\d.eE]+)"),
-    "r_arm": re.compile(r"reward/arm:\s*([-\d.eE]+)"),
     "r_onset": re.compile(r"reward/onset:\s*([-\d.eE]+)"),
     "mean_reward": re.compile(r"Mean reward:\s*([-\d.eE]+)"),
 }
@@ -83,7 +82,7 @@ def ffill(xs):
     return out
 
 
-for k in ("r_key", "r_finger", "r_arm", "r_onset"):
+for k in ("r_key", "r_finger", "r_onset"):
     series[k] = ffill(series[k])
 last = {k: series[k][-1] for k in METRICS}
 
@@ -98,7 +97,7 @@ ax[0, 1].set_title("precision vs recall"); ax[0, 1].set_xlabel("iteration")
 ax[0, 1].legend(); ax[0, 1].grid(alpha=.3)
 
 for k, c in [("r_key", "tab:red"), ("r_finger", "tab:blue"),
-             ("r_arm", "tab:purple"), ("r_onset", "tab:orange")]:
+             ("r_onset", "tab:orange")]:
     ax[1, 0].plot(iters, series[k], "-o", ms=2, label=k, color=c)
 ax[1, 0].set_title("reward terms"); ax[1, 0].set_xlabel("iteration")
 ax[1, 0].legend(); ax[1, 0].grid(alpha=.3)
@@ -124,7 +123,7 @@ print(f"F1: last={last['F1']:.3f}  early_mean={f1_early:.3f}  late_mean={f1_late
 print(f"precision={last['precision']:.3f}  recall={last['recall']:.3f}  "
       f"keys_sounding={last['keys_sounding']:.2f}  mean_reward={last['mean_reward']:.2f}")
 print(f"rewards: key={last['r_key']:.3f} finger={last['r_finger']:.3f} "
-      f"arm={last['r_arm']:.3f} onset={last['r_onset']:.3f}")
+      f"onset={last['r_onset']:.3f}")
 if n < 40:
     verdict = f"TOO EARLY ({n} iters; piano RL needs 100s-1000s — just watch it's stable)"
 elif direction == "RISING":

@@ -21,13 +21,9 @@ parser.add_argument("--export_midi", default="logs/played.mid",
                     help="write the keys the policy actually sounded to this .mid")
 parser.add_argument("--zero", action="store_true", help="roll out zero action (the engineered reference, no checkpoint)")
 parser.add_argument("--arm_ik_follow", action="store_true")
-parser.add_argument("--single_finger", action="store_true")
 parser.add_argument("--arm_ik_hover", type=float, default=None)
 parser.add_argument("--hand_tilt", type=float, default=None)
 parser.add_argument("--idle_finger_curl", type=float, default=None)
-parser.add_argument("--primary_finger", type=int, default=None)
-parser.add_argument("--single_press_z", type=float, default=None)
-parser.add_argument("--single_curl", type=float, default=None)
 parser.add_argument("--hand_stiffness", type=float, default=None)
 parser.add_argument("--hand_effort", type=float, default=None)
 parser.add_argument("--hand_action_scale", type=float, default=None,
@@ -99,8 +95,6 @@ def main():
         cfg.midi_path = args.midi
     if args.arm_ik_follow:
         cfg.arm_ik_follow = True; cfg.freeze_arms = False
-    if args.single_finger:
-        cfg.single_finger = True
     if args.arm_ik_hover is not None:
         cfg.arm_ik_hover = args.arm_ik_hover
     if args.hand_action_scale is not None:
@@ -109,10 +103,6 @@ def main():
         cfg.hand_tilt = args.hand_tilt; cfg.hand_tilt_axis = 0
     if args.idle_finger_curl is not None:
         cfg.idle_finger_curl = args.idle_finger_curl
-    for k in ("primary_finger", "single_press_z", "single_curl"):
-        v = getattr(args, k)
-        if v is not None:
-            setattr(cfg, k, v)
     if args.hand_stiffness is not None or args.hand_effort is not None:
         for rc in (cfg.left_robot_cfg, cfg.right_robot_cfg):
             if args.hand_stiffness is not None:

@@ -29,27 +29,9 @@ parser.add_argument("--arm_ik_follow", action="store_true", help="arms servoed o
 parser.add_argument("--idle_finger_curl", type=float, default=None, help="curl idle fingers up in the base pose (rad; sign-test the anti-mash)")
 parser.add_argument("--arm_ik_hover", type=float, default=None, help="palm hover height above keys")
 parser.add_argument("--arm_lookahead", type=int, default=None, help="steps of upcoming notes for the arm centroid (1=track current note tightly)")
-parser.add_argument("--single_finger", action="store_true", help="one-finger-per-note: aim the primary fingertip at the current note")
-parser.add_argument("--primary_finger", type=int, default=None, help="which finger presses (0=th,1=ff,2=mf,3=rf,4=lf)")
-parser.add_argument("--single_press_z", type=float, default=None, help="m vs key top to drive the fingertip (neg=into key)")
-parser.add_argument("--single_curl", type=float, default=None, help="rad to curl the non-primary fingers up")
-parser.add_argument("--single_press_flex", type=float, default=None)
-parser.add_argument("--arm_ftip_track", action="store_true")
-parser.add_argument("--use_slider", action="store_true")
 parser.add_argument("--no_fold", action="store_true")
-parser.add_argument("--slider_teleport_once", action="store_true")
-parser.add_argument("--slider_stiffness", type=float, default=0.0)
 parser.add_argument("--debug_keys", action="store_true")
 parser.add_argument("--key_damping", type=float, default=0.0)
-parser.add_argument("--slider_finger_strike", action="store_true")
-parser.add_argument("--slider_strike_pip", type=float, default=0.9)
-parser.add_argument("--slider_strike_mcp", type=float, default=0.6)
-parser.add_argument("--slider_strike_hover", type=float, default=0.02)
-parser.add_argument("--slider_hand_x", type=float, default=None)
-parser.add_argument("--slider_hand_tilt", type=float, default=0.0)
-parser.add_argument("--slider_idle_mcp", type=float, default=0.0)
-parser.add_argument("--slider_idle_curl", type=float, default=0.8)
-parser.add_argument("--ftip_max_step", type=float, default=None)
 parser.add_argument("--arm_stiffness", type=float, default=None)
 parser.add_argument("--arm_damping", type=float, default=None)
 parser.add_argument("--arm_effort", type=float, default=None)
@@ -82,24 +64,10 @@ def main():
     cfg.scene.num_envs = args.num_envs
     if args.midi:
         cfg.midi_path = args.midi
-    if getattr(args, "use_slider", False):
-        cfg.use_slider = True
-        if args.no_fold:
-            cfg.fold_to_reach = False
-        cfg.slider_hand_tilt = args.slider_hand_tilt
-        cfg.slider_teleport_once = args.slider_teleport_once
-        cfg.slider_stiffness = args.slider_stiffness
+    if args.no_fold:
+        cfg.fold_to_reach = False
+    if args.key_damping:
         cfg.key_damping = args.key_damping
-        if args.slider_finger_strike:
-            cfg.slider_finger_strike = True
-            cfg.slider_strike_pip = args.slider_strike_pip
-            cfg.slider_strike_mcp = args.slider_strike_mcp
-            cfg.slider_strike_hover = args.slider_strike_hover
-        cfg.slider_idle_mcp = args.slider_idle_mcp
-        cfg.slider_idle_curl = args.slider_idle_curl
-        cfg.goal_lookahead = 4
-        cfg.obs_goal_sdf = False
-        cfg.__post_init__()   # re-apply: swap robots to slider + resize spaces
     if getattr(args, "songs_npz", None):
         cfg.songs_npz = args.songs_npz
         cfg.max_songs = args.max_songs
@@ -118,20 +86,6 @@ def main():
             cfg.arm_ik_hover = args.arm_ik_hover
         if args.arm_lookahead is not None:
             cfg.arm_lookahead = args.arm_lookahead
-        if args.single_finger:
-            cfg.single_finger = True
-        if args.primary_finger is not None:
-            cfg.primary_finger = args.primary_finger
-        if args.single_press_z is not None:
-            cfg.single_press_z = args.single_press_z
-        if args.single_curl is not None:
-            cfg.single_curl = args.single_curl
-        if args.single_press_flex is not None:
-            cfg.single_press_flex = args.single_press_flex
-        if args.arm_ftip_track:
-            cfg.arm_ftip_track = True
-        if args.ftip_max_step is not None:
-            cfg.ftip_max_step = args.ftip_max_step
         if args.idle_hand_retract is not None:
             cfg.idle_hand_retract = args.idle_hand_retract
         if args.hand_tilt is not None:

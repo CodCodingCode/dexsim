@@ -1,8 +1,8 @@
 """Decisive placement diagnostic: can POSITION-ONLY arm IK walk a chosen FINGERTIP
 onto a fixed target to ~1cm? Holds the finger pose constant, drives ONLY the arm via
 pos_only WristPoseIK toward a static target near the keyboard, logs tip->target each
-step. If it converges to ~1cm, fingertip placement is solvable (and the single_finger
-integration has a bug); if it plateaus at ~90mm, the fingertip is outside arm reach."""
+step. If it converges to ~1cm, fingertip placement is solvable; if it plateaus at
+~90mm, the fingertip is outside arm reach."""
 import argparse
 from isaaclab.app import AppLauncher
 

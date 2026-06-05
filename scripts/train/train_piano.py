@@ -16,7 +16,6 @@ parser.add_argument("--num_envs", type=int, default=1024)
 parser.add_argument("--midi", default=None, help="path to the song .mid (default: cfg's)")
 parser.add_argument("--max_iterations", type=int, default=None)
 parser.add_argument("--seed", type=int, default=0)
-parser.add_argument("--freeze_hands", action="store_true", help="curriculum phase 1: drive arms only (hands frozen)")
 parser.add_argument("--freeze_arms", action="store_true", help="fixed-hands mode: drive fingers only (arms held)")
 parser.add_argument("--planar_ik", action="store_true", help="weighted+iterated planar IK (gantry)")
 parser.add_argument("--planar_pin_x", action="store_true", help="pin depth (world X) too -> lateral-only gantry (best in rollout_f1 A/B)")
@@ -38,13 +37,9 @@ parser.add_argument("--hand_tilt", type=float, default=None, help="tilt the hand
 parser.add_argument("--idle_finger_curl", type=float, default=None, help="curl NON-assigned fingers up in the base pose (rad; lift idle fingers off neighbor keys)")
 parser.add_argument("--songs_npz", default=None, help="MULTI-SONG: train one policy across all songs in this precomputed goal bundle (.npz)")
 parser.add_argument("--max_songs", type=int, default=0, help="cap multi-song training to the first N songs (0=all)")
-parser.add_argument("--use_slider", action="store_true", help="SLIDER embodiment (RP1M): 2-DoF prismatic hands, 0mm placement")
-parser.add_argument("--arm_ftip_track", action="store_true", help="drive arm via pos-only IK on the primary fingertip (lands finger on key, not palm 90mm short)")
-parser.add_argument("--ftip_max_step", type=float, default=None, help="per-step arm travel for fingertip tracking")
 parser.add_argument("--key_press_weight", type=float, default=None, help="reward for sounding the right key")
 parser.add_argument("--onset_weight", type=float, default=None, help="reward for sounding a key on its onset")
 parser.add_argument("--fingering_weight", type=float, default=None, help="shaping: fingertip near assigned key (lower = less hovering)")
-parser.add_argument("--arm_base_weight", type=float, default=None, help="shaping: arm over note centroid (lower = less hovering)")
 parser.add_argument("--tag", default=None, help="run label -> wandb run name + log subdir (for parallel A/B/C runs)")
 parser.add_argument("--no_fold", action="store_true", help="disable fold_to_reach (use the song's real key positions, e.g. for RP1M)")
 parser.add_argument("--no_mute", action="store_true", help="disable mute_right_hand (needed for two-handed songs)")
@@ -73,7 +68,6 @@ def main():
     env_cfg.seed = args.seed
     if args.midi:
         env_cfg.midi_path = args.midi
-    env_cfg.freeze_hands = args.freeze_hands
     if args.freeze_arms:
         env_cfg.freeze_arms = True
     if args.arm_ik_follow:
@@ -88,13 +82,6 @@ def main():
     if args.songs_npz:
         env_cfg.songs_npz = args.songs_npz
         env_cfg.max_songs = args.max_songs
-    if args.use_slider:
-        env_cfg.use_slider = True
-        env_cfg.__post_init__()   # re-apply: swap robots to slider + resize spaces
-    if args.arm_ftip_track:
-        env_cfg.arm_ftip_track = True
-    if args.ftip_max_step is not None:
-        env_cfg.ftip_max_step = args.ftip_max_step
     if args.arm_ik_hover is not None:
         env_cfg.arm_ik_hover = args.arm_ik_hover
     if args.strike_vel is not None:
@@ -111,7 +98,7 @@ def main():
         env_cfg.hand_tilt = args.hand_tilt; env_cfg.hand_tilt_axis = 0
     if args.idle_finger_curl is not None:
         env_cfg.idle_finger_curl = args.idle_finger_curl
-    for _w in ("key_press_weight", "onset_weight", "fingering_weight", "arm_base_weight"):
+    for _w in ("key_press_weight", "onset_weight", "fingering_weight"):
         _v = getattr(args, _w)
         if _v is not None:
             setattr(env_cfg, _w, _v)
