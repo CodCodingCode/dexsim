@@ -21,12 +21,23 @@ parser.add_argument("--tag", default="sac")
 parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--mem_size", type=int, default=12000, help="replay capacity per env")
 parser.add_argument("--goal_lookahead", type=int, default=5)
-parser.add_argument("--gradient_steps", type=int, default=1)
+parser.add_argument("--gradient_steps", type=int, default=1,
+                    help="updates per env step (UTD ratio). DroQ paper uses ~20 for a "
+                         "single env; with many parallel envs keep this low (1-4).")
+parser.add_argument("--droq", action="store_true",
+                    help="DroQ critics: add Dropout+LayerNorm to each critic hidden layer "
+                         "(SAC -> DroQ). Stabilises high-UTD off-policy; RoboPianist's recipe.")
+parser.add_argument("--droq_dropout", type=float, default=0.01,
+                    help="DroQ critic dropout rate (paper default 0.01).")
 parser.add_argument("--false_press_weight", type=float, default=1.0)
 parser.add_argument("--key_press_weight", type=float, default=4.0)
 parser.add_argument("--target_entropy", type=float, default=None)
 parser.add_argument("--slider_stiffness", type=float, default=0.0)
 parser.add_argument("--slider_residual", type=float, default=0.05)
+parser.add_argument("--bc_init", default=None,
+                    help="warm-start the SAC policy from a BC checkpoint whose MLP matches "
+                         "the Policy net (512,256,128). RP1M warm-start path: distill the "
+                         "retargeted reference into this arch, then post-train here.")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 app = AppLauncher(args).app
@@ -102,14 +113,27 @@ class Policy(GaussianMixin, Model):
 
 
 class Critic(DeterministicMixin, Model):
-    def __init__(self, observation_space, action_space, device):
+    def __init__(self, observation_space, action_space, device,
+                 droq=False, dropout=0.01):
         Model.__init__(self, observation_space=observation_space,
                        action_space=action_space, device=device)
         DeterministicMixin.__init__(self, clip_actions=False)
+
+        # DroQ block: Linear -> Dropout -> LayerNorm -> activation (Hiraoka et al.
+        # 2021). The Dropout+LayerNorm regularise the Q-function so a high update-
+        # to-data ratio doesn't overestimate/diverge -- that's the whole DroQ trick.
+        # Plain SAC (droq=False) is just Linear -> activation.
+        def block(i, o):
+            layers = [nn.Linear(i, o)]
+            if droq:
+                layers += [nn.Dropout(dropout), nn.LayerNorm(o)]
+            layers += [nn.ELU()]
+            return layers
+
         self.net = nn.Sequential(
-            nn.Linear(self.num_observations + self.num_actions, 512), nn.ELU(),
-            nn.Linear(512, 256), nn.ELU(),
-            nn.Linear(256, 128), nn.ELU(),
+            *block(self.num_observations + self.num_actions, 512),
+            *block(512, 256),
+            *block(256, 128),
             nn.Linear(128, 1))
 
     def compute(self, inputs, role=""):
@@ -118,13 +142,20 @@ class Critic(DeterministicMixin, Model):
         return self.net(torch.cat([obs, act], dim=-1)), {}
 
 
+def _critic():
+    # DroQ only regularises the CRITICS; the policy net is unchanged.
+    return Critic(obs_space, act_space, device, droq=args.droq, dropout=args.droq_dropout)
+
+
 models = {
     "policy": Policy(obs_space, act_space, device),
-    "critic_1": Critic(obs_space, act_space, device),
-    "critic_2": Critic(obs_space, act_space, device),
-    "target_critic_1": Critic(obs_space, act_space, device),
-    "target_critic_2": Critic(obs_space, act_space, device),
+    "critic_1": _critic(),
+    "critic_2": _critic(),
+    "target_critic_1": _critic(),
+    "target_critic_2": _critic(),
 }
+print(f"[sac] critics: {'DroQ (Dropout+LayerNorm)' if args.droq else 'plain SAC'}"
+      f"  gradient_steps(UTD)={args.gradient_steps}")
 
 memory = RandomMemory(memory_size=args.mem_size, num_envs=env.num_envs, device=device)
 
@@ -149,6 +180,28 @@ sac_cfg.experiment.checkpoint_interval = 5000
 
 agent = SAC(models=models, memory=memory, cfg=sac_cfg,
             observation_space=obs_space, action_space=act_space, device=device)
+
+# --- optional BC warm-start of the policy (RP1M -> Isaac post-training) ---
+if args.bc_init:
+    ckpt = torch.load(args.bc_init, map_location=device, weights_only=False)
+    sd = ckpt.get("policy") or ckpt.get("model_state_dict") or ckpt   # accept common formats
+    if not isinstance(sd, dict):
+        raise ValueError(f"--bc_init {args.bc_init}: unrecognised checkpoint format")
+    own = models["policy"].state_dict()
+    loaded, skipped = 0, []
+    for k, v in sd.items():
+        cands = (k, "net." + k.split("net.")[-1], k.replace("net.", ""))
+        for cand in cands:
+            if cand in own and own[cand].shape == getattr(v, "shape", None):
+                own[cand] = v; loaded += 1; break
+        else:
+            skipped.append(k)
+    models["policy"].load_state_dict(own)
+    print(f"[sac] bc_init: loaded {loaded}/{len(own)} policy tensors from {args.bc_init}"
+          + (f"  (skipped {len(skipped)} non-matching)" if skipped else ""))
+    if loaded == 0:
+        raise SystemExit("[sac] bc_init loaded 0 tensors -> arch mismatch; the BC must match "
+                         "the Policy MLP (512,256,128). Aborting so we don't silently train cold.")
 
 trainer = SequentialTrainer(cfg={"timesteps": args.timesteps, "headless": True},
                             env=env, agents=agent)

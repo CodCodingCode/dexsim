@@ -19,6 +19,8 @@ parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--freeze_hands", action="store_true", help="curriculum phase 1: drive arms only (hands frozen)")
 parser.add_argument("--freeze_arms", action="store_true", help="fixed-hands mode: drive fingers only (arms held)")
 parser.add_argument("--planar_ik", action="store_true", help="weighted+iterated planar IK (gantry)")
+parser.add_argument("--planar_pin_x", action="store_true", help="pin depth (world X) too -> lateral-only gantry (best in rollout_f1 A/B)")
+parser.add_argument("--freeze_last_dof", action="store_true", help="freeze wrist_3 (note: over-constrains -> under-presses in eval)")
 parser.add_argument("--arm_ik_follow", action="store_true", help="arms servoed online by WristPoseIK to the fingering centroid; policy drives only the 48 finger DoF")
 parser.add_argument("--arm_ik_hover", type=float, default=None, help="override arm_ik_hover (m palm hovers above keys)")
 parser.add_argument("--strike_vel", type=float, default=None, help="override key_strike_vel (rad/s gate for a key to sound)")
@@ -78,6 +80,10 @@ def main():
         env_cfg.arm_ik_follow = True
         if args.planar_ik:
             env_cfg.planar_ik = True
+        if args.planar_pin_x:
+            env_cfg.planar_pin_x = True     # lateral-only gantry (pin depth X) -- best config in rollout_f1 A/B
+        if args.freeze_last_dof:
+            env_cfg.freeze_last_dof = True
         env_cfg.freeze_arms = False     # arms move (IK-driven), not held static
     if args.songs_npz:
         env_cfg.songs_npz = args.songs_npz

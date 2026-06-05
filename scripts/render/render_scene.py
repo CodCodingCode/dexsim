@@ -70,6 +70,19 @@ def main():
     left = Articulation(cfg.left_robot_cfg.replace(prim_path="/World/LeftRobot"))
     right = Articulation(cfg.right_robot_cfg.replace(prim_path="/World/RightRobot"))
 
+    # Pedestals under each base so the arms don't float (cosmetic; bases are
+    # world-fixed). Box runs ground -> base z, read live from the resolved cfg.
+    for _nm, _rc in (("LeftPedestal", cfg.left_robot_cfg),
+                     ("RightPedestal", cfg.right_robot_cfg)):
+        _bx, _by, _bz = _rc.init_state.pos
+        if _bz and _bz > 0.02:
+            _pc = sim_utils.CuboidCfg(
+                size=(0.26, 0.26, float(_bz)),
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=(0.22, 0.22, 0.25), metallic=0.1, roughness=0.5))
+            _pc.func(f"/World/{_nm}", _pc,
+                     translation=(_bx, _by, float(_bz) / 2.0))
+
     # camera sensor
     cam = Camera(CameraCfg(
         prim_path="/World/cam",

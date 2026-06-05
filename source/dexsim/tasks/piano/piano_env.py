@@ -369,6 +369,23 @@ class PianoEnv(DirectRLEnv):
         self.piano = Articulation(self.cfg.piano_cfg)
 
         spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg())
+
+        # Pedestals under each UR10e base so the arms aren't floating in the air
+        # (purely cosmetic -- the bases are already world-fixed). Each box runs
+        # from the ground up to that base's z, read live from the resolved cfg so
+        # it adapts to the arm/slider layouts.
+        for _name, _rc in (("LeftPedestal", self.cfg.left_robot_cfg),
+                            ("RightPedestal", self.cfg.right_robot_cfg)):
+            _bx, _by, _bz = _rc.init_state.pos
+            if _bz and _bz > 0.02:
+                _ped = sim_utils.CuboidCfg(
+                    size=(0.26, 0.26, float(_bz)),
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=(0.22, 0.22, 0.25), metallic=0.1),
+                )
+                _ped.func(f"/World/{_name}", _ped,
+                          translation=(_bx, _by, float(_bz) / 2.0))
+
         self.scene.clone_environments(copy_from_source=False)
 
         self.scene.articulations["left_robot"] = self.left_robot
@@ -480,18 +497,34 @@ class PianoEnv(DirectRLEnv):
             _planar = bool(getattr(self.cfg, "planar_ik", False))
             _pw = float(getattr(self.cfg, "planar_weight", 25.0))
             _pi = int(getattr(self.cfg, "planar_iters", 6))
-            _frz = ("wrist_3",) if bool(getattr(self.cfg, "freeze_last_dof", False)) else ()
+            # build the frozen-joint set: last DoF (wrist_3), the whole wrist (1/2/3),
+            # and/or the elbow -> leaves only the proximal joints that turn (shoulder_pan)
+            # and lean (shoulder_lift[, elbow]) moving. Freezing the wrist kills the
+            # orientation-correcting swing that "flings" the hand; with no wrist DoF left
+            # to control orientation, the IK should run POSITION-ONLY (well-posed).
+            _frz = []
+            if bool(getattr(self.cfg, "freeze_wrist", False)):
+                _frz += ["wrist_1", "wrist_2", "wrist_3"]
+            elif bool(getattr(self.cfg, "freeze_last_dof", False)):
+                _frz += ["wrist_3"]
+            if bool(getattr(self.cfg, "freeze_elbow", False)):
+                _frz += ["elbow"]
+            _frz = tuple(_frz)
+            _pinx = bool(getattr(self.cfg, "planar_pin_x", False))
+            _pos_only = bool(getattr(self.cfg, "arm_ik_pos_only", False))
             self.ik_left = WristPoseIK(self.left_robot, self.cfg.hand_base_body,
                                        planar=_planar, planar_weight=_pw, planar_iters=_pi,
-                                       freeze_joints=_frz)
+                                       planar_pin_x=_pinx, pos_only=_pos_only, freeze_joints=_frz)
             self.ik_right = WristPoseIK(self.right_robot, self.cfg.hand_base_body,
                                         planar=_planar, planar_weight=_pw, planar_iters=_pi,
-                                        freeze_joints=_frz)
-            if _planar:
+                                        planar_pin_x=_pinx, pos_only=_pos_only, freeze_joints=_frz)
+            if _planar and not _pos_only:
                 print(f"[PianoEnv] PLANAR-IK: weighted DLS (w={_pw} on z+orientation) x{_pi} "
-                      "iters -> arm holds the plane & slides in XY (gantry emulation)")
+                      f"iters -> arm holds the plane & slides in {'Y only (X pinned)' if _pinx else 'XY'}")
+            if _pos_only:
+                print("[PianoEnv] POSITION-ONLY IK (orientation dropped -> no wrist fling)")
             if _frz:
-                print(f"[PianoEnv] FREEZE last DoF: {_frz} held at init value "
+                print(f"[PianoEnv] FROZEN arm joints {_frz} held at init "
                       "(excluded from the arm IK solve)")
             if ftip_track:
                 # POSITION-ONLY arm IK on the primary FINGERTIP: drives the arm so the
@@ -531,6 +564,12 @@ class PianoEnv(DirectRLEnv):
         pr, _ = self.ik_right.pose_w()                       # current palm positions
         tgt_l = centroid[:, 0].clone(); tgt_l[:, 2] += self.cfg.arm_ik_hover
         tgt_r = centroid[:, 1].clone(); tgt_r[:, 2] += self.cfg.arm_ik_hover
+        # CONSTANT ALIGNED Z: pin BOTH active targets to one fixed hover height (max key
+        # top + hover) so the two wrists stay level with each other and never move in Z;
+        # only X/Y track the notes. (planar_ik then holds that Z tight.)
+        if getattr(self.cfg, "arm_z_constant", False):
+            _zc = self._key_top_world()[..., 2].amax(dim=-1, keepdim=True) + self.cfg.arm_ik_hover
+            tgt_l[:, 2:3] = _zc; tgt_r[:, 2:3] = _zc
         # a hand with NO upcoming notes RETRACTS up off the keyboard (keeping its xy)
         # so its resting fingers stop ringing keys -- e.g. the muted right hand on a
         # left-only song was holding station AT key level, ringing ~5-7 false keys and

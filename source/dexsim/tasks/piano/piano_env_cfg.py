@@ -138,14 +138,18 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # each control step by WristPoseIK (arm_ik_follow) or the analytic slider rail,
     # and the policy learns finger pressing on top. No precomputed reference needed.
 
-    # piano world pose (shift so the 1.22 m keyboard centers on Y=0, table height)
-    piano_pos = (0.569, -0.606, 0.746)   # fit so LEFT-hand fingers rest on keys 19/20/26
-    # robot base poses: elevated on pedestals just behind the keyboard so the
-    # arms drape DOWN onto the keys. With the base at key height the wrist can't
-    # get above the keys and the fingers end up below the keyboard; raising the
-    # bases lets the hand come down onto the keys (fingers point -Z).
-    left_base_pos = (-0.05, -0.30, 1.05)
-    right_base_pos = (-0.05, 0.30, 1.05)
+    # PLAYERS-IN-FRONT layout: piano at identity rotation (keys' player side = local +X
+    # faces world +X), keyboard centered at world (0.60, 0.0, 0.756). The two robots sit
+    # IN FRONT of the keys (large +X) and are rotated 180deg about Z (base_rot below) to
+    # FACE the piano, raised above key height -> arm_ik_follow reaches down-and-back onto
+    # the keys with a big elbow bend, bodies pointing at the piano (no draping over).
+    piano_pos = (0.59, -0.598, 0.746)
+    piano_rot = (1.0, 0.0, 0.0, 0.0)     # identity (keys face +X / the robots)
+    # bases in front of the keyboard (+X), facing it; left hand over the LOW keys (now -Y),
+    # right hand over the HIGH keys (+Y). base_rot makes each UR10e reach -X toward the piano.
+    left_base_pos = (1.25, -0.30, 1.05)
+    right_base_pos = (1.25, 0.30, 1.05)
+    arm_base_rot = (0.0, 0.0, 0.0, 1.0)  # wxyz: 180deg about Z so the arm faces the piano
 
     # action scaling: targets = default + scale * action (action in [-1,1]).
     # Per-joint (see PianoEnv.joint_scale): the stiff arm joints (stiffness 6000)
@@ -198,11 +202,27 @@ class PianoEnvCfg(DirectRLEnvCfg):
     planar_ik: bool = False
     planar_weight: float = 25.0
     planar_iters: int = 6
+    # PIN DEPTH: also hold world-X so the arm slides ONLY laterally (world Y), like the
+    # slider's single rail. Plain planar lets the arm chase each key's depth (white/black
+    # keys differ in X) -> the wrist wanders in depth; pinning X removes that.
+    planar_pin_x: bool = False
+    # CONSTANT ALIGNED Z: pin BOTH arms' hover target to ONE fixed height (max key top +
+    # arm_ik_hover) so the two wrists stay level and never move in Z; only X/Y track notes.
+    arm_z_constant: bool = False
     # FREEZE the UR10e's last DoF (wrist_3_joint, the final wrist roll): WristPoseIK
     # leaves it out of the solve so it holds its init value EXACTLY while the other 5
     # arm joints still servo. Pairs with planar_ik (constant world-Z) to visualise the
     # arm sliding flat in XY with a fixed wrist roll.
     freeze_last_dof: bool = False
+    # FREEZE THE WHOLE WRIST (wrist_1/2/3): leaves only shoulder_pan (turn) + shoulder_lift
+    # (lean) [+ elbow] moving -> the slider-like 2-3 DoF arm. The wrist is exactly what the
+    # IK swings to fix orientation, so freezing it removes the "fling"; pair with
+    # arm_ik_pos_only (you can't control orientation with no wrist, so don't try).
+    freeze_wrist: bool = False
+    freeze_elbow: bool = False        # also pin the elbow -> pure 2-DoF turn+lean arm
+    # POSITION-ONLY arm IK: drop the orientation rows, solve a 3-DoF position target on the
+    # remaining (proximal) joints. Well-posed when the wrist is frozen; smooth, no fling.
+    arm_ik_pos_only: bool = False
     # ONE-FINGER-PER-NOTE mode (monophonic redesign). The arm centroid-servo positions the
     # hand only GROSSLY -> the assigned fingertip lands ~13cm from its key (precision capped).
     # Here we instead aim ONE designated fingertip directly at the current note (offset the
@@ -379,6 +399,7 @@ class PianoEnvCfg(DirectRLEnvCfg):
         # bake world poses into each articulation's initial state (per-env-origin
         # relative). The two robots are separate copies, so this is safe.
         self.piano_cfg.init_state.pos = self.piano_pos
+        self.piano_cfg.init_state.rot = getattr(self, "piano_rot", (1.0, 0.0, 0.0, 0.0))
         if self.key_damping > 0:
             self.piano_cfg.actuators["keys"].damping = self.key_damping
         if self.use_slider:
@@ -401,6 +422,11 @@ class PianoEnvCfg(DirectRLEnvCfg):
         else:
             self.left_robot_cfg.init_state.pos = self.left_base_pos
             self.right_robot_cfg.init_state.pos = self.right_base_pos
+            # face the piano: rotate the bases (default reach is +X; arm_base_rot turns
+            # them so the arm reaches toward the piano at -X).
+            _br = getattr(self, "arm_base_rot", (1.0, 0.0, 0.0, 0.0))
+            self.left_robot_cfg.init_state.rot = _br
+            self.right_robot_cfg.init_state.rot = _br
             # piano-ready default arm pose (fingertips resting on the keys); the two
             # arms differ slightly so each has its own tuned pose.
             self.left_robot_cfg.init_state.joint_pos = dict(self.left_ready_pose)

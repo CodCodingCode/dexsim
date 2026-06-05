@@ -20,10 +20,23 @@ p.add_argument("--arm_ik_follow", action="store_true",
                help="online WristPoseIK servos the arms to the fingering centroid")
 p.add_argument("--planar_ik", action="store_true",
                help="weighted DLS: hold constant Z + orientation, slide in XY")
+p.add_argument("--planar_pin_x", action="store_true",
+               help="also pin depth (world X) -> arm slides only laterally (Y), like the slider")
+p.add_argument("--arm_z_constant", action="store_true",
+               help="pin both arms to ONE constant hover height (aligned, no Z motion); X/Y track notes")
 p.add_argument("--freeze_last_dof", action="store_true",
                help="pin the UR10e wrist_3 joint (last DoF) at its init value")
+p.add_argument("--freeze_wrist", action="store_true",
+               help="pin all 3 wrist joints -> only pan(turn)+lift(lean)[+elbow] move")
+p.add_argument("--freeze_elbow", action="store_true",
+               help="also pin the elbow -> pure 2-DoF turn+lean arm")
+p.add_argument("--arm_ik_pos_only", action="store_true",
+               help="position-only IK (drop orientation) -> smooth, no wrist fling")
 p.add_argument("--arm_ik_hover", type=float, default=None,
                help="override hover height (m) of the servoed palm above the keys")
+p.add_argument("--hand_tilt", type=float, default=None,
+               help="rotate the IK orientation target (rad about world X) so the fingers "
+                    "point DOWN at the keys instead of sideways; ~-1.22 = -70 deg")
 AppLauncher.add_app_launcher_args(p)
 a = p.parse_args(); a.headless = True
 app = AppLauncher(a).app
@@ -39,10 +52,22 @@ if a.arm_ik_follow:
     cfg.arm_ik_follow = True; cfg.freeze_arms = False
     if a.planar_ik:
         cfg.planar_ik = True
+    if a.planar_pin_x:
+        cfg.planar_pin_x = True
+    if a.arm_z_constant:
+        cfg.arm_z_constant = True
     if a.freeze_last_dof:
         cfg.freeze_last_dof = True
+    if a.freeze_wrist:
+        cfg.freeze_wrist = True
+    if a.freeze_elbow:
+        cfg.freeze_elbow = True
+    if a.arm_ik_pos_only:
+        cfg.arm_ik_pos_only = True
 if a.arm_ik_hover is not None:
     cfg.arm_ik_hover = a.arm_ik_hover
+if a.hand_tilt is not None:
+    cfg.hand_tilt = a.hand_tilt; cfg.hand_tilt_axis = 0    # rotate about world X -> fingers down
 env = gym.make("Dexsim-Piano-Bimanual-v0", cfg=cfg, render_mode=None)
 le = env.unwrapped
 wrapped = RslRlVecEnvWrapper(env)

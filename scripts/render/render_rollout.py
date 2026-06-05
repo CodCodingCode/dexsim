@@ -20,7 +20,10 @@ p.add_argument("--spp", type=int, default=96, help="path-traced samples per vide
 p.add_argument("--settle", type=int, default=60, help="warmup sim steps before filming")
 p.add_argument("--max_frames", type=int, default=0, help="0 = whole song")
 p.add_argument("--stride", type=int, default=1, help="capture every Nth control step")
-p.add_argument("--fps", type=int, default=20)
+p.add_argument("--fps", type=float, default=0,
+               help="output fps. 0 (default) = REALTIME: derived as (1/control_dt)/stride "
+                    "so the clip's wall-clock matches the performance. Pass a value only to "
+                    "force a non-realtime fps.")
 p.add_argument("--eye", default="1.5,-1.35,1.35")
 p.add_argument("--target", default="0.5,-0.5,0.80")
 p.add_argument("--width", type=int, default=1280)
@@ -157,6 +160,17 @@ def main():
     sim_utils.CuboidCfg(size=(40.0, 40.0, 0.04), visual_material=_fm).func(
         "/World/Floor", sim_utils.CuboidCfg(size=(40.0, 40.0, 0.04), visual_material=_fm),
         translation=(0.0, 0.0, -0.02))
+    # SUPPORTS so nothing floats: a table under the piano (top just below the keys at
+    # ~0.74 m) and two pedestals under the robot bases (z=1.05). Visual props only.
+    _wood = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.20, 0.13, 0.08), roughness=0.7)
+    _ped = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.12, 0.12, 0.14), roughness=0.5)
+    sim_utils.CuboidCfg(size=(0.45, 1.55, 0.72), visual_material=_wood).func(
+        "/World/PianoTable", sim_utils.CuboidCfg(size=(0.45, 1.55, 0.72), visual_material=_wood),
+        translation=(0.60, 0.0, 0.36))                         # under the piano (center x=0.60)
+    for _nm, _y in (("PedL", -0.30), ("PedR", 0.30)):
+        sim_utils.CuboidCfg(size=(0.34, 0.34, 1.05), visual_material=_ped).func(
+            f"/World/{_nm}", sim_utils.CuboidCfg(size=(0.34, 0.34, 1.05), visual_material=_ped),
+            translation=(1.25, _y, 0.525))                     # under each base (in front, x=1.25)
     sim_utils.DomeLightCfg(intensity=700.0, color=(0.5, 0.55, 0.65)).func(
         "/World/Dome", sim_utils.DomeLightCfg(intensity=700.0, color=(0.5, 0.55, 0.65)))
     _c = (0.5, -0.5, 0.85)
@@ -172,6 +186,20 @@ def main():
     piano = Articulation(cfg.piano_cfg.replace(prim_path="/World/Piano"))
     left = Articulation(cfg.left_robot_cfg.replace(prim_path="/World/LeftRobot"))
     right = Articulation(cfg.right_robot_cfg.replace(prim_path="/World/RightRobot"))
+
+    # Pedestals under each base so the arms don't float (cosmetic; bases are
+    # world-fixed). Box runs ground -> base z, read live from the resolved cfg.
+    for _nm, _rc in (("LeftPedestal", cfg.left_robot_cfg),
+                     ("RightPedestal", cfg.right_robot_cfg)):
+        _bx, _by, _bz = _rc.init_state.pos
+        if _bz and _bz > 0.02:
+            _pc = sim_utils.CuboidCfg(
+                size=(0.26, 0.26, float(_bz)),
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=(0.22, 0.22, 0.25), metallic=0.1, roughness=0.5))
+            _pc.func(f"/World/{_nm}", _pc,
+                     translation=(_bx, _by, float(_bz) / 2.0))
+
     cam = Camera(CameraCfg(
         prim_path="/World/cam", update_period=0,
         height=args.height, width=args.width, data_types=["rgb"],
@@ -209,10 +237,29 @@ def main():
             nb = int((rgb.sum(-1) > 10).mean() * 100)
             print(f"  frame {f}/{len(idxs)} (step {t}) non-black {nb}%", flush=True)
 
-    out_fps = max(1, args.fps // args.stride)
-    cmd = ["ffmpeg", "-y", "-framerate", str(out_fps),
+    # REALTIME by construction: consecutive rendered frames are `stride` control
+    # steps apart (control_dt seconds each), so the only fps that makes the clip's
+    # wall-clock equal the performance is (1/control_dt)/stride. Encoding at a flat
+    # fps that ignores stride is what made strided clips play sped-up by exactly the
+    # stride factor (e.g. 999 steps shown in 80 frames @ 20 fps = 12.5x too fast).
+    control_dt = float(data["control_dt"]) if "control_dt" in data else float(cfg.control_dt)
+    control_hz = 1.0 / control_dt
+    stride = max(1, args.stride)
+    if args.fps and args.fps > 0:
+        out_fps = float(args.fps)                       # explicit non-realtime override
+        fps_arg = repr(out_fps)
+    else:
+        out_fps = control_hz / stride                   # realtime
+        fps_arg = f"{control_hz:g}/{stride}"            # exact rational for ffmpeg, e.g. 20/12
+    real_dur = len(idxs) / out_fps
+    print(f"[render_rollout] control_dt={control_dt:.4f}s ({control_hz:g}Hz) stride={stride} "
+          f"-> {out_fps:.3f} fps | {len(idxs)} frames = {real_dur:.1f}s clip, covering "
+          f"{idxs[-1] * control_dt:.1f}s of the {n * control_dt:.1f}s performance", flush=True)
+    cmd = ["ffmpeg", "-y", "-framerate", fps_arg,
            "-i", os.path.join(args.frames_dir, "frame_%05d.png"),
-           "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", args.out]
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+           "-vf", "fps=30",   # re-time to a smooth 30fps container (duration preserved)
+           args.out]
     print("[render_rollout] encoding:", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
     print(f"[render_rollout] saved video -> {args.out}")

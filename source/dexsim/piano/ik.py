@@ -39,6 +39,7 @@ class WristPoseIK:
                  max_step: float = 0.05, max_ang_step: float = 0.2,
                  arm_only: bool = True, pos_only: bool = False,
                  planar: bool = False, planar_weight: float = 25.0, planar_iters: int = 6,
+                 planar_pin_x: bool = False,
                  arm_prefixes=("shoulder", "elbow", "wrist_"), freeze_joints=()):
         self.robot = articulation
         self.damping = damping
@@ -54,6 +55,14 @@ class WristPoseIK:
         self.planar = planar
         self.planar_weight = planar_weight    # weight on z + 3 orientation rows (xy stay 1.0)
         self.planar_iters = max(1, int(planar_iters))
+        # planar_pin_x: also PIN the depth axis (world X) -> the arm slides ONLY laterally
+        # (world Y), like the slider's single lateral rail. Plain planar holds Z+orientation
+        # but lets BOTH x and y track the note centroid, so the arm chases each key's depth
+        # (white vs black keys sit at different X) and wanders in depth. Pinning X holds the
+        # palm at its initial depth (captured on first solve) and weights X heavily so it
+        # never trades depth for the lateral move. Leaves a pure Y (which-key) slide.
+        self.planar_pin_x = planar_pin_x
+        self._pin_x = None                    # captured initial world-X of the controlled body
         # pos_only: solve a 3-DoF POSITION target on the 6-DoF arm (drop orientation).
         # A 6-DoF pose target on a fingertip OVER-constrains (the held orientation fights
         # the position -> ~250mm residual); a 3-DoF position target is well-posed/under-
@@ -162,8 +171,17 @@ class WristPoseIK:
         control step). Returns accumulated dq -> emulates an XY gantry on the redundant arm."""
         E = pos.shape[0]
         W = self.planar_weight
-        # task weights: x,y normal(1); z + roll/pitch/yaw heavy -> never traded away for XY.
-        sw = torch.tensor([1.0, 1.0, W, W, W, W], device=J.device).sqrt()       # (6,)
+        if self.planar_pin_x:
+            # hold depth (world X) at the body's initial X, and weight X heavily so the
+            # arm slides ONLY laterally (Y). x,z,roll,pitch,yaw all heavy; only y free.
+            if self._pin_x is None:
+                self._pin_x = pos[:, 0:1].clone()
+            target_pos = target_pos.clone()
+            target_pos[:, 0:1] = self._pin_x
+            sw = torch.tensor([W, 1.0, W, W, W, W], device=J.device).sqrt()     # (6,) pin x too
+        else:
+            # task weights: x,y normal(1); z + roll/pitch/yaw heavy -> never traded away for XY.
+            sw = torch.tensor([1.0, 1.0, W, W, W, W], device=J.device).sqrt()   # (6,)
         Jw = J * sw.view(1, 6, 1)                                                # weight rows
         Jt = Jw.transpose(-1, -2)                                               # (E, D, 6)
         JJt = Jw @ Jt                                                           # (E, 6, 6)
