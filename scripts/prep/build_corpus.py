@@ -11,7 +11,7 @@ Examples
 --------
     source env.sh
     # scan everything we already have on disk
-    python scripts/build_corpus.py --roots data/midi data/robopianist_ref/robopianist/music/data
+    python scripts/build_corpus.py --roots data/midi
 
     # scan a GiantMIDI download and keep only short, reachable pieces
     python scripts/build_corpus.py --roots data/corpus/giantmidi \

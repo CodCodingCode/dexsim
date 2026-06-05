@@ -1,118 +1,33 @@
-"""Multi-fingertip damped-least-squares IK over a combined arm+hand articulation.
+"""Single-frame damped-least-squares IK for the arm of a combined arm+hand articulation.
 
-This is the "autopilot" from the PianoMime recipe: instead of asking RL to
-explore all 30 joints of an arm+hand, we let IK convert *desired fingertip
-positions* into joint targets. The arm's redundancy is absorbed here; RL only has
-to learn a residual on top (see ``PianoEnv`` and ``build_reference.py``).
+This is the "arm-as-servo" solver behind the decoupled control design: pure math
+drives the arm so a chosen body (the palm, or one fingertip) reaches a target
+pose, while an RL policy learns finger pressing on top. Driving a single 6-DoF
+(or 3-DoF position-only) target on a 6-DoF arm is *well posed*, so it converges
+tightly and stably across the whole keyboard (``diag_posik.py``: ~1 cm), and the
+policy never touches the stiff arm joints (no PhysX blow-up).
 
-We drive all five fingertips at once: stack their 3-row position Jacobians into a
-(3*5, num_dof) matrix and solve one damped least-squares step
+Per control tick it solves the damped least-squares step
 
-    dq = Jᵀ (J Jᵀ + λ²I)⁻¹ e ,   e = clip(target − fingertip, ±max_step)
+    dq = Jᵀ (J Jᵀ + λ²I)⁻¹ e ,   e = [e_pos ; e_rot]
 
-per control tick. Iterating this (the reference builder does several ticks of
-physics between song steps) walks the fingertips onto their keys while the arm
-follows. Fixed-base Jacobian indexing is detected from the physx view shape.
-
-The "fingertip" point is the distal-link body origin (``robot0_*distal``) — the
-*same* point the reward measures distance to, so IK and reward are consistent.
+with e_pos clipped to ``max_step`` and e_rot (axis-angle) to ``max_ang_step``.
+Iterating walks the body onto the target. Fixed-base Jacobian indexing is detected
+once from the physx view shape.
 """
 
 from __future__ import annotations
 
 import torch
 
-from .fingering import FINGERTIP_BODIES
-
-
-class FingertipIK:
-    def __init__(self, articulation, damping: float = 0.05, max_step: float = 0.05,
-                 hand_only: bool = False, arm_prefixes=("shoulder", "elbow", "wrist_")):
-        self.robot = articulation
-        self.damping = damping
-        self.max_step = max_step
-
-        # hand_only: freeze the arm joints so this solver moves ONLY the fingers
-        # (the arm is positioned separately by WristPoseIK). This is what makes the
-        # 5-fingertip solve WELL-POSED -- the over-constraint/divergence came from
-        # recruiting the 6-DoF arm; with the arm frozen each finger drives its own tip.
-        names = articulation.data.joint_names
-        if hand_only:
-            self.dof_mask = torch.tensor(
-                [not any(p in n for p in arm_prefixes) for n in names],
-                device=articulation.device)
-        else:
-            self.dof_mask = torch.ones(articulation.num_joints, dtype=torch.bool,
-                                       device=articulation.device)
-
-        # fingertip body indices (order = FINGERTIP_BODIES = [th, ff, mf, rf, lf])
-        self.tip_ids = []
-        for name in FINGERTIP_BODIES:
-            ids, names = articulation.find_bodies(name)
-            if not ids:
-                raise RuntimeError(f"fingertip body '{name}' not found; have: "
-                                   f"{articulation.body_names}")
-            self.tip_ids.append(ids[0])
-        self.tip_ids_t = torch.tensor(self.tip_ids, device=articulation.device)
-        self.num_dof = articulation.num_joints
-
-        # detect fixed-base Jacobian layout once
-        jac = self.robot.root_physx_view.get_jacobians()
-        self.num_bodies = len(articulation.body_names)
-        self._fixed_base = jac.shape[1] == (self.num_bodies - 1)
-        self._dof_offset = 0 if self._fixed_base else 6
-        self._jac_body_shift = 1 if self._fixed_base else 0
-
-    # ------------------------------------------------------------------ reads
-    def fingertips_w(self) -> torch.Tensor:
-        """(E, 5, 3) current fingertip world positions."""
-        return self.robot.data.body_pos_w[:, self.tip_ids_t, :]
-
-    def _position_jacobians(self) -> torch.Tensor:
-        """(E, 5, 3, num_dof) stacked translational Jacobians of the 5 tips."""
-        jac = self.robot.root_physx_view.get_jacobians()        # (E, B, 6, Dj)
-        cols = slice(self._dof_offset, self._dof_offset + self.num_dof)
-        out = []
-        for bid in self.tip_ids:
-            jrow = jac[:, bid - self._jac_body_shift, 0:3, cols]  # (E, 3, num_dof)
-            out.append(jrow)
-        return torch.stack(out, dim=1)                          # (E, 5, 3, D)
-
-    # ------------------------------------------------------------------ solve
-    def solve(self, targets_w: torch.Tensor) -> torch.Tensor:
-        """One DLS step. ``targets_w`` (E, 5, 3) desired fingertip world pos.
-        Returns joint-position targets (E, num_dof) = current q + dq (clamped to
-        joint limits)."""
-        cur = self.fingertips_w()                               # (E, 5, 3)
-        err = (targets_w - cur).clamp(-self.max_step, self.max_step)
-        E = err.shape[0]
-        e = err.reshape(E, -1)                                  # (E, 15)
-
-        Jp = self._position_jacobians().reshape(E, -1, self.num_dof)  # (E, 15, D)
-        Jp = Jp.clone()
-        Jp[:, :, ~self.dof_mask] = 0.0                          # freeze masked (arm) dofs
-        Jt = Jp.transpose(-1, -2)                               # (E, D, 15)
-        JJt = Jp @ Jt                                           # (E, 15, 15)
-        eye = torch.eye(JJt.shape[-1], device=JJt.device).expand_as(JJt)
-        A = JJt + (self.damping ** 2) * eye
-        sol = torch.linalg.solve(A, e.unsqueeze(-1))            # (E, 15, 1)
-        dq = (Jt @ sol).squeeze(-1)                             # (E, D)
-
-        q = self.robot.data.joint_pos + dq
-        lower = self.robot.data.soft_joint_pos_limits[..., 0]
-        upper = self.robot.data.soft_joint_pos_limits[..., 1]
-        return torch.clamp(q, lower, upper)
-
 
 class WristPoseIK:
     """Damped-least-squares IK for a SINGLE body's 6-DoF pose (position + orientation).
 
-    This is the "arm-as-servo" solver: drive one frame (the palm / wrist) to a
-    target pose using the arm. Unlike :class:`FingertipIK` (which over-constrains a
-    6-DoF arm with 5 fingertip targets -> blurry ~45 mm residual and occasional
-    divergence), a single 6-DoF target on a 6-DoF arm is *well posed*, so it
-    converges tightly and stably. The fingers are then free to splay onto the
-    individual keys (driven by the policy / an RP1M reference), not by this solver.
+    Drive one frame (the palm / wrist, or a fingertip) to a target pose using the
+    arm. A single 6-DoF target on a 6-DoF arm is *well posed*, so it converges
+    tightly and stably; the fingers are then free to splay onto the individual keys
+    (driven by the policy), not by this solver.
 
     Solves, per tick, the 6-row spatial-Jacobian DLS step
         dq = Jᵀ (J Jᵀ + λ²I)⁻¹ [e_pos ; e_rot]
@@ -122,11 +37,29 @@ class WristPoseIK:
 
     def __init__(self, articulation, body_name: str, damping: float = 0.05,
                  max_step: float = 0.05, max_ang_step: float = 0.2,
-                 arm_only: bool = True, arm_prefixes=("shoulder", "elbow", "wrist_")):
+                 arm_only: bool = True, pos_only: bool = False,
+                 planar: bool = False, planar_weight: float = 25.0, planar_iters: int = 6,
+                 arm_prefixes=("shoulder", "elbow", "wrist_"), freeze_joints=()):
         self.robot = articulation
         self.damping = damping
         self.max_step = max_step
         self.max_ang_step = max_ang_step
+        # PLANAR mode: emulate an XY gantry on the redundant arm. A plain 1-step DLS treats
+        # all 6 pose components as equal soft objectives, so a large XY error makes it trade
+        # away Z + orientation -> the hand tilts and SAGS onto the keys (toppling). Planar
+        # mode (a) WEIGHTS the 4 pinned components (z, roll, pitch, yaw) heavily so the solver
+        # refuses to sacrifice height/fingers-down posture, and (b) ITERATES the (fixed-
+        # Jacobian) Gauss-Newton step so the XY target is actually reached per control step
+        # (no mid-move sag). Result: the arm slides flat in XY -- exactly the slider's plane.
+        self.planar = planar
+        self.planar_weight = planar_weight    # weight on z + 3 orientation rows (xy stay 1.0)
+        self.planar_iters = max(1, int(planar_iters))
+        # pos_only: solve a 3-DoF POSITION target on the 6-DoF arm (drop orientation).
+        # A 6-DoF pose target on a fingertip OVER-constrains (the held orientation fights
+        # the position -> ~250mm residual); a 3-DoF position target is well-posed/under-
+        # constrained, so the arm walks the fingertip ONTO the key to ~1cm (the diag proof
+        # that the arm places any rigid body to 1cm is a POSITION result).
+        self.pos_only = pos_only
 
         ids, _ = articulation.find_bodies(body_name)
         if not ids:
@@ -143,6 +76,24 @@ class WristPoseIK:
         else:
             self.dof_mask = torch.ones(self.num_dof, dtype=torch.bool,
                                        device=articulation.device)
+
+        # freeze_joints: PIN specific arm joints (matched by name substring) at their
+        # init/ready angle -- e.g. ("wrist_3",) locks the UR10e's last DoF (final wrist
+        # roll) so the wrist orientation about its own axis stays constant while the
+        # other 5 joints still servo. Masking the Jacobian alone only makes dq=0, which
+        # sets the PD target to the CURRENT angle (zero restoring force) -> the joint
+        # drifts; so solve() rewrites these columns to the captured constant every tick.
+        self.freeze_joints = tuple(freeze_joints)
+        self._frozen_idx = None
+        self._frozen_target = None
+        if self.freeze_joints:
+            frozen = torch.tensor(
+                [any(f in n for f in self.freeze_joints)
+                 for n in articulation.data.joint_names],
+                device=articulation.device)
+            self.dof_mask = self.dof_mask & ~frozen
+            self._frozen_idx = torch.nonzero(frozen, as_tuple=False).flatten()
+            self._frozen_target = articulation.data.joint_pos[:, self._frozen_idx].clone()
 
         jac = self.robot.root_physx_view.get_jacobians()
         self.num_bodies = len(articulation.body_names)
@@ -178,20 +129,59 @@ class WristPoseIK:
         """One DLS step toward (target_pos (E,3), target_quat (E,4) wxyz).
         Returns joint-position targets (E, num_dof), clamped to limits."""
         pos, quat = self.pose_w()
-        e_pos = (target_pos - pos).clamp(-self.max_step, self.max_step)
-        e_rot = self._orientation_error(target_quat, quat).clamp(-self.max_ang_step,
-                                                                 self.max_ang_step)
-        e = torch.cat([e_pos, e_rot], dim=-1)                      # (E, 6)
-
         J = self._spatial_jacobian().clone()                       # (E, 6, D)
         J[:, :, ~self.dof_mask] = 0.0                              # freeze non-arm dofs
-        Jt = J.transpose(-1, -2)                                   # (E, D, 6)
-        JJt = J @ Jt                                               # (E, 6, 6)
-        eye = torch.eye(6, device=J.device).expand_as(JJt)
-        sol = torch.linalg.solve(JJt + (self.damping ** 2) * eye, e.unsqueeze(-1))
-        dq = (Jt @ sol).squeeze(-1)                                # (E, D)
+        if self.planar and not self.pos_only:
+            dq = self._solve_planar(pos, quat, target_pos, target_quat, J)
+        else:
+            e_pos = (target_pos - pos).clamp(-self.max_step, self.max_step)
+            if self.pos_only:
+                e = e_pos                                          # (E, 3) position only
+                Jr = J[:, 0:3, :]                                  # (E, 3, D) translational
+            else:
+                e_rot = self._orientation_error(target_quat, quat).clamp(
+                    -self.max_ang_step, self.max_ang_step)
+                e = torch.cat([e_pos, e_rot], dim=-1)              # (E, 6)
+                Jr = J
+            Jt = Jr.transpose(-1, -2)                              # (E, D, r)
+            JJt = Jr @ Jt                                          # (E, r, r)
+            eye = torch.eye(JJt.shape[-1], device=J.device).expand_as(JJt)
+            sol = torch.linalg.solve(JJt + (self.damping ** 2) * eye, e.unsqueeze(-1))
+            dq = (Jt @ sol).squeeze(-1)                            # (E, D)
 
         q = self.robot.data.joint_pos + dq
+        if self._frozen_idx is not None:
+            q[:, self._frozen_idx] = self._frozen_target   # hold pinned joints at init
         lower = self.robot.data.soft_joint_pos_limits[..., 0]
         upper = self.robot.data.soft_joint_pos_limits[..., 1]
         return torch.clamp(q, lower, upper)
+
+    def _solve_planar(self, pos, quat, target_pos, target_quat, J):
+        """Weighted + iterated DLS: hold Z + orientation (heavy weight) and SLIDE in XY
+        (iterate the fixed-Jacobian Gauss-Newton step so the XY target is reached this
+        control step). Returns accumulated dq -> emulates an XY gantry on the redundant arm."""
+        E = pos.shape[0]
+        W = self.planar_weight
+        # task weights: x,y normal(1); z + roll/pitch/yaw heavy -> never traded away for XY.
+        sw = torch.tensor([1.0, 1.0, W, W, W, W], device=J.device).sqrt()       # (6,)
+        Jw = J * sw.view(1, 6, 1)                                                # weight rows
+        Jt = Jw.transpose(-1, -2)                                               # (E, D, 6)
+        JJt = Jw @ Jt                                                           # (E, 6, 6)
+        eye = torch.eye(6, device=J.device).expand_as(JJt)
+        A = JJt + (self.damping ** 2) * eye
+        Jp, Jr = J[:, 0:3, :], J[:, 3:6, :]                                     # pos / rot rows
+        e_rot0 = self._orientation_error(target_quat, quat).clamp(
+            -self.max_ang_step, self.max_ang_step)
+        dq_acc = torch.zeros(E, self.num_dof, device=J.device)
+        pos_p = pos                                   # predicted controlled-body position
+        rot_acc = torch.zeros(E, 3, device=J.device)  # rotation realized by dq_acc so far
+        for _ in range(self.planar_iters):
+            e_pos = (target_pos - pos_p).clamp(-self.max_step, self.max_step)
+            e_rot = (e_rot0 - rot_acc).clamp(-self.max_ang_step, self.max_ang_step)
+            e = torch.cat([e_pos, e_rot], dim=-1) * sw.view(1, 6)              # weighted err
+            sol = torch.linalg.solve(A, e.unsqueeze(-1))
+            dq = (Jt @ sol).squeeze(-1)
+            dq_acc = dq_acc + dq
+            pos_p = pos_p + (Jp @ dq.unsqueeze(-1)).squeeze(-1)                # predict pose
+            rot_acc = rot_acc + (Jr @ dq.unsqueeze(-1)).squeeze(-1)
+        return dq_acc

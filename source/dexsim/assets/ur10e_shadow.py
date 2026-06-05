@@ -26,6 +26,51 @@ from dexsim import ASSETS_DIR
 COMBINED_USD_PATH = str(ASSETS_DIR / "ur10e_shadow.usd")
 
 # ---------------------------------------------------------------------------
+# Shadow hand on a 2-DoF prismatic SLIDER (the RP1M/RoboPianist embodiment).
+# Replaces the heavy UR10e with a light carriage that places the hand to ~0mm
+# (validated by smoke_slider) -> solves the arm's placement wall. 26 DoF:
+# slider_y (lateral along keyboard), slider_z (vertical/press), + 24 hand joints.
+# ---------------------------------------------------------------------------
+SHADOW_SLIDER_CFG = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=str(ASSETS_DIR / "shadow_slider.usd"),
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=True,
+            retain_accelerations=True,
+            max_depenetration_velocity=1000.0,
+            max_angular_velocity=1000.0,
+            max_linear_velocity=1000.0,
+            max_contact_impulse=1e32,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False,
+            solver_position_iteration_count=8,
+            solver_velocity_iteration_count=0,
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.5),
+        rot=(1.0, 0.0, 0.0, 0.0),
+        joint_pos={"slider_.*": 0.0, "robot0_.*": 0.0},
+    ),
+    actuators={
+        # stiff, fast slider carriage -> mm placement (the whole point)
+        "slider": ImplicitActuatorCfg(
+            joint_names_expr=["slider_.*"],
+            effort_limit=20000.0, stiffness=20000.0, damping=400.0,
+        ),
+        # weak Shadow fingers (canonical values)
+        "fingers": ImplicitActuatorCfg(
+            joint_names_expr=["robot0_.*"],
+            effort_limit=0.9, stiffness=3.0, damping=0.1, friction=0.01,
+        ),
+    },
+    soft_joint_pos_limit_factor=1.0,
+)
+"""Shadow hand on a 2-DoF prismatic slider (RP1M embodiment). See
+scripts/build/build_shadow_slider_usd.py + smoke_slider.py (0mm placement)."""
+
+# ---------------------------------------------------------------------------
 # Joint name groups (regex). Keep these in one place; tasks reference them.
 # ---------------------------------------------------------------------------
 UR10E_ARM_JOINTS = [

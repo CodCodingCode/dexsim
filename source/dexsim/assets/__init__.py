@@ -3,6 +3,7 @@
 from .ur10e_shadow import (
     UR10E_CFG,
     SHADOW_HAND_CFG,
+    SHADOW_SLIDER_CFG,
     UR10E_SHADOW_CFG,
     COMBINED_USD_PATH,
 )
@@ -15,6 +16,7 @@ from .piano import (
 __all__ = [
     "UR10E_CFG",
     "SHADOW_HAND_CFG",
+    "SHADOW_SLIDER_CFG",
     "UR10E_SHADOW_CFG",
     "COMBINED_USD_PATH",
     "PIANO_CFG",

@@ -1,11 +1,11 @@
-"""Evaluate the IK reference (or any policy) by how well it actually plays.
+"""Evaluate play quality: roll out the env and score how well it plays.
 
-Rolls out the env and reports key-press recall / precision / F1 against the MIDI
-goal, plus mean reward. With ``--zero`` it applies a zero residual, i.e. it plays
-the *pure IK reference* — the crucial sanity gate before spending GPU-hours: if
-following the reference already sounds a decent fraction of the notes, residual
-RL has a good starting point; if it sounds ~nothing, fix the reference / mount
-first. With ``--checkpoint`` it instead rolls out a trained policy.
+Reports key-press recall / precision / F1 against the MIDI goal, plus mean reward.
+With ``--zero`` it applies a zero residual, i.e. it plays the pure IK-driven base
+(arm servo + ready-pose fingers) — a quick sanity gate before spending GPU-hours:
+if the base positioning already sounds a decent fraction of the notes, residual RL
+has a good starting point; if it sounds ~nothing, fix the mount / arm IK first.
+With ``--checkpoint`` it instead rolls out a trained policy.
 
   python scripts/eval_reference.py --midi data/midi/twinkle.mid --zero --headless
 """
@@ -19,12 +19,13 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Evaluate reference / policy play quality.")
 parser.add_argument("--midi", default=None)
 parser.add_argument("--num_envs", type=int, default=16)
-parser.add_argument("--zero", action="store_true", help="apply zero residual (pure reference)")
+parser.add_argument("--zero", action="store_true", help="apply zero residual (pure IK-driven base)")
 parser.add_argument("--checkpoint", default=None, help="rsl_rl policy checkpoint to roll out")
-parser.add_argument("--reference", default=None, help="explicit q_ref .npz to load "
-                    "(overrides the default data/reference/<midi-stem>.npz)")
+parser.add_argument("--planar_ik", action="store_true", help="weighted+iterated planar IK: arm holds Z+orientation, slides in XY (gantry)")
+parser.add_argument("--planar_weight", type=float, default=25.0)
+parser.add_argument("--planar_iters", type=int, default=6)
 parser.add_argument("--arm_ik_follow", action="store_true", help="arms servoed online "
-                    "by WristPoseIK to the fingering centroid; no q_ref needed")
+                    "by WristPoseIK to the fingering centroid")
 parser.add_argument("--idle_finger_curl", type=float, default=None, help="curl idle fingers up in the base pose (rad; sign-test the anti-mash)")
 parser.add_argument("--arm_ik_hover", type=float, default=None, help="palm hover height above keys")
 parser.add_argument("--arm_lookahead", type=int, default=None, help="steps of upcoming notes for the arm centroid (1=track current note tightly)")
@@ -32,6 +33,29 @@ parser.add_argument("--single_finger", action="store_true", help="one-finger-per
 parser.add_argument("--primary_finger", type=int, default=None, help="which finger presses (0=th,1=ff,2=mf,3=rf,4=lf)")
 parser.add_argument("--single_press_z", type=float, default=None, help="m vs key top to drive the fingertip (neg=into key)")
 parser.add_argument("--single_curl", type=float, default=None, help="rad to curl the non-primary fingers up")
+parser.add_argument("--single_press_flex", type=float, default=None)
+parser.add_argument("--arm_ftip_track", action="store_true")
+parser.add_argument("--use_slider", action="store_true")
+parser.add_argument("--no_fold", action="store_true")
+parser.add_argument("--slider_teleport_once", action="store_true")
+parser.add_argument("--slider_stiffness", type=float, default=0.0)
+parser.add_argument("--debug_keys", action="store_true")
+parser.add_argument("--key_damping", type=float, default=0.0)
+parser.add_argument("--slider_finger_strike", action="store_true")
+parser.add_argument("--slider_strike_pip", type=float, default=0.9)
+parser.add_argument("--slider_strike_mcp", type=float, default=0.6)
+parser.add_argument("--slider_strike_hover", type=float, default=0.02)
+parser.add_argument("--slider_hand_x", type=float, default=None)
+parser.add_argument("--slider_hand_tilt", type=float, default=0.0)
+parser.add_argument("--slider_idle_mcp", type=float, default=0.0)
+parser.add_argument("--slider_idle_curl", type=float, default=0.8)
+parser.add_argument("--ftip_max_step", type=float, default=None)
+parser.add_argument("--arm_stiffness", type=float, default=None)
+parser.add_argument("--arm_damping", type=float, default=None)
+parser.add_argument("--arm_effort", type=float, default=None)
+parser.add_argument("--songs_npz", default=None, help="evaluate across a multi-song goal bundle (.npz)")
+parser.add_argument("--max_songs", type=int, default=0, help="cap to first N songs (0=all)")
+parser.add_argument("--song_offset", type=int, default=0, help="skip first N songs (held-out eval)")
 parser.add_argument("--idle_hand_retract", type=float, default=None, help="m an idle hand lifts off the keys")
 parser.add_argument("--hand_tilt", type=float, default=None)
 parser.add_argument("--hand_tilt_axis", type=int, default=None)
@@ -58,12 +82,36 @@ def main():
     cfg.scene.num_envs = args.num_envs
     if args.midi:
         cfg.midi_path = args.midi
-    if args.reference:
-        cfg.reference_path = args.reference
+    if getattr(args, "use_slider", False):
+        cfg.use_slider = True
+        if args.no_fold:
+            cfg.fold_to_reach = False
+        cfg.slider_hand_tilt = args.slider_hand_tilt
+        cfg.slider_teleport_once = args.slider_teleport_once
+        cfg.slider_stiffness = args.slider_stiffness
+        cfg.key_damping = args.key_damping
+        if args.slider_finger_strike:
+            cfg.slider_finger_strike = True
+            cfg.slider_strike_pip = args.slider_strike_pip
+            cfg.slider_strike_mcp = args.slider_strike_mcp
+            cfg.slider_strike_hover = args.slider_strike_hover
+        cfg.slider_idle_mcp = args.slider_idle_mcp
+        cfg.slider_idle_curl = args.slider_idle_curl
+        cfg.goal_lookahead = 4
+        cfg.obs_goal_sdf = False
+        cfg.__post_init__()   # re-apply: swap robots to slider + resize spaces
+    if getattr(args, "songs_npz", None):
+        cfg.songs_npz = args.songs_npz
+        cfg.max_songs = args.max_songs
+        if getattr(args, "song_offset", 0):
+            cfg.song_offset = args.song_offset
     if args.arm_ik_follow:
         # math drives the arms, policy/zero-residual drives the fingers: no reference
         # trajectory, arms are not frozen, they track the fingering centroid online.
         cfg.arm_ik_follow = True
+        cfg.planar_ik = args.planar_ik
+        cfg.planar_weight = args.planar_weight
+        cfg.planar_iters = args.planar_iters
         if args.idle_finger_curl is not None:
             cfg.idle_finger_curl = args.idle_finger_curl
         if args.arm_ik_hover is not None:
@@ -78,6 +126,12 @@ def main():
             cfg.single_press_z = args.single_press_z
         if args.single_curl is not None:
             cfg.single_curl = args.single_curl
+        if args.single_press_flex is not None:
+            cfg.single_press_flex = args.single_press_flex
+        if args.arm_ftip_track:
+            cfg.arm_ftip_track = True
+        if args.ftip_max_step is not None:
+            cfg.ftip_max_step = args.ftip_max_step
         if args.idle_hand_retract is not None:
             cfg.idle_hand_retract = args.idle_hand_retract
         if args.hand_tilt is not None:
@@ -86,14 +140,24 @@ def main():
             cfg.hand_tilt_axis = args.hand_tilt_axis
     if args.hand_stiffness is not None or args.hand_effort is not None:
         for rc in (cfg.left_robot_cfg, cfg.right_robot_cfg):
-            ha = rc.actuators["hand"]
+            ha = rc.actuators.get("hand") or rc.actuators.get("fingers")
             if args.hand_stiffness is not None:
                 ha.stiffness = args.hand_stiffness
                 ha.damping = max(0.1, 0.05 * args.hand_stiffness)
             if args.hand_effort is not None:
                 ha.effort_limit = args.hand_effort
         cfg.freeze_arms = False
-        cfg.use_reference = False
+    if getattr(args, "arm_stiffness", None) is not None:
+        # higher-bandwidth arm -> tracks the IK target in fewer steps (the ~40-step
+        # convergence -> faster). Safe in arm_ik_follow (policy doesn't drive the arm).
+        import math as _math
+        for rc in (cfg.left_robot_cfg, cfg.right_robot_cfg):
+            aa = rc.actuators["arm"]
+            aa.stiffness = args.arm_stiffness
+            aa.damping = args.arm_damping if args.arm_damping is not None \
+                else 2.0 * _math.sqrt(args.arm_stiffness)   # ~critical for unit inertia
+            if args.arm_effort is not None:
+                aa.effort_limit = args.arm_effort
 
     env = PianoEnv(cfg, render_mode=None)
     policy = None
@@ -138,7 +202,7 @@ def main():
     # the gate and dropped softly-held sustained notes in [0.25,0.5), deflating recall.
     SOUND_EPS = 1e-6
 
-    for _ in range(T):
+    for _step in range(T):
         if policy is not None:
             with torch.no_grad():
                 action = policy(obs)
@@ -162,6 +226,13 @@ def main():
         # micro counts over every env/key this step
         sounding = pressed > SOUND_EPS
         goal_b = goal.bool()
+        if getattr(args, "debug_keys", False) and _step < 60 and _step % 10 == 0:
+            g0 = torch.nonzero(goal_b[0]).flatten().tolist()
+            s0 = torch.nonzero(sounding[0]).flatten().tolist()
+            tips = env._fingertips_world()[0] - env.scene.env_origins[0]   # (10,3) env-local
+            print(f"  step {_step}: goal={g0} sounding={s0}")
+            print(f"      tip Z [Lth,ff,mf,rf,lf, Rth,ff,mf,rf,lf]={[round(z,3) for z in tips[:,2].tolist()]} "
+                  f"keytop={float((env._key_top_world()[0,:,2]-env.scene.env_origins[0,2]).max()):.3f}")
         tp_tot += float((sounding & goal_b).sum())
         fp_tot += float((sounding & ~goal_b).sum())
         fn_tot += float((~sounding & goal_b).sum())

@@ -24,11 +24,14 @@ parser.add_argument("--arm_ik_follow", action="store_true")
 parser.add_argument("--single_finger", action="store_true")
 parser.add_argument("--arm_ik_hover", type=float, default=None)
 parser.add_argument("--hand_tilt", type=float, default=None)
+parser.add_argument("--idle_finger_curl", type=float, default=None)
 parser.add_argument("--primary_finger", type=int, default=None)
 parser.add_argument("--single_press_z", type=float, default=None)
 parser.add_argument("--single_curl", type=float, default=None)
 parser.add_argument("--hand_stiffness", type=float, default=None)
 parser.add_argument("--hand_effort", type=float, default=None)
+parser.add_argument("--hand_action_scale", type=float, default=None,
+                    help="match training's finger residual scale (e.g. tilt_A used 0.12)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 if args.video:
@@ -77,6 +80,11 @@ def export_played_midi(sounded_per_step, control_dt, path):
     print(f"[play_piano] exported what it played -> {path} ({len(inst.notes)} notes)")
     # always also render a .wav so you can hear it
     try:
+        import sys as _sys
+        from pathlib import Path as _P
+        _prep = str(_P(__file__).resolve().parents[1] / "prep")
+        if _prep not in _sys.path:
+            _sys.path.insert(0, _prep)
         from midi_to_wav import midi_to_wav
         wav = midi_to_wav(path)
         print(f"[play_piano] rendered audio -> {wav}")
@@ -90,13 +98,17 @@ def main():
     if args.midi:
         cfg.midi_path = args.midi
     if args.arm_ik_follow:
-        cfg.arm_ik_follow = True; cfg.freeze_arms = False; cfg.use_reference = False
+        cfg.arm_ik_follow = True; cfg.freeze_arms = False
     if args.single_finger:
         cfg.single_finger = True
     if args.arm_ik_hover is not None:
         cfg.arm_ik_hover = args.arm_ik_hover
+    if args.hand_action_scale is not None:
+        cfg.hand_action_scale = args.hand_action_scale
     if args.hand_tilt is not None:
         cfg.hand_tilt = args.hand_tilt; cfg.hand_tilt_axis = 0
+    if args.idle_finger_curl is not None:
+        cfg.idle_finger_curl = args.idle_finger_curl
     for k in ("primary_finger", "single_press_z", "single_curl"):
         v = getattr(args, k)
         if v is not None:

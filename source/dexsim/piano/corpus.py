@@ -124,16 +124,15 @@ def _pig_proto_to_pretty_midi(path: Path):
 
     PIG ships fingering-annotated pieces as protobuf NoteSequences. Converting
     them needs ``note_seq`` (``pip install note-seq``). If it isn't installed we
-    raise a clear error telling the caller to either install it or run
-    ``robopianist preprocess`` (see ``data/robopianist_ref``) to get MIDIs.
+    raise a clear error telling the caller to install it (or supply .mid files
+    directly under data/midi).
     """
     try:
         import note_seq  # type: ignore
     except Exception as e:  # pragma: no cover - depends on optional dep
         raise RuntimeError(
             f"Cannot read PIG proto {path.name}: install `note-seq` "
-            f"(pip install note-seq) or run `robopianist preprocess` to obtain "
-            f".mid files instead."
+            f"(pip install note-seq), or supply .mid files directly instead."
         ) from e
     seq = note_seq.NoteSequence()
     seq.ParseFromString(path.read_bytes())

@@ -34,7 +34,8 @@ cfg = ArticulationCfg(
     ),
     init_state=ArticulationCfg.InitialStateCfg(pos=(0.0, 0.0, 0.5), joint_pos={".*": 0.0}),
     actuators={
-        "all": ImplicitActuatorCfg(joint_names_expr=[".*"], stiffness=10.0, damping=1.0),
+        "slider": ImplicitActuatorCfg(joint_names_expr=["slider_.*"], stiffness=2000.0, damping=100.0),
+        "hand": ImplicitActuatorCfg(joint_names_expr=["robot0_.*"], stiffness=10.0, damping=1.0),
     },
 )
 
@@ -49,14 +50,30 @@ slider_dofs = [n for n in robot.joint_names if "trans" in n or "slider" in n]
 hand_dofs = [n for n in robot.joint_names if n.startswith("robot0_")]
 print(f"-> {len(hand_dofs)} hand DoF, {len(slider_dofs)} slider DoF: {slider_dofs}")
 
-# step holding the default pose; nudge the slider to confirm it's actuated
-for i in range(120):
+# DRIVE the slider to a target and measure placement precision (mm) -- this is the
+# slider's whole point: the heavy UR arm can't, a stiff prismatic can.
+iy = list(robot.joint_names).index("slider_y")
+iz = list(robot.joint_names).index("slider_z")
+forearm_id = [i for i, n in enumerate(robot.body_names) if "forearm" in n]
+fid = forearm_id[0] if forearm_id else 0
+tgt_y, tgt_z = 0.30, -0.03                       # 30cm lateral, 3cm down
+p0 = robot.data.body_pos_w[0, fid].clone()
+for i in range(240):
     tgt = robot.data.default_joint_pos.clone()
+    tgt[:, iy] = tgt_y; tgt[:, iz] = tgt_z
     robot.set_joint_position_target(tgt)
     robot.write_data_to_sim(); sim.step(); robot.update(1.0 / 120.0)
 jp = robot.data.joint_pos
-print(f"after 120 steps: pos in [{jp.min().item():.3f}, {jp.max().item():.3f}]  "
+p1 = robot.data.body_pos_w[0, fid]
+err_y = abs(jp[0, iy].item() - tgt_y) * 1000
+err_z = abs(jp[0, iz].item() - tgt_z) * 1000
+moved = (p1 - p0)
+print(f"after 240 steps: pos in [{jp.min().item():.3f}, {jp.max().item():.3f}]  "
       f"finite={bool(torch.isfinite(jp).all())}")
+print(f"SLIDER TRACKING: slider_y={jp[0,iy].item():.3f} (err {err_y:.1f}mm)  "
+      f"slider_z={jp[0,iz].item():.3f} (err {err_z:.1f}mm)")
+print(f"FOREARM MOVED: dY={moved[1].item()*1000:.0f}mm dZ={moved[2].item()*1000:.0f}mm "
+      f"(commanded +300mm Y, -30mm Z)")
 print("VERDICT:",
       "OK" if (robot.num_joints in (26, 25, 24) and bool(torch.isfinite(jp).all())) else "PROBLEM")
 print("===================================================\n")

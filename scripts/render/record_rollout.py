@@ -16,6 +16,14 @@ p.add_argument("--checkpoint", default=None)
 p.add_argument("--zero", action="store_true", help="zero residual = pure IK reference")
 p.add_argument("--midi", default="data/midi/song.mid")
 p.add_argument("--out", default="logs/rollout.npz")
+p.add_argument("--arm_ik_follow", action="store_true",
+               help="online WristPoseIK servos the arms to the fingering centroid")
+p.add_argument("--planar_ik", action="store_true",
+               help="weighted DLS: hold constant Z + orientation, slide in XY")
+p.add_argument("--freeze_last_dof", action="store_true",
+               help="pin the UR10e wrist_3 joint (last DoF) at its init value")
+p.add_argument("--arm_ik_hover", type=float, default=None,
+               help="override hover height (m) of the servoed palm above the keys")
 AppLauncher.add_app_launcher_args(p)
 a = p.parse_args(); a.headless = True
 app = AppLauncher(a).app
@@ -27,6 +35,14 @@ from dexsim.tasks.piano import PianoEnvCfg
 from dexsim.tasks.piano.agents.rsl_rl_ppo_cfg import PianoPPORunnerCfg
 
 cfg = PianoEnvCfg(); cfg.scene.num_envs = 1; cfg.midi_path = a.midi
+if a.arm_ik_follow:
+    cfg.arm_ik_follow = True; cfg.freeze_arms = False
+    if a.planar_ik:
+        cfg.planar_ik = True
+    if a.freeze_last_dof:
+        cfg.freeze_last_dof = True
+if a.arm_ik_hover is not None:
+    cfg.arm_ik_hover = a.arm_ik_hover
 env = gym.make("Dexsim-Piano-Bimanual-v0", cfg=cfg, render_mode=None)
 le = env.unwrapped
 wrapped = RslRlVecEnvWrapper(env)

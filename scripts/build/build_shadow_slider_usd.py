@@ -88,41 +88,69 @@ def main():
                 prim.SetActive(False); killed.append(prim.GetPath().pathString)
     print(f"[slider] deactivated world-anchor joint(s): {killed}")
 
-    # 2) add a D6 joint world -> forearm with 2 free translational axes
+    # 2) build a FIXED-BASE prismatic carriage so the 2 slide axes become real
+    # articulation DoFs (a single D6 world->forearm becomes a FLOATING BASE instead
+    # -> PhysX reports 0 slider DoF, which is the bug). Chain:
+    #   world --fixed--> slider_base --prismatic Y--> carriage --prismatic Z--> forearm
     sy = [float(v) for v in args.slide_y.split(",")]
     sz = [float(v) for v in args.slide_z.split(",")]
-    jpath = "/" + stage.GetDefaultPrim().GetName() + "/slider_joint" \
-        if stage.GetDefaultPrim() else "/slider_joint"
-    joint = UsdPhysics.Joint.Define(stage, jpath)
-    joint.CreateBody1Rel().SetTargets([Sdf.Path(forearm)])   # body0 empty = world
-    joint.CreateLocalPos0Attr().Set(Gf.Vec3f(0, 0, 0))
-    joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
-    # lock everything, then free transY (lateral) and transZ (vertical)
-    for axis in ("transX", "rotX", "rotY", "rotZ"):
-        la = UsdPhysics.LimitAPI.Apply(joint.GetPrim(), axis)
-        la.CreateLowAttr().Set(1.0); la.CreateHighAttr().Set(-1.0)   # low>high => locked
-    for axis, rng in (("transY", sy), ("transZ", sz)):
-        la = UsdPhysics.LimitAPI.Apply(joint.GetPrim(), axis)
-        la.CreateLowAttr().Set(rng[0]); la.CreateHighAttr().Set(rng[1])
-        drv = UsdPhysics.DriveAPI.Apply(joint.GetPrim(), axis)
-        drv.CreateTypeAttr().Set("force")
-        drv.CreateStiffnessAttr().Set(4000.0)     # stiff slider (gross positioning)
-        drv.CreateDampingAttr().Set(200.0)
-        drv.CreateMaxForceAttr().Set(2000.0)
-    print(f"[slider] added D6 slider: transY{sy} transZ{sz} (others locked)")
+    root_prim = stage.GetDefaultPrim()
+    base_path = root_prim.GetPath().pathString
+    fa_prim = stage.GetPrimAtPath(forearm)
+    # world transform of the forearm: place the dummy carriage bodies coincident with
+    # it so all joint frames are at 0 and slider pos 0 = the hand's native pose.
+    fa_xf = UsdGeom.Xformable(fa_prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    fa_pos = fa_xf.ExtractTranslation()
 
-    # 3) articulation root: the source hand USD ALREADY has one (on its default
-    # prim). Adding another (e.g. on the forearm) -> "Nested articulation roots
-    # are not allowed". So reuse the existing root and add nothing; the D6 slider
-    # joint world->forearm is incorporated as the articulation's 2-DoF floating base.
+    def _dummy_body(name):
+        p = f"{base_path}/{name}"
+        xf = UsdGeom.Xform.Define(stage, p)
+        xf.AddTranslateOp().Set(Gf.Vec3d(fa_pos[0], fa_pos[1], fa_pos[2]))
+        prim = xf.GetPrim()
+        UsdPhysics.RigidBodyAPI.Apply(prim)
+        m = UsdPhysics.MassAPI.Apply(prim)
+        m.CreateMassAttr().Set(0.01)            # tiny carriage mass
+        return p
+
+    slider_base = _dummy_body("slider_base")
+    carriage = _dummy_body("slider_carriage")
+
+    # world -> slider_base : FIXED (anchors the articulation = fixed base)
+    fj = UsdPhysics.FixedJoint.Define(stage, f"{base_path}/slider_anchor")
+    fj.CreateBody1Rel().SetTargets([Sdf.Path(slider_base)])     # body0 empty = world
+
+    def _prismatic(name, b0, b1, axis, rng):
+        j = UsdPhysics.PrismaticJoint.Define(stage, f"{base_path}/{name}")
+        if b0:
+            j.CreateBody0Rel().SetTargets([Sdf.Path(b0)])
+        j.CreateBody1Rel().SetTargets([Sdf.Path(b1)])
+        j.CreateAxisAttr().Set(axis)
+        j.CreateLowerLimitAttr().Set(rng[0])
+        j.CreateUpperLimitAttr().Set(rng[1])
+        j.CreateLocalPos0Attr().Set(Gf.Vec3f(0, 0, 0))
+        j.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
+        drv = UsdPhysics.DriveAPI.Apply(j.GetPrim(), "linear")
+        drv.CreateTypeAttr().Set("force")
+        drv.CreateStiffnessAttr().Set(8000.0)      # stiff, fast slider (mm placement)
+        drv.CreateDampingAttr().Set(400.0)
+        drv.CreateMaxForceAttr().Set(4000.0)
+        return j
+
+    _prismatic("slider_y", slider_base, carriage, "Y", sy)   # lateral along keyboard
+    _prismatic("slider_z", carriage, forearm, "Z", sz)       # vertical (press)
+    print(f"[slider] built fixed-base prismatic carriage: Y{sy} Z{sz} "
+          f"(slider_base@{tuple(round(v,3) for v in fa_pos)})")
+
+    # 3) articulation root: reuse the hand's existing root on the default prim; the
+    # fixed anchor makes it a FIXED-base articulation, so the 2 prismatics + 24 hand
+    # joints become 26 articulated DoFs (the smoke test asserts this).
     roots = [p.GetPath().pathString for p in stage.Traverse()
              if p.HasAPI(UsdPhysics.ArticulationRootAPI)]
-    print(f"[slider] existing articulation root(s): {roots} (reusing, adding none)")
+    print(f"[slider] existing articulation root(s): {roots}")
     if not roots:
-        fp = stage.GetPrimAtPath(forearm)
-        UsdPhysics.ArticulationRootAPI.Apply(fp)
-        PhysxSchema.PhysxArticulationAPI.Apply(fp)
-        print(f"[slider] no root found; applied one on {forearm}")
+        UsdPhysics.ArticulationRootAPI.Apply(root_prim)
+        PhysxSchema.PhysxArticulationAPI.Apply(root_prim)
+        print(f"[slider] applied articulation root on {base_path}")
 
     stage.GetRootLayer().Save()
     print(f"[OK] wrote hands-only slider asset -> {out}")

@@ -16,7 +16,7 @@ p = argparse.ArgumentParser()
 p.add_argument("--rollout", default="logs/rollout.npz")
 p.add_argument("--out", default="results/easy_song_video.mp4")
 p.add_argument("--frames_dir", default="logs/video_frames")
-p.add_argument("--spp", type=int, default=24, help="path-traced samples per video frame")
+p.add_argument("--spp", type=int, default=96, help="path-traced samples per video frame")
 p.add_argument("--settle", type=int, default=60, help="warmup sim steps before filming")
 p.add_argument("--max_frames", type=int, default=0, help="0 = whole song")
 p.add_argument("--stride", type=int, default=1, help="capture every Nth control step")
@@ -35,11 +35,25 @@ app = AppLauncher(args).app
 import carb
 _s = carb.settings.get_settings()
 _s.set("/rtx/rendermode", "PathTracing")
-_s.set("/rtx/pathtracing/spp", 4)
+_s.set("/rtx/pathtracing/spp", 8)
 _s.set("/rtx/pathtracing/totalSpp", args.spp)
-_s.set("/rtx/pathtracing/optixDenoiser/enabled", False)   # weights absent on this box
-_s.set("/rtx/pathtracing/maxBounces", 4)
+_s.set("/rtx/pathtracing/optixDenoiser/enabled", False)   # weights absent on this box -> rely on high spp
+_s.set("/rtx/pathtracing/maxBounces", 6)                  # was 4: softer global illumination
+_s.set("/rtx/pathtracing/maxSpecularAndTransmissionBounces", 6)
+_s.set("/rtx/post/tonemap/op", 1)                          # filmic-ish tonemap for a polished look
+_s.set("/rtx/post/histogram/enabled", True)
 _s.set("/app/asyncRendering", False)
+
+
+def _quat_aim(eye, tgt):
+    """quaternion (w,x,y,z) aiming a light's -Z from eye toward tgt."""
+    import numpy as _np
+    d = _np.array(tgt, float) - _np.array(eye, float); d /= (_np.linalg.norm(d) + 1e-9)
+    z = -d; up = _np.array([0, 0, 1.0]); x = _np.cross(up, z); x /= (_np.linalg.norm(x) + 1e-9)
+    y = _np.cross(z, x); R = _np.stack([x, y, z], 1)
+    w = _np.sqrt(max(0, 1 + R[0, 0] + R[1, 1] + R[2, 2])) / 2
+    if w < 1e-6: return (1.0, 0.0, 0.0, 0.0)
+    return (float(w), float((R[2, 1]-R[1, 2])/(4*w)), float((R[0, 2]-R[2, 0])/(4*w)), float((R[1, 0]-R[0, 1])/(4*w)))
 
 import os
 import subprocess
@@ -138,9 +152,22 @@ def main():
 
     cfg = PianoEnvCfg()
     sim = SimulationContext(SimulationCfg(dt=1 / 120.0, device=args.device))
-    sim_utils.GroundPlaneCfg().func("/World/ground", sim_utils.GroundPlaneCfg())
-    sim_utils.DomeLightCfg(intensity=3000.0, color=(1.0, 1.0, 1.0)).func(
-        "/World/Light", sim_utils.DomeLightCfg(intensity=3000.0))
+    # clean studio floor (replaces the grey grid) + soft 3-point-ish lighting
+    _fm = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.10, 0.10, 0.12), roughness=0.55)
+    sim_utils.CuboidCfg(size=(40.0, 40.0, 0.04), visual_material=_fm).func(
+        "/World/Floor", sim_utils.CuboidCfg(size=(40.0, 40.0, 0.04), visual_material=_fm),
+        translation=(0.0, 0.0, -0.02))
+    sim_utils.DomeLightCfg(intensity=700.0, color=(0.5, 0.55, 0.65)).func(
+        "/World/Dome", sim_utils.DomeLightCfg(intensity=700.0, color=(0.5, 0.55, 0.65)))
+    _c = (0.5, -0.5, 0.85)
+    # high overhead so the fixtures stay out of frame; intensities scaled for distance
+    for nm, pos, inten, rad, col in [
+        ("Key", (1.6, -2.2, 7.5), 360000.0, 1.0, (1.0, 0.97, 0.92)),
+        ("Fill", (-1.6, -2.2, 6.5), 120000.0, 1.4, (0.85, 0.9, 1.0)),
+        ("Rim", (0.3, 2.4, 7.0), 180000.0, 0.8, (0.8, 0.85, 1.0))]:
+        sim_utils.DiskLightCfg(intensity=inten, radius=rad, color=col).func(
+            f"/World/{nm}", sim_utils.DiskLightCfg(intensity=inten, radius=rad, color=col),
+            translation=pos, orientation=_quat_aim(pos, _c))
 
     piano = Articulation(cfg.piano_cfg.replace(prim_path="/World/Piano"))
     left = Articulation(cfg.left_robot_cfg.replace(prim_path="/World/LeftRobot"))

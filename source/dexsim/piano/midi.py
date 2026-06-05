@@ -63,7 +63,12 @@ def fold_into_reach(key_activation: np.ndarray, onsets: np.ndarray,
     active_keys = np.nonzero(key_activation.any(axis=0))[0]
     if active_keys.size == 0:
         return key_activation, onsets
-    split = int(np.median(active_keys))            # low half -> left, high -> right
+    # Split by the keyboard middle between the two reachable windows (low register
+    # -> left hand, high -> right), matching the env's hand mask in piano_env. Using
+    # the median of active keys was a bug: it split EVERY song ~50/50 across both
+    # hands, so a single-hand song (e.g. easy.mid keys {19,20,26}) sent half its
+    # notes to the hand that can't reach them -> unreachable goal, depressed F1.
+    split = 0.5 * (left_window[1] + right_window[0])
 
     def _fold(k: int, lo: int, hi: int) -> int:
         c = 0.5 * (lo + hi)

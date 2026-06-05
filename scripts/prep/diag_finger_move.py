@@ -28,7 +28,6 @@ def main():
     cfg.midi_path = "data/midi/easy.mid"
     cfg.arm_ik_follow = True
     cfg.freeze_arms = False
-    cfg.use_reference = False
     if args.hand_stiffness is not None:
         for rc in (cfg.left_robot_cfg, cfg.right_robot_cfg):
             rc.actuators["hand"].stiffness = args.hand_stiffness

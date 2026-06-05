@@ -1,29 +1,28 @@
-"""DirectRLEnv for the bimanual piano task (PianoMime-style).
+"""DirectRLEnv for the bimanual piano task (decoupled control, RoboPianist-style).
 
 Two UR10e+Shadow arms (60 action DoF total) over an 88-key spring-loaded piano.
 A MIDI song defines a per-step key-activation goal; an automatic fingering assigns
-each note to a finger; a precomputed IK reference trajectory positions the arms so
-the policy only has to learn a **residual** on top.
+each note to a finger. The control is **decoupled**: pure-math IK (``WristPoseIK``)
+servos the arms onto the upcoming-note centroid, while the RL policy learns finger
+pressing as a residual on top of a static ready pose. The slider embodiment is the
+same recipe with an analytic 1-DoF rail in place of the arm servo.
 
-What this env implements from PianoMime / RoboPianist:
-  * **Residual action** over an IK reference (``q_ref``): action = q_ref + scale*a.
-    Zero action already tracks the reference, so the policy starts competent.
+What this env implements from RoboPianist:
+  * **Residual action** over a ready-pose base: arm columns are overwritten each
+    step by IK; zero action already tracks a competent positioning, so the policy
+    only learns the press.
   * **Fingering shaping reward** (finger -> assigned key): the term RoboPianist
     showed is make-or-break (F1 = 0 without it).
   * **Composite reward**: key-press (right keys down, none wrong) + fingering +
     onset (crisp attacks) + energy.
   * **Rich observation**: proprioception + key state + goal lookahead + fingertip
-    positions + the reference fingertip targets ("where fingers should go") + an
-    analytic SDF goal encoding.
-
-If no reference exists yet, ``q_ref`` falls back to the static ready pose, so the
-env still builds and runs (that's how ``build_reference.py`` bootstraps one).
+    positions + the fingering targets ("where fingers should go") + an analytic
+    SDF goal encoding.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -42,7 +41,6 @@ from dexsim.piano.reward import (
 )
 from dexsim.piano.goal_encoding import nearest_active_distance
 from dexsim.assets import KEY_SOUND_ANGLE
-from dexsim import DATA_DIR
 from .piano_env_cfg import PianoEnvCfg
 
 
@@ -105,30 +103,47 @@ class PianoEnv(DirectRLEnv):
             print("[PianoEnv] ARM-IK-FOLLOW: WristPoseIK servos arms to the fingering "
                   "centroid; policy drives only the 48 finger DoF")
 
-        # --- song -> goal / onset tensors ---
-        song = load_song(self.cfg.midi_path, control_dt=self.cfg.control_dt)
-        # Fold a wide-range song into the two reachable hand windows so the IK
-        # reference is physically playable (else far keys are unreachable and the
-        # zero-residual F1 collapses to ~0.05). Remap key_activation + onsets
-        # up front so the goal AND the fingering plan below stay consistent.
-        if self.cfg.fold_to_reach:
-            from dexsim.piano.midi import fold_into_reach
-            act, ons = fold_into_reach(
-                song.key_activation, song.onsets,
-                left_window=tuple(self.cfg.left_key_window),
-                right_window=tuple(self.cfg.right_key_window),
-            )
-            song.key_activation, song.onsets = act, ons
-            n_keys = int(act.any(axis=0).sum())
-            print(f"[PianoEnv] folded song into reach: {n_keys} distinct keys, "
-                  f"windows L={tuple(self.cfg.left_key_window)} R={tuple(self.cfg.right_key_window)}")
-        self.song_len = song.num_steps
+        # --- song(s) -> goal / onset / fingering tensors (STACKED over N songs) ---
+        # Single-song training is just N=1. Multi-song training (cfg.songs_npz set)
+        # stacks N real songs along a leading dim and assigns each env a song_id, so
+        # one policy is trained across many songs -> generalization, not a per-song
+        # specialist. Every per-song tensor is indexed [song_id, song_step].
         L = self.cfg.goal_lookahead
-        goal = torch.as_tensor(song.key_activation, dtype=torch.float32, device=self.device)
-        onset = torch.as_tensor(song.onsets, dtype=torch.float32, device=self.device)
-        pad = torch.zeros((L, NUM_KEYS), device=self.device)
-        self.goal_padded = torch.cat([goal, pad], dim=0)            # (T+L, 88)
-        self.onset_padded = torch.cat([onset, pad], dim=0)          # (T+L, 88)
+        songs = self._gather_songs()                                # list of (name, act(T,88), ons(T,88))
+        self.song_names = [s[0] for s in songs]
+        N = len(songs)
+        lens = [s[1].shape[0] for s in songs]
+        Tmax = max(lens)
+        self.song_lens = torch.tensor(lens, device=self.device, dtype=torch.long)
+        goals, onsets, fkeys, factives = [], [], [], []
+        finger_home = None
+        for name, act, ons in songs:
+            T = act.shape[0]
+            g = torch.as_tensor(act, dtype=torch.float32, device=self.device)
+            o = torch.as_tensor(ons, dtype=torch.float32, device=self.device)
+            # pad each song to Tmax + L so the stacked tensor is rectangular and
+            # lookahead/clamped indexing past a short song's end is safe (zeros).
+            gpad = torch.zeros((Tmax + L - T, NUM_KEYS), device=self.device)
+            goals.append(torch.cat([g, gpad], 0))
+            onsets.append(torch.cat([o, gpad.clone()], 0))
+            plan = plan_fingering(act)
+            fk = torch.as_tensor(plan.finger_key, device=self.device)        # (T,10)
+            fa = torch.as_tensor(plan.finger_active, device=self.device)     # (T,10)
+            fk = torch.cat([fk, fk[-1:].repeat(Tmax + L - T, 1)], 0)
+            fa = torch.cat([fa, torch.zeros((Tmax + L - T, NUM_FINGERS),
+                                            dtype=torch.bool, device=self.device)], 0)
+            fkeys.append(fk); factives.append(fa)
+            if finger_home is None:
+                finger_home = torch.as_tensor(plan.home_key, device=self.device)
+        self.goal_padded = torch.stack(goals, 0)                    # (N, Tmax+L, 88)
+        self.onset_padded = torch.stack(onsets, 0)                  # (N, Tmax+L, 88)
+        self.finger_key = torch.stack(fkeys, 0)                     # (N, Tmax+L, 10)
+        self.finger_active = torch.stack(factives, 0)              # (N, Tmax+L, 10)
+        self.finger_home = finger_home                             # (10,) shared
+        self.song_len = int(Tmax)                                  # legacy: longest song
+        # per-env song assignment: round-robin over songs (deterministic, balanced).
+        self.song_id = (torch.arange(self.num_envs, device=self.device) % N).long()
+        self.num_songs = N
         # Time-dilated onset target for the onset-timing metric. A finger takes a few
         # 20Hz steps to descend and trip the velocity-gated strike, so the played
         # rising edge lands a step or two AFTER the nominal onset -- exact-step
@@ -136,13 +151,13 @@ class PianoEnv(DirectRLEnv):
         # +/-W steps of t, so "struck near its onset" is measured with a tolerance.
         W = int(getattr(self.cfg, "onset_tol_steps", 3))            # ~+/-150ms @ 20Hz
         self.onset_tol_steps = W
-        _base = self.onset_padded
+        _base = self.onset_padded                                   # (N, Tmax+L, 88)
         _ow = _base.clone()
         for _s in range(1, W + 1):
-            _fut = torch.zeros_like(_base); _fut[:-_s] = _base[_s:]
-            _pst = torch.zeros_like(_base); _pst[_s:] = _base[:-_s]
+            _fut = torch.zeros_like(_base); _fut[:, :-_s] = _base[:, _s:]
+            _pst = torch.zeros_like(_base); _pst[:, _s:] = _base[:, :-_s]
             _ow = torch.maximum(_ow, torch.maximum(_fut, _pst))
-        self.onset_win = _ow                                        # (T+L, 88)
+        self.onset_win = _ow                                        # (N, Tmax+L, 88)
         self.song_step = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         # velocity-gated sounding latch (see _key_pressed_fraction): which keys are
         # currently ringing (struck and not yet released).
@@ -157,16 +172,6 @@ class PianoEnv(DirectRLEnv):
         _kidx = torch.arange(NUM_KEYS, device=self.device)
         self.left_key_mask = (_kidx <= _split).float()    # (88,) 1.0 for left-hand keys
         self.right_key_mask = (_kidx > _split).float()     # (88,) 1.0 for right-hand keys
-
-        # --- fingering plan -> per-step finger->key + active mask ---
-        plan = plan_fingering(song.key_activation)
-        self.finger_key = torch.as_tensor(plan.finger_key, device=self.device)        # (T,10)
-        self.finger_active = torch.as_tensor(plan.finger_active, device=self.device)  # (T,10)
-        self.finger_home = torch.as_tensor(plan.home_key, device=self.device)         # (10,)
-        # pad to T+L so lookahead/clamped indexing is safe
-        self.finger_key = torch.cat([self.finger_key, self.finger_key[-1:].repeat(L, 1)], 0)
-        self.finger_active = torch.cat(
-            [self.finger_active, torch.zeros((L, NUM_FINGERS), dtype=torch.bool, device=self.device)], 0)
 
         # --- body indices: piano keys (ordered 0..87) and fingertips per hand ---
         key_ids, _ = self.piano.find_bodies([f"key_{i}" for i in range(NUM_KEYS)],
@@ -183,8 +188,12 @@ class PianoEnv(DirectRLEnv):
         self.lpalm_id = torch.tensor(lpalm, device=self.device)
         self.rpalm_id = torch.tensor(rpalm, device=self.device)
 
-        # --- reference trajectory (residual base) ---
-        self.q_ref = self._load_reference()                         # (T+L, 2, 30)
+        # --- residual base pose: the static ready pose, broadcast over every song/step.
+        # In arm_ik_follow / slider the arm columns are overwritten each control step by
+        # WristPoseIK; the policy learns finger pressing as a residual on top.
+        _Tpad = self.goal_padded.shape[1]                           # Tmax + L
+        _ready = torch.stack([self.left_default[0], self.right_default[0]], dim=0)  # (2,30)
+        self.base_pose = _ready[None, None].repeat(self.num_songs, _Tpad, 1, 1)  # (N,Tpad,2,30)
 
         # action buffer / targets
         self.actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
@@ -217,41 +226,141 @@ class PianoEnv(DirectRLEnv):
             self.reward_cfg.false_press_weight = 0.0
             print("[PianoEnv] phase-1 reward: positioning only "
                   "(fingering+arm; pressing terms OFF)")
-        _ref_desc = (f"{self._ref_path.name} ({self.q_ref.shape[0]} frames)"
-                     if self._has_reference else "FALLBACK(ready pose)")
-        print(f"[PianoEnv] song '{song.name}': {self.song_len} steps "
-              f"({song.duration_s:.1f}s @ {1/self.cfg.control_dt:.0f}Hz); "
-              f"reference={_ref_desc}")
+        _names = ", ".join(self.song_names[:4]) + ("..." if self.num_songs > 4 else "")
+        print(f"[PianoEnv] {self.num_songs} song(s) [{_names}]: longest {self.song_len} steps "
+              f"@ {1/self.cfg.control_dt:.0f}Hz")
 
-    # ------------------------------------------------------------- reference
-    def _reference_file(self) -> Path:
-        if self.cfg.reference_path:
-            return Path(self.cfg.reference_path)
-        return DATA_DIR / "reference" / (Path(self.cfg.midi_path).stem + ".npz")
+        self._use_slider = bool(getattr(self.cfg, "use_slider", False))
+        if self._use_slider:
+            self._setup_slider()
 
-    def _load_reference(self) -> torch.Tensor:
-        """(T+L, 2, 30) joint reference, padded with its last frame for lookahead.
-        Falls back to the static ready pose if no reference file is present."""
-        L = self.cfg.goal_lookahead
-        self._has_reference = False
-        self._ref_path = None
-        path = self._reference_file()
-        if self.cfg.use_reference and path.exists():
-            data = np.load(path)
-            q = torch.as_tensor(data["q_ref"], dtype=torch.float32, device=self.device)
-            # (T,2,30); align length to the song
-            if q.shape[0] < self.song_len:
-                q = torch.cat([q, q[-1:].repeat(self.song_len - q.shape[0], 1, 1)], 0)
-            q = q[: self.song_len]
-            self._has_reference = True
-            self._ref_path = path  # remember WHICH file (and report it) -- a stale
-            #   reference silently loaded here is invisible otherwise; that is exactly
-            #   how a pre-HOVER_CLEARANCE-fix q_ref got evaluated (precision 0.018).
-        else:
-            ref_l = self.left_default[0]
-            ref_r = self.right_default[0]
-            q = torch.stack([ref_l, ref_r], dim=0)[None].repeat(self.song_len, 1, 1)
-        return torch.cat([q, q[-1:].repeat(L, 1, 1)], dim=0)        # (T+L, 2, 30)
+    # ------------------------------------------------------------- slider
+    def _setup_slider(self):
+        """Calibrate slider_y/z -> world press-fingertip Y/Z (linear) for each hand, so
+        _slider_follow_base can place the striking finger ON the note. The 180deg
+        fingers-down rot INVERTS the slider axes, so we measure rather than assume."""
+        names = self.left_robot.data.joint_names
+        self._sy_col = names.index("slider_y")
+        self._sz_col = names.index("slider_z")
+        pf = int(getattr(self.cfg, "slider_press_finger", 1))
+        fb = FINGERTIP_BODIES[pf]
+        self._ptip_l = self.left_robot.find_bodies([fb], preserve_order=True)[0][0]
+        self._ptip_r = self.right_robot.find_bodies([fb], preserve_order=True)[0][0]
+        ftags = ["TH", "FF", "MF", "RF", "LF"]; ptag = ftags[pf]
+        # FINGER-STRIKE: angle the strike finger at the MCP (J3) and strike via PIP (J2)
+        # so only that fingertip descends onto the key (hand at hover -> no mash).
+        self._finger_strike = bool(getattr(self.cfg, "slider_finger_strike", False))
+        if self._finger_strike:
+            self._strike_mcp_col = names.index(f"robot0_{ptag}J3")
+            self._strike_pip_col = names.index(f"robot0_{ptag}J2")
+            self._strike_mcp = float(getattr(self.cfg, "slider_strike_mcp", 0.6))
+            self._strike_pip = float(getattr(self.cfg, "slider_strike_pip", 0.9))
+            self._strike_hover = float(getattr(self.cfg, "slider_strike_hover", 0.02))
+
+        def _measure(sy, sz):
+            for robot in (self.left_robot, self.right_robot):
+                jp = robot.data.joint_pos.clone()
+                jp[:, self._sy_col] = sy; jp[:, self._sz_col] = sz
+                if self._finger_strike:
+                    jp[:, self._strike_mcp_col] = self._strike_mcp   # measure the ANGLED tip
+                robot.set_joint_position_target(jp); robot.write_data_to_sim()
+            for _ in range(60):
+                self.sim.step(render=False)
+                self.left_robot.update(self.cfg.sim.dt); self.right_robot.update(self.cfg.sim.dt)
+            o0 = self.scene.env_origins[0]                       # env-0 grid origin
+            return (self.left_robot.data.body_pos_w[0, self._ptip_l].clone() - o0,
+                    self.right_robot.data.body_pos_w[0, self._ptip_r].clone() - o0)
+
+        # Y-cal with the hand LIFTED clear of the keys (slider_z=-0.04 -> up, no contact)
+        # so finger-key collisions can't destabilise the measurement.
+        lyp, ryp = _measure(0.3, -0.04); lym, rym = _measure(-0.3, -0.04)
+        lzp, rzp = _measure(0.0, 0.06); lz0, rz0 = _measure(0.0, -0.04)
+        print(f"[slider cal raw] L: y@+.3={lyp[1]:.3f} y@-.3={lym[1]:.3f} "
+              f"z@.06={lzp[2]:.3f} z@-.04={lz0[2]:.3f}")
+        # per-hand linear fits: tipY = ay + by*slider_y ; tipZ = az + bz*slider_z
+        self._cal = {}
+        for tag, yp, ym, zp, z0 in (("l", lyp, lym, lzp, lz0), ("r", ryp, rym, rzp, rz0)):
+            by = (yp[1] - ym[1]).item() / 0.6
+            ay = ym[1].item() + 0.3 * by
+            bz = (zp[2] - z0[2]).item() / 0.10        # points at slider_z -0.04 and +0.06
+            az = z0[2].item() + 0.04 * bz             # tipZ at slider_z=0
+            self._cal[tag] = (ay, by, az, bz)
+        self._key_top_z = float((self._key_top_world()[0, :, 2]
+                                 - self.scene.env_origins[0, 2]).max())   # env-local
+        # reset the sliders to neutral after the calibration sweep
+        for robot in (self.left_robot, self.right_robot):
+            jp = robot.data.joint_pos.clone()
+            jp[:, self._sy_col] = 0.0; jp[:, self._sz_col] = 0.0
+            robot.set_joint_position_target(jp); robot.write_data_to_sim()
+        # let the policy NUDGE the slider (placement Y + press Z) on top of the open-loop
+        # base -> it can correct the ~2cm calibration residual and modulate press depth.
+        # (arm_ik_follow had zeroed these; the fingers keep their full residual scale.)
+        _sres = float(getattr(self.cfg, "slider_residual", 0.05))
+        self.joint_scale[:, self._sy_col] = _sres          # lateral correction (0 = pure IK)
+        self.joint_scale[:, self._sz_col] = _sres * 0.8    # press/lift correction
+        # TIP-only curl columns of the NON-press fingers (J1/J2): curling these tucks
+        # idle fingertips UP & clear without dropping the knuckle onto keys (the harness
+        # mash fix) -> a cleaner base for RL to refine -> higher precision.
+        ftags = ["TH", "FF", "MF", "RF", "LF"]
+        ptag = ftags[pf]
+        self._slider_curl_cols = torch.tensor(
+            [i for i, n in enumerate(names)
+             if n.startswith("robot0_") and f"robot0_{ptag}" not in n and n[-1] in "12"],
+            device=self.device, dtype=torch.long)
+        self._slider_curl = float(getattr(self.cfg, "slider_idle_curl", 0.8))
+        # MCP (J3) of the idle fingers: flexing the knuckle lifts the WHOLE idle finger
+        # up & clear of the keys (vs tip-only curl which leaves the lower segments near
+        # key level -> mash). Sign unknown a priori; sweep cfg.slider_idle_mcp.
+        self._slider_mcp_cols = torch.tensor(
+            [i for i, n in enumerate(names)
+             if n.startswith("robot0_") and f"robot0_{ptag}" not in n and n[-1] == "3"],
+            device=self.device, dtype=torch.long)
+        self._slider_mcp = float(getattr(self.cfg, "slider_idle_mcp", 0.0))
+        print(f"[PianoEnv] SLIDER calibrated: L={tuple(round(v,3) for v in self._cal['l'])} "
+              f"R={tuple(round(v,3) for v in self._cal['r'])} key_top_z={self._key_top_z:.3f}"
+              f"{' [FINGER-STRIKE]' if self._finger_strike else ''}")
+
+    # ------------------------------------------------------------- songs
+    def _gather_songs(self):
+        """Return a list of (name, key_activation (T,88) bool, onsets (T,88) bool).
+        One entry from cfg.midi_path normally; N entries from cfg.songs_npz (a
+        precomputed multi-song goal bundle) when multi-song training is requested.
+        Onsets for npz songs are the rising edge of the key activation."""
+        from dexsim.piano.midi import fold_into_reach
+
+        def _fold(act, ons):
+            if self.cfg.fold_to_reach:
+                act, ons = fold_into_reach(
+                    act, ons, left_window=tuple(self.cfg.left_key_window),
+                    right_window=tuple(self.cfg.right_key_window))
+            return act, ons
+
+        npz = getattr(self.cfg, "songs_npz", None)
+        if npz:
+            import numpy as np
+            d = np.load(npz, allow_pickle=True)
+            G, lens, names = d["goals"], d["lens"], d["names"]
+            off = int(getattr(self.cfg, "song_offset", 0))
+            cap = int(getattr(self.cfg, "max_songs", 0)) or (G.shape[0] - off)
+            out = []
+            for i in range(off, min(off + cap, G.shape[0])):
+                T = int(lens[i])
+                act = G[i, :T].astype(bool)
+                ons = np.zeros_like(act)
+                ons[0] = act[0]
+                ons[1:] = act[1:] & ~act[:-1]          # rising edge = note onset
+                act, ons = _fold(act, ons)
+                out.append((str(names[i]), act, ons))
+            print(f"[PianoEnv] MULTI-SONG: {len(out)} songs from {npz} "
+                  f"(fold_to_reach={self.cfg.fold_to_reach})")
+            return out
+
+        song = load_song(self.cfg.midi_path, control_dt=self.cfg.control_dt)
+        act, ons = _fold(song.key_activation, song.onsets)
+        if self.cfg.fold_to_reach:
+            print(f"[PianoEnv] folded '{song.name}' into reach: "
+                  f"{int(act.any(0).sum())} distinct keys")
+        return [(song.name, act, ons)]
 
     # ------------------------------------------------------------------ scene
     def _setup_scene(self):
@@ -278,7 +387,7 @@ class PianoEnv(DirectRLEnv):
         self.prev_actions = self.actions.clone()
         a_left = self.actions[:, : self.per_arm_dof]
         a_right = self.actions[:, self.per_arm_dof :]
-        ref = self.q_ref[self.song_step]                            # (E, 2, 30)
+        ref = self.base_pose[self.song_id, self.song_step]          # (E, 2, 30) ready pose
         # residual on all joints, but per-joint scaled (gentle arm / generous hand;
         # see self.joint_scale). Targets are clamped to joint limits and obs are
         # NaN-guarded, so a transient blow-up can't crash PPO.
@@ -291,33 +400,113 @@ class PianoEnv(DirectRLEnv):
             a_right = a_right * 0.0
         base_l, base_r = ref[:, 0], ref[:, 1]
         # ARM-IK-FOLLOW: replace the arm columns of the base with the WristPoseIK
-        # servo toward the note centroid. Finger columns stay at the ref (ready) pose;
+        # servo toward the note centroid. Finger columns stay at the ready pose;
         # the policy learns pressing as a RESIDUAL on top -- a sustained action offset
-        # the weak hand actuators (stiffness 3) integrate into motion. (An analytic
-        # finger-IK base is parked behind cfg.finger_ik_base: a relative one-step DLS
-        # target can't drive the weak fingers the way it drives the stiff arm, so it
-        # made no difference; finger pressing is RL's job here.)
+        # the weak hand actuators (stiffness 3) integrate into motion.
         if getattr(self, "_arm_ik_follow", False):
             base_l, base_r = self._ik_follow_base(base_l, base_r)
         self._left_target = torch.clamp(base_l + scale * a_left, lo, hi)
         self._right_target = torch.clamp(base_r + scale * a_right, lo, hi)
+        # SLIDER teleport-ONCE-per-control-step: snap the 2 slider DoF to their IK target
+        # HERE (before the decimation substeps), then let the PD HOLD them while the finger
+        # presses -> tight sub-key placement at onset WITHOUT resetting key contact every
+        # substep (the every-substep teleport killed recall by clearing the contact).
+        if getattr(self, "_use_slider", False) and getattr(self.cfg, "slider_teleport_once", False):
+            cols = torch.tensor([self._sy_col, self._sz_col], device=self.device)
+            for robot, tgt in ((self.left_robot, self._left_target),
+                               (self.right_robot, self._right_target)):
+                jp = robot.data.joint_pos.clone(); jv = robot.data.joint_vel.clone()
+                jp[:, cols] = tgt[:, cols]; jv[:, cols] = 0.0
+                robot.write_joint_state_to_sim(jp, jv)
+
+    def _slider_follow_base(self, base_l, base_r):
+        """SLIDER positioning: set each hand's slider_y so the striking finger lands on
+        the upcoming-note centroid (calibrated map), and slider_z to press (note active)
+        or lift (idle). Finger columns stay at ref; the policy presses as a residual."""
+        centroid, active = self._hand_note_centroids()          # (E,2,3) WORLD, (E,2)
+        # work in env-LOCAL frame (calibration was env-local): subtract each env origin
+        oy = self.scene.env_origins[:, 1]                       # (E,)
+        press_z = self._key_top_z - 0.004
+        lift_z = self._key_top_z + 0.040
+        outs = []
+        for hand_i, (tag, base, robot, ptip) in enumerate((
+                ("l", base_l, self.left_robot, self._ptip_l),
+                ("r", base_r, self.right_robot, self._ptip_r))):
+            ay, by, az, bz = self._cal[tag]
+            note_y = centroid[:, hand_i, 1] - oy                # (E,) env-local Y
+            has = active[:, hand_i]                              # (E,) bool
+            # CLOSED-LOOP placement: correct slider_y from the MEASURED press-finger tip
+            # (kills the ~2cm open-loop calibration residual -> finger lands ON the key,
+            # like the harness that hit recall 0.58). Open-loop seed when idle.
+            tip_y = robot.data.body_pos_w[:, ptip, 1] - oy      # (E,) env-local tip Y
+            cur_sy = robot.data.joint_pos[:, self._sy_col]      # (E,) current slider_y
+            ff_sy = (note_y - ay) / by                          # open-loop seed
+            cl_sy = cur_sy + (note_y - tip_y) / by              # closed-loop correction
+            sy = torch.where(has, cl_sy, ff_sy).clamp(-0.6, 0.6)
+            b = base.clone()
+            b[:, self._sy_col] = sy
+            if getattr(self, "_finger_strike", False):
+                # hand stays at HOVER; strike via the angled strike-finger's PIP flex so
+                # ONLY that fingertip descends onto the key (no hand descent -> no mash).
+                hover_z = self._key_top_z + self._strike_hover
+                sz = torch.full_like(note_y, (hover_z - az) / bz).clamp(-0.05, 0.10)
+                b[:, self._sz_col] = sz
+                b[:, self._strike_mcp_col] = self._strike_mcp          # angle the finger
+                b[:, self._strike_pip_col] = torch.where(             # strike when active
+                    has, torch.full_like(note_y, self._strike_pip), torch.zeros_like(note_y))
+                b[:, self._slider_curl_cols] = b[:, self._slider_curl_cols] + self._slider_curl
+            else:
+                tgt_z = torch.where(has, torch.full_like(note_y, press_z),
+                                    torch.full_like(note_y, lift_z))
+                sz = ((tgt_z - az) / bz).clamp(-0.05, 0.10)
+                b[:, self._sz_col] = sz
+                # tuck idle fingertips up (tip-only curl) so only the press finger strikes
+                b[:, self._slider_curl_cols] = b[:, self._slider_curl_cols] + self._slider_curl
+                if self._slider_mcp != 0.0:
+                    b[:, self._slider_mcp_cols] = b[:, self._slider_mcp_cols] + self._slider_mcp
+            outs.append(b)
+        return outs[0], outs[1]
 
     def _ik_follow_base(self, base_l, base_r):
         """Base joint pose for ARM-IK-FOLLOW mode, (base_left, base_right) each (E,30).
         Arm columns = WristPoseIK servoing the palm to the upcoming-note centroid
         (hover above keys, ready-pose down quat). Finger columns are left as passed in
-        (the ref/ready pose) unless cfg.finger_ik_base is set, in which case a hand-only
-        FingertipIK poses each assigned fingertip on its key. The policy residual is
-        added on top by the caller."""
-        finger_ik = getattr(self.cfg, "finger_ik_base", False)
+        (the ready pose); the policy residual is added on top by the caller."""
+        if getattr(self, "_use_slider", False):
+            return self._slider_follow_base(base_l, base_r)
+        ftip_track = getattr(self.cfg, "arm_ftip_track", False)
         if not hasattr(self, "ik_left"):
-            from dexsim.piano.ik import WristPoseIK, FingertipIK
-            self.ik_left = WristPoseIK(self.left_robot, self.cfg.hand_base_body)
-            self.ik_right = WristPoseIK(self.right_robot, self.cfg.hand_base_body)
-            if finger_ik:
-                # hand-only finger IK (arm frozen -> the 5-tip solve is well-posed)
-                self.fik_left = FingertipIK(self.left_robot, hand_only=True)
-                self.fik_right = FingertipIK(self.right_robot, hand_only=True)
+            from dexsim.piano.ik import WristPoseIK
+            _planar = bool(getattr(self.cfg, "planar_ik", False))
+            _pw = float(getattr(self.cfg, "planar_weight", 25.0))
+            _pi = int(getattr(self.cfg, "planar_iters", 6))
+            _frz = ("wrist_3",) if bool(getattr(self.cfg, "freeze_last_dof", False)) else ()
+            self.ik_left = WristPoseIK(self.left_robot, self.cfg.hand_base_body,
+                                       planar=_planar, planar_weight=_pw, planar_iters=_pi,
+                                       freeze_joints=_frz)
+            self.ik_right = WristPoseIK(self.right_robot, self.cfg.hand_base_body,
+                                        planar=_planar, planar_weight=_pw, planar_iters=_pi,
+                                        freeze_joints=_frz)
+            if _planar:
+                print(f"[PianoEnv] PLANAR-IK: weighted DLS (w={_pw} on z+orientation) x{_pi} "
+                      "iters -> arm holds the plane & slides in XY (gantry emulation)")
+            if _frz:
+                print(f"[PianoEnv] FREEZE last DoF: {_frz} held at init value "
+                      "(excluded from the arm IK solve)")
+            if ftip_track:
+                # POSITION-ONLY arm IK on the primary FINGERTIP: drives the arm so the
+                # striking finger's TIP (not the palm) lands on the key -- closes the
+                # ~1-finger-length (90mm) palm-vs-tip gap. diag_posik proved this
+                # converges to ~18mm under PD (vs 93mm for palm-centroid). max_step
+                # raised so the arm tracks fast-changing note targets in fewer steps.
+                pf = int(getattr(self.cfg, "primary_finger", 1))
+                fb = FINGERTIP_BODIES[pf]
+                self.aftik_left = WristPoseIK(self.left_robot, fb,
+                                              max_step=float(getattr(self.cfg, "ftip_max_step", 0.12)),
+                                              pos_only=True)
+                self.aftik_right = WristPoseIK(self.right_robot, fb,
+                                               max_step=float(getattr(self.cfg, "ftip_max_step", 0.12)),
+                                               pos_only=True)
             # hold the ready-pose palm orientation (fingers down) as the servo target
             _, self._arm_quat_l = self.ik_left.pose_w()
             _, self._arm_quat_r = self.ik_right.pose_w()
@@ -352,23 +541,29 @@ class PianoEnv(DirectRLEnv):
         hi_r = pr.clone(); hi_r[:, 2:3] = retract_z
         tgt_l = torch.where(active[:, 0:1], tgt_l, hi_l)
         tgt_r = torch.where(active[:, 1:2], tgt_r, hi_r)
-        arm_l = self.ik_left.solve(tgt_l, self._arm_quat_l)  # (E,30); only arm cols move
-        arm_r = self.ik_right.solve(tgt_r, self._arm_quat_r)
+        if ftip_track:
+            # drive the PRIMARY FINGERTIP (not the palm) to the note centroid via
+            # position-only IK -> the striking finger lands on the key, not 90mm short.
+            # idle hand still retracts (target = current tip lifted to retract height).
+            tl, _ = self.aftik_left.pose_w(); tr, _ = self.aftik_right.pose_w()
+            il = tl.clone(); il[:, 2:3] = retract_z
+            ir = tr.clone(); ir[:, 2:3] = retract_z
+            ft_l = torch.where(active[:, 0:1], tgt_l, il)
+            ft_r = torch.where(active[:, 1:2], tgt_r, ir)
+            arm_l = self.aftik_left.solve(ft_l, self._arm_quat_l)
+            arm_r = self.aftik_right.solve(ft_r, self._arm_quat_r)
+        else:
+            arm_l = self.ik_left.solve(tgt_l, self._arm_quat_l)  # (E,30); only arm cols move
+            arm_r = self.ik_right.solve(tgt_r, self._arm_quat_r)
         m = self._arm_dof_mask                               # (30,) True = arm joint
-        # finger columns: ref/ready pose by default; analytic finger-IK if opted in
-        fing_l, fing_r = base_l, base_r
-        if finger_ik:
-            key_top = self._key_top_world()                  # (E,88,3)
-            _, press, _ = self._finger_targets_world(key_top)
-            fing_l = self.fik_left.solve(press[:, :NUM_FINGERS // 2])
-            fing_r = self.fik_right.solve(press[:, NUM_FINGERS // 2:])
-        base_l = torch.where(m, arm_l, fing_l)               # arm cols servo, finger cols base
-        base_r = torch.where(m, arm_r, fing_r)
+        # finger columns stay at the ready-pose base; the policy presses as a residual.
+        base_l = torch.where(m, arm_l, base_l)               # arm cols servo, finger cols base
+        base_r = torch.where(m, arm_r, base_r)
         # IDLE-FINGER CURL: lift fingers with no note THIS step up into the palm so the
         # hand stops mashing its ~8-key footprint; the active finger stays straight.
         curl = getattr(self.cfg, "idle_finger_curl", 0.0)
         if curl != 0.0:
-            fa = self.finger_active[self.song_step]          # (E,10) global finger order
+            fa = self.finger_active[self.song_id, self.song_step]  # (E,10) global finger order
             for hand_i, base in enumerate((base_l, base_r)):
                 for fi in range(5):
                     cols = self._finger_flex_cols[fi]
@@ -393,40 +588,45 @@ class PianoEnv(DirectRLEnv):
         retract a hand with no current note. For a monophonic melody this places the
         striking finger on the right key -> high precision (vs ~13cm gross-centroid error)."""
         pf = int(self.cfg.primary_finger)
+        # Drive the PRIMARY FINGERTIP body itself with WristPoseIK (arm-only). diag_wrist_ik
+        # proved the arm places a chosen body to ~1cm; targeting the fingertip (not the palm
+        # + offset) puts the fingertip ON its key -> precise placement, not the ~100mm gap.
+        if not hasattr(self, "ftik_left"):
+            from dexsim.piano.ik import WristPoseIK
+            fb = FINGERTIP_BODIES[pf]
+            self.ftik_left = WristPoseIK(self.left_robot, fb, max_step=0.06, pos_only=True)
+            self.ftik_right = WristPoseIK(self.right_robot, fb, max_step=0.06, pos_only=True)
+            _, self._ftq_l = self.ftik_left.pose_w(); self._ftq_l = self._ftq_l.clone()
+            _, self._ftq_r = self.ftik_right.pose_w(); self._ftq_r = self._ftq_r.clone()
         key_top = self._key_top_world()                       # (E,88,3)
-        goal = self.goal_padded[self.song_step]               # (E,88) keys active NOW
+        goal = self.goal_padded[self.song_id, self.song_step] # (E,88) keys active NOW
         palms = self._palms_world()                           # (E,2,3) [L,R]
         tips = self._fingertips_world()                        # (E,10,3) global order
         kb_z = key_top[..., 2].amax(dim=-1, keepdim=True)      # (E,1) keyboard surface
         m = self._arm_dof_mask
         out = []
-        for hand_i, (mask, ik, quat, base) in enumerate((
-                (self.left_key_mask, self.ik_left, self._arm_quat_l, base_l),
-                (self.right_key_mask, self.ik_right, self._arm_quat_r, base_r))):
+        for hand_i, (mask, ftik, quat, base) in enumerate((
+                (self.left_key_mask, self.ftik_left, self._ftq_l, base_l),
+                (self.right_key_mask, self.ftik_right, self._ftq_r, base_r))):
             ak = goal * mask                                   # (E,88) this hand's active keys
             has = ak.sum(-1, keepdim=True) > 0                 # (E,1)
             kpos = (key_top * ak.unsqueeze(-1)).sum(1) / ak.sum(-1, keepdim=True).clamp(min=1e-6)  # (E,3)
-            ft = tips[:, hand_i * 5 + pf]                      # (E,3) primary fingertip
-            palm = palms[:, hand_i]                            # (E,3)
-            # LIFT-MOVE-PRESS: only dip to press depth when the fingertip is already over
-            # the target key (xy aligned); otherwise hover ABOVE the keys so moving between
-            # notes doesn't DRAG the finger across every key at press depth (precision killer).
+            ft = tips[:, hand_i * 5 + pf]                      # (E,3) primary fingertip (current)
+            # DRIVE THE FINGERTIP ITSELF to the key (arm-only IK on the fingertip body) -> the
+            # arm places the fingertip on the key to ~1cm. Dip to press depth only when xy-
+            # aligned (else hover, so transitions don't drag the tip across keys).
             xy_dist = torch.linalg.norm(ft[:, :2] - kpos[:, :2], dim=-1, keepdim=True)  # (E,1)
-            aligned = xy_dist < getattr(self.cfg, "single_align_thresh", 0.015)
-            z_off = torch.where(aligned, torch.full_like(xy_dist, self.cfg.single_press_z),
-                                torch.full_like(xy_dist, getattr(self.cfg, "single_hover", 0.012)))
+            aligned = (xy_dist < getattr(self.cfg, "single_align_thresh", 0.015)).float()  # (E,1)
+            z_off = aligned * self.cfg.single_press_z + (1.0 - aligned) * getattr(self.cfg, "single_hover", 0.012)
             ft_tgt = kpos.clone(); ft_tgt[:, 2:3] = kpos[:, 2:3] + z_off
-            palm_tgt = ft_tgt + (palm - ft)                    # drive palm so the tip reaches ft_tgt
-            retract = palm.clone(); retract[:, 2] = (kb_z + self.cfg.idle_hand_retract).squeeze(-1)
-            palm_tgt = torch.where(has, palm_tgt, retract)
-            arm = ik.solve(palm_tgt, quat)                     # (E,30); arm cols only
+            retract = ft.clone(); retract[:, 2] = (kb_z + self.cfg.idle_hand_retract).squeeze(-1)
+            ft_tgt = torch.where(has, ft_tgt, retract)         # idle hand: lift the fingertip away
+            arm = ftik.solve(ft_tgt, quat)                     # (E,30); arm cols drive the FINGERTIP
             b = torch.where(m, arm, base)
-            # curl fingers up out of the way. Non-primary: always. Primary: only when this
-            # hand is IDLE (no note) -- an idle hand (e.g. the muted right hand) must lift ALL
-            # fingers clear of its window keys; the active hand keeps the primary straight to press.
             idle_h = (~has).float()                            # (E,1) 1 where hand has no note
             for fi in range(5):
                 cols = self._finger_flex_cols[fi]
+                # non-primary fingers ALWAYS curl up clear; primary curls up only when idle
                 w = idle_h if fi == pf else torch.ones_like(idle_h)
                 b[:, cols] = b[:, cols] + self.cfg.single_curl * w
             out.append(b)
@@ -435,6 +635,19 @@ class PianoEnv(DirectRLEnv):
     def _apply_action(self):
         self.left_robot.set_joint_position_target(self._left_target)
         self.right_robot.set_joint_position_target(self._right_target)
+        # SLIDER: teleport the 2 slider DoF straight to their IK target (no PD lag) so the
+        # strike finger sits EXACTLY on the key at onset -> tight sub-key placement (the
+        # PD-lagged placement left the tip ~2-3cm off = over a neighbour = false presses).
+        # The slider is math-positioned, not policy-driven, so a kinematic set is valid.
+        if getattr(self, "_use_slider", False) and getattr(self.cfg, "slider_teleport", False):
+            cols = torch.tensor([self._sy_col, self._sz_col], device=self.device)
+            for robot, tgt in ((self.left_robot, self._left_target),
+                               (self.right_robot, self._right_target)):
+                jp = robot.data.joint_pos.clone()
+                jv = robot.data.joint_vel.clone()
+                jp[:, cols] = tgt[:, cols]
+                jv[:, cols] = 0.0
+                robot.write_joint_state_to_sim(jp, jv)
         # piano keys are passive (spring drives only) -- never commanded.
 
     # --------------------------------------------------------- world helpers
@@ -487,8 +700,8 @@ class PianoEnv(DirectRLEnv):
         target_surface: (E,10,3) key-top point used for the *fingering reward*.
         target_press:   (E,10,3) press/hover point used for *observation*.
         active:         (E,10) bool, which fingers are assigned a key now."""
-        fk = self.finger_key[self.song_step]                            # (E,10)
-        fa = self.finger_active[self.song_step]                         # (E,10)
+        fk = self.finger_key[self.song_id, self.song_step]              # (E,10)
+        fa = self.finger_active[self.song_id, self.song_step]           # (E,10)
         idx_safe = torch.where(fa, fk, self.finger_home.unsqueeze(0))   # valid indices
         gather_idx = idx_safe.unsqueeze(-1).expand(-1, -1, 3)           # (E,10,3)
         surface = torch.gather(key_top, 1, gather_idx)                  # (E,10,3)
@@ -518,9 +731,10 @@ class PianoEnv(DirectRLEnv):
         H = self.cfg.arm_lookahead
         key_top = self._key_top_world()                                 # (E,88,3)
         idx = self.song_step.unsqueeze(1) + torch.arange(H, device=self.device).unsqueeze(0)
-        idx = idx.clamp(max=self.finger_key.shape[0] - 1)              # (E,H)
-        fk = self.finger_key[idx]                                       # (E,H,10)
-        fa = self.finger_active[idx]                                    # (E,H,10)
+        idx = idx.clamp(max=self.finger_key.shape[1] - 1)              # (E,H) time dim
+        sid = self.song_id.unsqueeze(1)                                 # (E,1) broadcast
+        fk = self.finger_key[sid, idx]                                  # (E,H,10)
+        fa = self.finger_active[sid, idx]                               # (E,H,10)
         half = NUM_FINGERS // 2
         centroids, actives = [], []
         for sl in (slice(0, half), slice(half, NUM_FINGERS)):          # left, then right
@@ -540,13 +754,13 @@ class PianoEnv(DirectRLEnv):
     def _goal_lookahead(self) -> torch.Tensor:
         L = self.cfg.goal_lookahead
         idx = self.song_step.unsqueeze(1) + torch.arange(L, device=self.device).unsqueeze(0)
-        return self.goal_padded[idx]                     # (E, L, 88)
+        return self.goal_padded[self.song_id.unsqueeze(1), idx]   # (E, L, 88)
 
     def _goal_now(self) -> torch.Tensor:
-        return self.goal_padded[self.song_step]          # (E, 88)
+        return self.goal_padded[self.song_id, self.song_step]   # (E, 88)
 
     def _onset_now(self) -> torch.Tensor:
-        return self.onset_padded[self.song_step]         # (E, 88)
+        return self.onset_padded[self.song_id, self.song_step]  # (E, 88)
 
     def _get_observations(self) -> dict:
         origin = self.scene.env_origins.unsqueeze(1)     # (E,1,3) for rel. positions
@@ -656,7 +870,7 @@ class PianoEnv(DirectRLEnv):
         # above hides. Online-computable precision-flavored proxy; eval_reference.py
         # computes the full windowed onset P/R/F1 offline. ---
         played_on = self._just_struck.float()
-        near_onset = self.onset_win[self.song_step]                 # (E,88)
+        near_onset = self.onset_win[self.song_id, self.song_step]   # (E,88)
         n_played = played_on.sum(-1)
         has_played = n_played > 0
         if has_played.any():
@@ -704,8 +918,9 @@ class PianoEnv(DirectRLEnv):
     # ----------------------------------------------------------------- dones
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         time_out = self.episode_length_buf >= self.max_episode_length - 1
-        song_done = self.song_step >= (self.song_len - 1)
-        self.song_step = torch.clamp(self.song_step + 1, max=self.song_len - 1)
+        song_len_e = self.song_lens[self.song_id]                   # (E,) per-env song length
+        song_done = self.song_step >= (song_len_e - 1)
+        self.song_step = torch.minimum(self.song_step + 1, song_len_e - 1)
         terminated = torch.zeros_like(time_out)
         truncated = time_out | song_done
         return terminated, truncated
@@ -716,8 +931,8 @@ class PianoEnv(DirectRLEnv):
             env_ids = self.left_robot._ALL_INDICES
         super()._reset_idx(env_ids)
 
-        # start each arm at the reference's first frame (== ready pose if no ref)
-        q0 = self.q_ref[0]                                # (2, 30)
+        # start each arm at the ready pose (the residual base's first frame)
+        q0 = self.base_pose[0, 0]                         # (2, 30) song 0, step 0
         for robot, ref in ((self.left_robot, q0[0]), (self.right_robot, q0[1])):
             jp = ref.unsqueeze(0).repeat(len(env_ids), 1)
             jv = torch.zeros_like(jp)

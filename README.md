@@ -36,14 +36,14 @@ dexsim/
     tasks/grasp/               # tabletop scene + BODex trajectory loader
   scripts/
     setup_nvidia_gl.sh         # stage NVIDIA Vulkan/GLX driver locally (the env fix)
-    train/                     # PPO/SFT/BC train + playback + eval + run monitoring
+    train/                     # PPO train + playback + eval + run monitoring
                                #   train_piano.py / play_piano.py, train_rl.py / play_rl.py,
-                               #   sft_rp1m.py, bc_pretrain.py, eval_reference.py, ...
+                               #   eval_reference.py, ...
     build/                     # one-shot USD asset builders
                                #   build_combined_usd.py, build_piano_usd.py,
                                #   build_shadow_slider_usd.py, *_left_hand asset provenance
-    prep/                      # MIDI/corpus/reference prep + dataset downloads
-                               #   make_test_midi.py, build_corpus.py, build_reference.py,
+    prep/                      # MIDI/corpus prep + dataset downloads
+                               #   make_test_midi.py, build_corpus.py,
                                #   download_bodex.py, replay_bodex.py, ...
     render/                    # rendering, video, and camera-rig tools
                                #   render_scene.py, record_rollout.py / render_rollout.py, ...

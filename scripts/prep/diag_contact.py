@@ -31,7 +31,6 @@ def main():
     cfg.midi_path = "data/midi/easy.mid"
     cfg.arm_ik_follow = True
     cfg.freeze_arms = False
-    cfg.use_reference = False
     if args.hover is not None:
         cfg.arm_ik_hover = args.hover
     if args.retract is not None:
