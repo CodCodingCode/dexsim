@@ -170,7 +170,7 @@ def main():
     for _nm, _y in (("PedL", -0.30), ("PedR", 0.30)):
         sim_utils.CuboidCfg(size=(0.34, 0.34, 1.05), visual_material=_ped).func(
             f"/World/{_nm}", sim_utils.CuboidCfg(size=(0.34, 0.34, 1.05), visual_material=_ped),
-            translation=(1.25, _y, 0.525))                     # under each base (in front, x=1.25)
+            translation=(1.60, _y, 0.525))                     # under each base (in front, x=1.25)
     sim_utils.DomeLightCfg(intensity=700.0, color=(0.5, 0.55, 0.65)).func(
         "/World/Dome", sim_utils.DomeLightCfg(intensity=700.0, color=(0.5, 0.55, 0.65)))
     _c = (0.5, -0.5, 0.85)

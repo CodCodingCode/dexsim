@@ -73,13 +73,16 @@ def _spawn_studio_floor_lights():
     # SUPPORTS so nothing floats: a table under the piano + two pedestals out front.
     _wood = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.20, 0.13, 0.08), roughness=0.7)
     _ped = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.12, 0.12, 0.14), roughness=0.5)
-    sim_utils.CuboidCfg(size=(0.45, 1.55, 0.72), visual_material=_wood).func(
-        "/World/PianoTable", sim_utils.CuboidCfg(size=(0.45, 1.55, 0.72), visual_material=_wood),
-        translation=(0.60, 0.0, 0.36))                         # under the piano (center x=0.60)
-    for _nm, _y in (("PedL", -0.30), ("PedR", 0.30)):
-        sim_utils.CuboidCfg(size=(0.34, 0.34, 1.05), visual_material=_ped).func(
-            f"/World/{_nm}", sim_utils.CuboidCfg(size=(0.34, 0.34, 1.05), visual_material=_ped),
-            translation=(1.25, _y, 0.525))                     # under each base (in front, x=1.25)
+    # real STATIC collider (collision_props, no rigid_props) so hands rest ON the
+    # table instead of phasing through it during the settle steps.
+    _table_cfg = sim_utils.CuboidCfg(
+        size=(0.45, 1.55, 0.72), visual_material=_wood,
+        collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True))
+    _table_cfg.func("/World/PianoTable", _table_cfg,
+                    translation=(0.60, 0.0, 0.36))             # under the piano (center x=0.60)
+    # (base pedestals are spawned by _spawn_base_pedestals(), auto-sized to the base z;
+    #  the old hardcoded 1.05-tall block at x=1.25 was a stale leftover -- removed.)
+    _ = _ped
     sim_utils.DomeLightCfg(intensity=700.0, color=(0.5, 0.55, 0.65)).func(
         "/World/Dome", sim_utils.DomeLightCfg(intensity=700.0, color=(0.5, 0.55, 0.65)))
     _c = (0.5, -0.5, 0.85)

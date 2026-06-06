@@ -25,6 +25,15 @@ from dexsim import ASSETS_DIR
 # Where build_combined_usd.py writes the composed arm+hand articulation.
 COMBINED_USD_PATH = str(ASSETS_DIR / "ur10e_shadow.usd")
 
+# LEFT-hand combined. Isaac ships only a RIGHT Shadow Hand and PhysX rejects a
+# negative-scale mirror, so the left hand is a one-time import of the MuJoCo-
+# menagerie LEFT model (pure-Isaac USD at runtime), renamed lh_* -> robot0_* so
+# it shares the right hand's joint/body convention. Build it with:
+#   python scripts/build/build_combined_usd.py --headless \
+#       --hand-usd assets/shadow_hand_left_r0.usd --out assets/ur10e_shadow_left.usd \
+#       --flange-link wrist_3_link
+COMBINED_LEFT_USD_PATH = str(ASSETS_DIR / "ur10e_shadow_left.usd")
+
 # ---------------------------------------------------------------------------
 # Joint name groups (regex). Keep these in one place; tasks reference them.
 # ---------------------------------------------------------------------------
@@ -187,11 +196,28 @@ UR10E_SHADOW_CFG = ArticulationCfg(
     },
     soft_joint_pos_limit_factor=1.0,
 )
-"""UR10e arm with a Shadow Hand mounted at the tool flange -- the exact
+"""UR10e arm with a (RIGHT) Shadow Hand mounted at the tool flange -- the exact
 embodiment of the BODex-Tabletop trajectories. Requires the composed USD;
 run ``python scripts/build_combined_usd.py`` once to generate it."""
 
 
-# NOTE: the bimanual env builds BOTH arms from UR10E_SHADOW_CFG (the right
-# combined USD), placed at different base positions -- there is no separate
-# left-arm asset. The abandoned combined-left build is kept only in git history.
+# ---------------------------------------------------------------------------
+# Combined UR10e + LEFT Shadow Hand
+# ---------------------------------------------------------------------------
+# NOTE (2026-06-06): the "true mirror" left asset (ur10e_shadow_left.usd, the
+# menagerie LEFT hand renamed robot0_*) is BROKEN -- the lh_*->robot0_* flatten/
+# rename drops the forearm's mesh, so the left arm renders with NO forearm/palm,
+# just floating fingertips. PhysX also rejects a negative-scale USD mirror. Until
+# a clean true-mirror exists (bake the geometric mirror of the NVIDIA right hand:
+# negate-X points + reverse winding + mirror joint frames/axes -- NOT a USD scale),
+# the LEFT arm reuses the WORKING NVIDIA right-hand combined asset. Cost: the left
+# hand is right-chirality (thumb on the "wrong" side) -- fine for RL key-pressing,
+# and it renders + simulates correctly (this was the prior known-good config).
+UR10E_SHADOW_LEFT_CFG = UR10E_SHADOW_CFG.replace(
+    spawn=UR10E_SHADOW_CFG.spawn.replace(usd_path=COMBINED_LEFT_USD_PATH),
+)
+"""UR10e + true LEFT Shadow Hand. The left combined asset
+(assets/ur10e_shadow_left.usd) is rebuilt from the joint-ref-fixed
+shadow_hand_left_r0.usd so the hand chain stays connected to the forearm
+(earlier the combined was stale -- built before the joint-ref fix -- so palm+
+fingers detached). See note above."""

@@ -39,6 +39,11 @@ parser.add_argument("--mount-xyz", default="0,0,0.0",
                     help="Hand offset from flange, meters 'x,y,z'.")
 parser.add_argument("--mount-rpy", default="0,0,0",
                     help="Hand orientation offset from flange, radians 'r,p,y'.")
+parser.add_argument("--hand-usd", default=None,
+                    help="Hand USD to bond (default: stock RIGHT shadow_hand_instanceable.usd). "
+                         "Pass a LEFT-hand USD here to build the left combined.")
+parser.add_argument("--out", default=None,
+                    help="Output combined USD path (default: assets/ur10e_shadow.usd).")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
@@ -49,6 +54,7 @@ simulation_app = app_launcher.app
 
 # ---- everything below runs with omni / pxr available -----------------------
 import math
+import os
 
 from pxr import Usd, UsdGeom, UsdPhysics, Gf, Sdf
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
@@ -56,7 +62,11 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from dexsim.assets import COMBINED_USD_PATH
 
 UR10E_USD = f"{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
-SHADOW_USD = f"{ISAAC_NUCLEUS_DIR}/Robots/ShadowHand/shadow_hand_instanceable.usd"
+# RIGHT hand by default; --hand-usd overrides (e.g. a LEFT-hand USD). Local paths
+# are abspath'd so the reference resolves regardless of the output USD's dir.
+SHADOW_USD = os.path.abspath(args.hand_usd) if args.hand_usd else \
+    f"{ISAAC_NUCLEUS_DIR}/Robots/ShadowHand/shadow_hand_instanceable.usd"
+OUT_PATH = os.path.abspath(args.out) if args.out else COMBINED_USD_PATH
 
 # preferred link names, in priority order, when nothing is passed on the CLI
 FLANGE_CANDIDATES = ["tool0", "wrist_3_link", "flange", "ee_link"]
@@ -140,7 +150,7 @@ def main():
     mount_rpy = [float(v) for v in args.mount_rpy.split(",")]
 
     # ---- build the composed stage ----
-    stage = Usd.Stage.CreateNew(COMBINED_USD_PATH)
+    stage = Usd.Stage.CreateNew(OUT_PATH)
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
 
@@ -275,7 +285,8 @@ def main():
             print("  WARNING: base_link not found and no native anchor; arm will float!")
 
     stage.GetRootLayer().Save()
-    print(f"\n[OK] wrote combined articulation -> {COMBINED_USD_PATH}")
+    print(f"\n[OK] wrote combined articulation -> {OUT_PATH}")
+    print(f"     hand source: {SHADOW_USD}")
     print(f"     fixed joint: {arm_link}  ->  {hand_link}")
     print(f"     mount xyz={mount_xyz} rpy={mount_rpy}")
 

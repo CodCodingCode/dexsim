@@ -19,7 +19,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg, PhysxCfg
 from isaaclab.utils import configclass
 
-from dexsim.assets import UR10E_SHADOW_CFG, PIANO_CFG
+from dexsim.assets import UR10E_SHADOW_CFG, UR10E_SHADOW_LEFT_CFG, PIANO_CFG
 from dexsim import DATA_DIR
 
 # control: 20 Hz policy (decimation 6 @ 120 Hz sim) -> matches MIDI control_dt 0.05
@@ -68,7 +68,9 @@ class PianoEnvCfg(DirectRLEnvCfg):
     )
 
     # --- articulations (instantiated in _setup_scene) ---
-    left_robot_cfg: ArticulationCfg = UR10E_SHADOW_CFG.replace(
+    # LEFT arm uses the LEFT-hand combined asset, RIGHT arm the RIGHT-hand one, so
+    # the bimanual rig is a true mirrored pair (was: both used the RIGHT hand).
+    left_robot_cfg: ArticulationCfg = UR10E_SHADOW_LEFT_CFG.replace(
         prim_path="/World/envs/env_.*/LeftRobot"
     )
     right_robot_cfg: ArticulationCfg = UR10E_SHADOW_CFG.replace(
@@ -119,8 +121,8 @@ class PianoEnvCfg(DirectRLEnvCfg):
     piano_rot = (0.0, 0.0, 0.0, 1.0)     # FLIPPED 180deg about Z (user request)
     # bases in front of the keyboard (+X), facing it; left hand over the LOW keys (now -Y),
     # right hand over the HIGH keys (+Y). base_rot makes each UR10e reach -X toward the piano.
-    left_base_pos = (1.25, -0.30, 1.05)
-    right_base_pos = (1.25, 0.30, 1.05)
+    left_base_pos = (1.60, -0.30, 0.75)
+    right_base_pos = (1.60, 0.30, 0.75)
     arm_base_rot = (0.0, 0.0, 0.0, 1.0)  # wxyz: 180deg about Z so the arm faces the piano
 
     # action scaling: targets = default + scale * action (action in [-1,1]).
@@ -270,14 +272,23 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # ELBOW-DOWN / EE-STRAIGHT-DOWN seed (grid-searched): bigger elbow bend + wrist_1
     # rotated so the hand drops onto the keys from ABOVE instead of leaning over them.
     # palm lands over the keys with the flange ~0.29m above it (fingers point -Z).
+    # ===================== 🔒 LOCKED STATIC POSE — DO NOT EDIT =====================
+    # left_ready_pose / right_ready_pose are the CONSTANT static config the arm+hands
+    # must ALWAYS have: arm reach joints, wrist_3_joint=3.14159 (pi), and hand wrist
+    # tilt robot0_WRJ0=0.45 / robot0_WRJ1=0.13 (within their limits [-0.70,0.49] /
+    # [-0.49,0.14]) so the hands don't droop into the table. Frozen by user request
+    # -- do not change these values. See CLAUDE.md.
+    # ===============================================================================
     left_ready_pose = {
         "shoulder_pan_joint": -0.275,
-        "shoulder_lift_joint": -1.60,
-        "elbow_joint": 2.40,
-        "wrist_1_joint": -2.40,
+        "shoulder_lift_joint": -1.40,
+        "elbow_joint": 2.20,
+        "wrist_1_joint": -2.80,
         "wrist_2_joint": -1.570,
-        "wrist_3_joint": 0.0,
-        "robot0_.*": 0.0,
+        "wrist_3_joint": 3.14159,   # constant static pose
+        "robot0_WRJ0": 0.45,   # wrist tilt up (range [-0.70, 0.49] rad) so the hand
+        "robot0_WRJ1": 0.13,   # doesn't droop into the table (range [-0.49, 0.14])
+        "robot0_(?!WRJ).*": 0.0,
     }
     # sweep result: fingertips land z=0.731 (9mm above keys, over y~0.66) -> a
     # ~1cm finger curl presses. Used for the easy-song demo (right hand only).
@@ -288,12 +299,14 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # shoulder_pan sign flipped so it reaches toward center from the +Y base.
     right_ready_pose = {
         "shoulder_pan_joint": -0.275,
-        "shoulder_lift_joint": -1.60,
-        "elbow_joint": 2.40,
-        "wrist_1_joint": -2.40,
+        "shoulder_lift_joint": -1.40,
+        "elbow_joint": 2.20,
+        "wrist_1_joint": -2.80,
         "wrist_2_joint": -1.570,
-        "wrist_3_joint": 0.0,
-        "robot0_.*": 0.0,
+        "wrist_3_joint": 3.14159,   # constant static pose
+        "robot0_WRJ0": 0.45,   # wrist tilt up (range [-0.70, 0.49] rad) so the hand
+        "robot0_WRJ1": 0.13,   # doesn't droop into the table (range [-0.49, 0.14])
+        "robot0_(?!WRJ).*": 0.0,
     }
 
     def __post_init__(self):
