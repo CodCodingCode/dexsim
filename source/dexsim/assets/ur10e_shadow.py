@@ -188,9 +188,22 @@ UR10E_SHADOW_CFG = ArticulationCfg(
         ),
         "hand": ImplicitActuatorCfg(
             joint_names_expr=["robot0_.*"],  # all 24 hand joints, no arm joints
-            effort_limit=2.0,
-            stiffness=3.0,
-            damping=0.1,
+            # ROOT-CAUSE FIX 2026-06-08: implicit actuators IGNORE `effort_limit`
+            # (deprecated -> use effort_limit_sim). With the old effort_limit=2.0 the
+            # REAL torque cap stayed tiny, so the press-joints (FFJ3/MFJ3/RFJ3) could
+            # NOT flex against gravity+key-spring -> fingers never pressed keys ->
+            # every RL/finger intervention gave byte-identical F1~0.03. Setting
+            # effort_limit_sim lets a finger drive its tip DOWN onto the key (verified
+            # diag_finger_force: tip +50mm -> -23mm). stiffness 3->25 for authority;
+            # kept modest so the policy doesn't plow all fingers through the keys.
+            # effort_limit_sim 60->18: at 60 the finger plowed ~2-4cm PAST the shallow
+            # sound angle (-0.012 rad) into neighbour keys (precision ceiling ~0.08).
+            # 18 still trips the velocity-gated strike but presses GENTLY (one key).
+            effort_limit_sim=40.0,        # 18->40: need enough force to press a key PAST the sound angle (a key strike from a well-aligned fingertip only reached -0.008 vs the -0.012 sound angle at 18)
+            effort_limit=40.0,            # harmless mirror (ignored for implicit)
+            velocity_limit_sim=50.0,      # default vel cap throttled finger speed -> tips crawled, never reached keys in a strike
+            stiffness=45.0,
+            damping=2.0,
             friction=0.01,
         ),
     },

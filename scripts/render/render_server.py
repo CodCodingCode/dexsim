@@ -73,7 +73,7 @@ sim = SimulationContext(SimulationCfg(dt=1 / 120.0, device=args.device))
 piano, left, right = studio.build_scene(cfg, style=args.style)
 cam = studio.make_camera(args.width, args.height)
 sim.reset()
-studio.aim_camera(cam, (2.2, -1.5, 1.8), (0.45, 0.0, 0.78), args.device)
+studio.aim_camera(cam, studio.HERO_EYE, studio.HERO_TARGET, args.device)
 for _ in range(30):                                  # settle once at the ready pose
     for a in (piano, left, right):
         a.set_joint_position_target(a.data.default_joint_pos)
@@ -168,8 +168,8 @@ def handle_scene(job):
         if job.get("right_joints"):
             _apply_joint_overrides(right, RIGHT_NAMES, job["right_joints"])
 
-    studio.aim_camera(cam, _parse_vec(job.get("eye"), (2.2, -1.5, 1.8)),
-                      _parse_vec(job.get("target"), (0.45, 0.0, 0.78)), args.device)
+    studio.aim_camera(cam, _parse_vec(job.get("eye"), studio.HERO_EYE),
+                      _parse_vec(job.get("target"), studio.HERO_TARGET), args.device)
     rgb = _accumulate(spp, settle=settle)
     out = job["out"]
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
@@ -197,8 +197,8 @@ def handle_rollout(job):
     frames_dir = job.get("frames_dir", "logs/video_frames")
     out = job["out"]
     studio.set_total_spp(spp)
-    studio.aim_camera(cam, _parse_vec(job.get("eye"), (1.5, -1.35, 1.35)),
-                      _parse_vec(job.get("target"), (0.5, -0.5, 0.80)), args.device)
+    studio.aim_camera(cam, _parse_vec(job.get("eye"), studio.HERO_EYE),
+                      _parse_vec(job.get("target"), studio.HERO_TARGET), args.device)
 
     for _ in range(settle):                              # warm up at the first pose
         studio.set_state(left, left_traj[0:1])
@@ -208,6 +208,10 @@ def handle_rollout(job):
         sim.step()
 
     os.makedirs(frames_dir, exist_ok=True)
+    # CLEAR stale frames first: ffmpeg globs frame_%05d.png, so leftover frames from a
+    # previous (longer) render would get appended -> a second "clip" stitched onto the end.
+    for _stale in glob.glob(os.path.join(frames_dir, "frame_*.png")):
+        os.remove(_stale)
     for f, t in enumerate(idxs):
         studio.set_state(left, left_traj[t:t + 1])
         studio.set_state(right, right_traj[t:t + 1])
@@ -292,6 +296,27 @@ def handle_query(job):
         over = all(kbx[0] - 0.1 <= r["left_palm"][0] <= kbx[1] + 0.15 for r in rows)
         res.update({"keyboard_x_range": kbx, "frames": rows,
                     "verdict": "over keys" if over else "NOT over keys (still reaching past)"})
+    elif kind == "joints":
+        # disambiguate L/R asset differences: applied default pose + limits per joint.
+        def _lim(art, i):
+            try:
+                lo, hi = art.data.joint_pos_limits[0, i].tolist()
+            except Exception:
+                lo, hi = art.data.soft_joint_pos_limits[0, i].tolist()
+            return [round(lo, 3), round(hi, 3)]
+        rows = []
+        for n in LEFT_NAMES:
+            li = LEFT_NAMES.index(n)
+            ri = RIGHT_NAMES.index(n) if n in RIGHT_NAMES else None
+            rows.append({
+                "joint": n,
+                "L_default": round(float(left.data.default_joint_pos[0, li]), 4),
+                "R_default": round(float(right.data.default_joint_pos[0, ri]), 4) if ri is not None else None,
+                "L_limits": _lim(left, li),
+                "R_limits": _lim(right, ri) if ri is not None else None,
+            })
+        res.update({"name_symdiff": sorted(set(LEFT_NAMES) ^ set(RIGHT_NAMES)),
+                    "joints": rows})
     else:  # generic: dump the requested body world poses on each arm
         which = job.get("bodies", ["robot0_palm", "forearm", "wrist_3", "upper_arm"])
         res.update({"left_bodies": _bodies_world(left, which),

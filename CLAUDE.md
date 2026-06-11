@@ -4,8 +4,13 @@
 
 `left_ready_pose` / `right_ready_pose` in
 `source/dexsim/tasks/piano/piano_env_cfg.py` are the **constant static config the
-arm + hands must ALWAYS have** (arm reach joints, `wrist_3_joint = 3.14159` (π), and
-the hand wrist tilt `robot0_WRJ0 = 0.45` / `robot0_WRJ1 = 0.13`).
+arm + hands must ALWAYS have** (arm reach joints, `wrist_3_joint = 3.14159` (π),
+`wrist_1_joint = -4.782` + `shoulder_lift_joint = -0.640` — a deliberate +70° wrist-up
+pitch about y with the hand then lowered ~40 cm in z (two 20 cm lowers; set 2026-06-08;
+wrist_1 was -2.80, sh_lift -1.40; "up" is the *negative* wrist_1 direction; sh_lift+wrist_1
+held at sum -5.422 to preserve the tilt while lowering) — and the hand wrist tilt
+`robot0_WRJ0 = 0.45` / `robot0_WRJ1 = 0.13`. Fingertips land ~4.5 cm above the keys,
+pointing down. **FINAL frozen baseline — user declared PERFECT 2026-06-08, do NOT change.**).
 **Do NOT edit these poses** — not the wrist flip, not the tilt, not the arm joints.
 They are deliberately fixed; treat them as frozen unless the user explicitly says
 otherwise in a new request.

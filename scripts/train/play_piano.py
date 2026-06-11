@@ -28,6 +28,7 @@ parser.add_argument("--hand_stiffness", type=float, default=None)
 parser.add_argument("--hand_effort", type=float, default=None)
 parser.add_argument("--hand_action_scale", type=float, default=None,
                     help="match training's finger residual scale (e.g. tilt_A used 0.12)")
+parser.add_argument("--no_mute", action="store_true", help="disable mute_right_hand (for right-hand songs)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 if args.video:
@@ -103,6 +104,8 @@ def main():
         cfg.hand_tilt = args.hand_tilt; cfg.hand_tilt_axis = 0
     if args.idle_finger_curl is not None:
         cfg.idle_finger_curl = args.idle_finger_curl
+    if args.no_mute:
+        cfg.mute_right_hand = False
     if args.hand_stiffness is not None or args.hand_effort is not None:
         for rc in (cfg.left_robot_cfg, cfg.right_robot_cfg):
             if args.hand_stiffness is not None:

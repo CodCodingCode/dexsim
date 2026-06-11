@@ -248,12 +248,18 @@ def main():
     hand_xform.ClearXformOpOrder()
     hand_xform.AddTransformOp().Set(T_hand_new)
 
-    # fixed joint flange -> hand root (now coincident, so zero local offsets)
+    # fixed joint flange -> hand root. ENCODE the mount offset in the joint's body0 (flange)
+    # local frame so the rotation/translation SURVIVES -- with zero local frames the joint
+    # snapped the hand flat onto the flange and discarded T_offset (so --mount-rpy was a no-op).
+    # The initial placement (T_hand_new, which already applied T_offset) then satisfies this
+    # joint at t=0, so no snap.
     joint = UsdPhysics.FixedJoint.Define(stage, "/ur10e_shadow/flange_to_hand")
     joint.CreateBody0Rel().SetTargets([Sdf.Path(arm_link)])
     joint.CreateBody1Rel().SetTargets([Sdf.Path(hand_link)])
-    joint.CreateLocalPos0Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    joint.CreateLocalPos0Attr().Set(Gf.Vec3f(*[float(v) for v in mount_xyz]))
+    joint.CreateLocalRot0Attr().Set(_rpy_to_quat(*mount_rpy))
     joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+    joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0, 0.0, 0.0, 0.0))
 
     # FIXED-base articulation: the UR10e ships its OWN world-anchor fixed joint
     # (ur10e/root_joint -> body0=world, body1=base_link) and we only stripped the

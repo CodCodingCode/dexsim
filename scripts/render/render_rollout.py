@@ -26,6 +26,9 @@ p.add_argument("--fps", type=float, default=0,
                     "force a non-realtime fps.")
 p.add_argument("--eye", default="1.5,-1.35,1.35")
 p.add_argument("--target", default="0.5,-0.5,0.80")
+p.add_argument("--cams", default=None,
+               help="MULTI-STILL in ONE boot: ';'-list of 'eye|target' (e.g. '1.2,0,1.3|0.5,0,0.8;...'); "
+                    "saves one PNG per cam to --out given as a matching ';'-list. Renders rollout frame 0.")
 p.add_argument("--width", type=int, default=1280)
 p.add_argument("--height", type=int, default=720)
 AppLauncher.add_app_launcher_args(p)
@@ -219,6 +222,27 @@ def main():
         piano.write_joint_state_to_sim(key_traj[0:1], torch.zeros_like(key_traj[0:1]))
         piano.write_data_to_sim()
         sim.step()
+
+    # MULTI-STILL: one Isaac boot, N cameras of the static frame-0 pose -> N PNGs (fast).
+    if args.cams:
+        from PIL import Image as _Img
+        set_state(left, left_traj[0:1]); set_state(right, right_traj[0:1])
+        piano.write_joint_state_to_sim(key_traj[0:1], torch.zeros_like(key_traj[0:1])); piano.write_data_to_sim()
+        outs = [o.strip() for o in args.out.split(";")]
+        specs = [s.strip() for s in args.cams.split(";")]
+        for _ci, _spec in enumerate(specs):
+            _es, _ts = _spec.split("|")
+            _e = torch.tensor([[float(v) for v in _es.split(",")]], device=args.device)
+            _t = torch.tensor([[float(v) for v in _ts.split(",")]], device=args.device)
+            cam.set_world_poses_from_view(_e, _t)
+            sim.step()                                   # restart path-trace accumulation for the new view
+            for _ in range(args.spp):
+                sim.render()
+            cam.update(sim.get_physics_dt(), force_recompute=True)
+            _rgb = cam.data.output["rgb"][0, ..., :3].cpu().numpy().astype("uint8")
+            _Img.fromarray(_rgb).save(outs[_ci])
+            print(f"[render_rollout] STILL {_ci + 1}/{len(specs)} -> {outs[_ci]}", flush=True)
+        return
 
     os.makedirs(args.frames_dir, exist_ok=True)
     for f, t in enumerate(idxs):

@@ -115,13 +115,22 @@ def _assign_hand(keys_sorted: list[int], order: list[int],
 
 
 def plan_fingering(key_activation: np.ndarray, method: str = "heuristic",
-                   **ot_kwargs) -> FingeringPlan:
+                   swap_hands: bool = False, **ot_kwargs) -> FingeringPlan:
     """Assign fingers for every control step.
 
     Args:
         key_activation (T, 88) bool -- which keys should sound each step.
         method: ``"heuristic"`` (default, the rule below) or ``"ot"`` (RP1M-style
             optimal-transport assignment, see :func:`plan_fingering_ot`).
+        swap_hands: GEOMETRY GUARDRAIL. The split sends low-pitch keys to the LEFT
+            finger group (0-4) and high-pitch to the RIGHT (5-9), which assumes low
+            pitch is physically on the left robot's side. If the piano is mounted so
+            that low-pitch keys actually sit on the RIGHT robot's side (e.g. a 180deg
+            flip), pass ``swap_hands=True`` so low-pitch keys go to the RIGHT group
+            and high-pitch to the LEFT -- i.e. each hand is assigned the keys in ITS
+            OWN physical vicinity instead of reaching across the body. The caller
+            (PianoEnv) derives this from the actual key/base world-Y geometry, so it
+            is not hardcoded. Without it the two arms cross into the middle and jam.
         **ot_kwargs: forwarded to :func:`plan_fingering_ot` when ``method="ot"``.
     """
     if method == "ot":
@@ -132,6 +141,12 @@ def plan_fingering(key_activation: np.ndarray, method: str = "heuristic",
     finger_key = np.full((T, NUM_FINGERS), -1, dtype=np.int64)
     finger_active = np.zeros((T, NUM_FINGERS), dtype=bool)
     home = _home_keys()
+    # low-pitch -> low_order group, high-pitch -> high_order group. swap_hands flips
+    # which physical hand each spatial half is routed to (see docstring).
+    low_order, high_order = (_RIGHT_ORDER, _LEFT_ORDER) if swap_hands else (_LEFT_ORDER, _RIGHT_ORDER)
+    if swap_hands:
+        # keep idle "home" keys with their hand: left group now owns the upper half.
+        home = np.concatenate([home[FINGERS_PER_HAND:], home[:FINGERS_PER_HAND]])
 
     for t in range(T):
         active = np.nonzero(key_activation[t])[0]
@@ -140,17 +155,13 @@ def plan_fingering(key_activation: np.ndarray, method: str = "heuristic",
         active = np.sort(active)
         # balance the hand split: aim for <=5 per hand. Default split at the
         # keyboard middle, then rebalance if one hand is overloaded.
-        if active.size <= FINGERS_PER_HAND:
-            # all on one hand if they cluster, else split at the median gap
-            split = _balanced_split(active)
-        else:
-            split = _balanced_split(active)
-        left = [int(k) for k in active if k < split]
-        right = [int(k) for k in active if k >= split]
+        split = _balanced_split(active)
+        low = [int(k) for k in active if k < split]    # spatial low-pitch half
+        high = [int(k) for k in active if k >= split]  # spatial high-pitch half
         # if a hand is overloaded but the other is empty/light, shift the split
-        left, right = _rebalance(left, right)
-        _assign_hand(left, _LEFT_ORDER, finger_key, finger_active, t)
-        _assign_hand(right, _RIGHT_ORDER, finger_key, finger_active, t)
+        low, high = _rebalance(low, high)
+        _assign_hand(low, low_order, finger_key, finger_active, t)
+        _assign_hand(high, high_order, finger_key, finger_active, t)
 
     return FingeringPlan(finger_key=finger_key, finger_active=finger_active, home_key=home)
 

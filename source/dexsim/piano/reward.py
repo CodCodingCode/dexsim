@@ -30,10 +30,19 @@ class PianoRewardCfg:
     #                                   RoboPianist F1 stays 0 without this term)
     onset_weight: float = 0.5         # extra reward for sounding a key on its onset
     finger_close_enough: float = 0.01    # m; inside this -> full fingering reward
-    finger_margin_mult: float = 25.0     # gaussian falloff reaches ~0.1 at 25x bound
-    #   (~25 cm). Was 10x (10 cm): fingers start/pass too far from their target key
-    #   so the shaping read ~0 (reward/finger~0.005) and gave no gradient. Widening
-    #   the falloff makes the make-or-break term actually pull from realistic ranges.
+    finger_margin_mult: float = 25.0     # gaussian falloff reaches ~0.1 at 25x (~25 cm)
+    # --- idle-finger hover shaping (positive twin of the idle-clear penalty) ---
+    # Reward idle fingers for sitting at their hover-home; the smooth gradient that
+    # holds them UP so "press one finger, rest hovering" beats mash AND droop. 0 = off.
+    idle_hover_weight: float = 0.0
+    idle_hover_close: float = 0.005      # m dead-band -> full hover reward inside
+    idle_hover_margin_mult: float = 5.0  # falloff ~0.1 at 2.5 cm below the band (z-only)
+    idle_hover_z_only: bool = True       # score only height above the keys, not euclidean
+    #   distance to the (laterally unreachable) home keys. Height is the mash axis.
+    # --- PHASE 0 (gross arm positioning) ---
+    arm_position_weight: float = 0.0     # reward each hand-base for covering its keys' centroid
+    arm_position_close: float = 0.03     # m -> full positioning reward inside
+    arm_position_margin_mult: float = 16.0   # gaussian falloff ~0.1 at 16x close (~0.5 m)
 
 
 # dm_control-style tolerance kernel (gaussian), vectorized & backend-agnostic.
@@ -81,11 +90,9 @@ def piano_reward(pressed, goal, cfg: PianoRewardCfg = PianoRewardCfg(),
     n_goal = goal_f.sum(-1)
 
     hit = (sounded * goal_f).sum(-1) / (n_goal + eps)          # want -> 1
-    # COUNT of wrong keys sounding, per intended note -- NOT averaged over all ~87
-    # non-goal keys. The old "/ n_not" diluted a misclick to ~1/87, so a wrong
-    # note cost ~170x less than a right one was worth -> precision rotted. Now each
-    # wrong key costs ~false_press_weight; a rest step (no goal, denom->1) charges
-    # full weight per false press so it can't mash during silence.
+    # wrong keys are COUNTED per intended note (denom = #goal keys, min 1), NOT
+    # averaged over all ~87 non-goal keys -- else a misclick dilutes to ~1/87 and
+    # precision rots. A rest step (no goal) charges full weight per false press.
     one = xp.ones_like(n_goal)
     denom = xp.maximum(n_goal, one)
     false = (sounded * not_goal).sum(-1) / denom                # want -> 0
@@ -124,6 +131,81 @@ def fingering_reward(fingertip_pos, target_pos, active_mask, cfg: PianoRewardCfg
     eps = 1e-6
     mean_over_active = (shaped * m).sum(-1) / (n + eps)
     return cfg.fingering_weight * mean_over_active
+
+
+def idle_hover_reward(fingertip_pos, hover_target_pos, active_mask, cfg: PianoRewardCfg = PianoRewardCfg()):
+    """Positive shaping that holds NON-assigned fingers at their hover-home.
+
+    The mirror of :func:`fingering_reward`: that term pulls each *active* finger
+    onto its key; this one pulls each *idle* finger to its hover point (home key
+    top + HOVER_CLEARANCE -- the same targets the observation already exposes).
+    Together they make "one finger down, the rest up" the shaped optimum, with a
+    gradient on the idle fingers at all times -- unlike the idle-clear penalty,
+    which is flat 0 until a finger has already dropped below the clearance plane.
+    Mean is taken over idle fingers only; a step with all 10 fingers assigned
+    contributes 0 (nothing is asked to hover).
+
+    Args:
+        fingertip_pos    (E, F, 3): world positions of the F fingertips.
+        hover_target_pos (E, F, 3): hover point per finger (only meaningful where
+                                     active_mask is False).
+        active_mask      (E, F)   : which fingers are assigned a key this step.
+    Returns: (E,) reward in [0, idle_hover_weight].
+    """
+    xp, is_torch = _backend(fingertip_pos)
+    if cfg.idle_hover_z_only:
+        # height above the keys is the mash axis; ignore the (often unreachable)
+        # lateral offset to the spread home keys so every idle finger gets the
+        # same clean anti-droop gradient. ONE-SIDED: at/above the hover plane is
+        # full reward (a deliberately lifted hand -- lift_between_notes /
+        # idle_hand_retract -- must not be pulled back down); only sinking BELOW
+        # the plane toward the keys decays it.
+        below = hover_target_pos[..., 2] - fingertip_pos[..., 2]      # (E, F) +ve = drooped
+        dist = below.clamp(min=0.0) if is_torch else xp.clip(below, 0.0, None)
+    else:
+        dist = ((fingertip_pos - hover_target_pos) ** 2).sum(-1) ** 0.5   # (E, F)
+    shaped = tolerance(
+        dist, lower=0.0, upper=cfg.idle_hover_close,
+        margin=cfg.idle_hover_close * cfg.idle_hover_margin_mult,
+    )                                                                 # (E, F)
+    m = active_mask.float() if is_torch else active_mask.astype("float32")
+    idle = 1.0 - m
+    n = idle.sum(-1)
+    eps = 1e-6
+    mean_over_idle = (shaped * idle).sum(-1) / (n + eps)
+    return cfg.idle_hover_weight * mean_over_idle
+
+
+def arm_position_reward(palm_pos, target_pos, active_mask, cfg: PianoRewardCfg = PianoRewardCfg()):
+    """PHASE 0 gross-positioning shaping (the coarse precursor to `fingering_reward`).
+
+    Reward each hand for bringing its BASE (palm) near the centroid of the keys it
+    must play over the upcoming lookahead window, so the hand ends up *over* (covering)
+    the right region of the keyboard. This is the only signal a 2-DoF arm needs to
+    learn turn+lean placement before any finger pressing exists -- it's smooth and
+    dense from anywhere over the hand's half (gaussian falloff ~0.5 m wide), unlike
+    the key-press reward which is flat ~0 until a key actually sounds.
+
+    Args:
+        palm_pos    (E, 2, 3): world position of each hand base [left, right].
+        target_pos  (E, 2, 3): target point for each hand (centroid of its upcoming
+                                keys, lifted to the hover height). Only meaningful
+                                where active_mask is True.
+        active_mask (E, 2)   : which hands have upcoming notes (a hand with none
+                                contributes nothing -- it isn't asked to cover anything).
+    Returns: (E,) reward in [0, arm_position_weight].
+    """
+    xp, is_torch = _backend(palm_pos)
+    dist = ((palm_pos - target_pos) ** 2).sum(-1) ** 0.5               # (E, 2)
+    shaped = tolerance(
+        dist, lower=0.0, upper=cfg.arm_position_close,
+        margin=cfg.arm_position_close * cfg.arm_position_margin_mult,
+    )                                                                  # (E, 2)
+    m = active_mask.float() if is_torch else active_mask.astype("float32")
+    n = m.sum(-1)
+    eps = 1e-6
+    mean_over_active = (shaped * m).sum(-1) / (n + eps)
+    return cfg.arm_position_weight * mean_over_active
 
 
 def onset_reward(pressed, onsets, cfg: PianoRewardCfg = PianoRewardCfg()):

@@ -1,3 +1,41 @@
+# ⚡ 2026-06-08 BREAKTHROUGH — the F1≈0 wall had TWO hard root causes (now fixed)
+
+After ~67 runs stuck at F1≈0.03, the cause was NOT reward/policy tuning — it was two
+physics/asset bugs that made the task literally unplayable, plus a fingering bug:
+
+1. **Finger actuators couldn't press.** `ur10e_shadow.py` hand actuator used
+   `effort_limit=2.0`, which is IGNORED for implicit actuators (Isaac warns: use
+   `effort_limit_sim`). The real torque cap stayed tiny → the press-joints (FFJ3/MFJ3/
+   RFJ3) physically could not flex against gravity+key-spring → fingers NEVER pressed.
+   Every prior `--hand_effort` override was a silent no-op (sets the ignored field).
+   FIX: hand actuator now `effort_limit_sim=18, velocity_limit_sim=50, stiffness=45`.
+   Verified `scripts/prep/diag_finger_force.py`: a flexed fingertip drives +50mm→-23mm.
+2. **The false-press FLOOR is the unstable LEFT hand brushing keys.** Zero-residual
+   arm_ik_follow (NO finger press) still sounds ~1 key/step at hover 0.11 (→0 at 0.18):
+   the hand brushes keys on its own, dominated by the mirrored LEFT hand (plunges to
+   -200mm when flexed). twinkle folds MOSTLY into the left window → drives the broken
+   hand. FIX/workaround: RIGHT-hand-only task — `data/midi/right_easy.mid` (single
+   voice, right window) + `--no_mute`; idle left auto-retracts.
+3. **Fingering used the THUMB for sparse notes** (poor straight-down presser, offset
+   from palm) → wrong-key presses. FIX: `--remap_thumb` (thumb→middle finger) +
+   `finger_offset_comp` in `_ik_follow_base` (shift arm so the FINGER, not palm, lands
+   on the key). Recall 0.13→0.29.
+
+**RESULT:** clean right-hand task broke the wall — precision 0.013→0.08, recall 0.05→
+0.30, keys_sounding 2.7→(1–3), reward/key -2.5→-0.4, **F1 0.03→~0.13 (4× the wall)**.
+A finger now genuinely presses target keys (a first). Repro:
+`python scripts/train/train_piano.py --headless --num_envs 1536 --midi data/midi/right_easy.mid --no_mute --arm_ik_follow --arm_ik_hover 0.10 --remap_thumb --idle_finger_curl 1.0 --tag rh`
+
+**REMAINING (precision ceiling ~0.08, config-independent):** the active hand at hover
+0.10 still brushes ~2 neighbour keys while the arm sweeps laterally between notes
+(same mechanism as #2, now the right hand). Finger-force/idle-curl/false-press tuning
+does NOT change it. NEXT: "hover high, dip-to-strike" — keep the hand clear of the keys
+laterally and have the policy/IK lower only to strike a note (arm vertical coordination),
+or curriculum on a denser song (current song is short+sparse → PPO oscillates, doesn't
+converge). The pose/actuator/right-hand foundation is now sound; this is the next step.
+
+---
+
 # Project status — honest assessment (2026-06-02)
 
 **TL;DR:** the infrastructure is solid and validated; **the robot does not yet

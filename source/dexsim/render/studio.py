@@ -136,6 +136,15 @@ def build_scene(cfg, *, style="studio"):
     return piano, left, right
 
 
+# Canonical "hero" camera: front-centered (y=0, symmetric over both arms), gently
+# elevated looking down ~17deg at the keyboard + both hands. This is the default for
+# every scene/rollout render unless --eye/--target overrides it, so renders are
+# consistent instead of an ad-hoc angle each time. Tuned for the bimanual rig (bases
+# x=1.65, keyboard x~0.6 z~0.76, hands x~0.75 y~+/-0.25 z~0.95).
+HERO_EYE = (-0.50, 0.0, 1.25)
+HERO_TARGET = (0.80, 0.0, 0.84)
+
+
 def make_camera(width=1280, height=720):
     return Camera(CameraCfg(
         prim_path="/World/cam", update_period=0, height=height, width=width,

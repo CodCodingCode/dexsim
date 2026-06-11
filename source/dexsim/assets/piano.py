@@ -31,7 +31,14 @@ KEY_SOUND_ANGLE = -0.012                # ~18% travel -> sensitive (good recall)
 #   fraction + key_strike_vel): a resting hand depresses keys statically (~0 vel)
 #   so they don't ring, even at this light depth. -0.033 was too stiff (9% sound);
 #   a light threshold + the velocity gate gives both recall AND precision.
-KEY_SPRING_STIFFNESS = 8.0    # gentle (gravity DISABLED so keys rest at spring zero regardless):
+KEY_SPRING_STIFFNESS = 3.0    # ★ 2026-06-08 ROOT-CAUSE FIX: 8 was still TOO STIFF for the
+#   marginal finger press to depress past KEY_SOUND_ANGLE -> the strike sounded only ~6% of
+#   the time -> the RL reward was pure noise -> PPO could NOT converge (30+ runs stuck at
+#   recall ~0.05). Softening to 2-3 makes a finger strike RELIABLY sound the key -> recall
+#   jumped 0.05->0.45 (single key) and a 3-note song trains to best-env recall 0.74
+#   (results/rh_song_played.wav). 2 = max recall, 3 = a bit more precision (faster return);
+#   3 is the balance. Override per-run with --key_stiffness. THIS unblocked piano play.
+#   gentle (gravity DISABLED so keys rest at spring zero regardless):
 #   only needs to RETURN a key. 8 stays pressable by the weak fingers but resists being rammed
 #   to the hard travel-stop (which exploded PhysX at low hover). 20 was unpressable (recall 0.04).
 KEY_SPRING_DAMPING = 4.0      # HIGH damping absorbs a fast finger SLAM so the key can't hit its
