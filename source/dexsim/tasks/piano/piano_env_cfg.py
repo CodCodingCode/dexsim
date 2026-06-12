@@ -171,6 +171,26 @@ class PianoEnvCfg(DirectRLEnvCfg):
     hand_tilt_axis: int = 1               # world axis to tilt about (0=x,1=y,2=z)
     idle_hand_retract: float = 0.20       # m an inactive hand (no upcoming notes) lifts off the keys
     arm_ik_hover: float = 0.11            # m the servoed palm hovers above the key tops
+    # ARM-MOTION SMOOTHING: EMA factor on the IK arm-joint command so the arm glides
+    # between note targets instead of snapping to each step's centroid jump. 0 = instant
+    # (snappy), ->1 = very smooth/laggy. 0.6 ~ 100ms time constant @ 20Hz; the ~5-step
+    # lookahead absorbs the lag. arm_ik_follow only (no effect when the policy drives arms).
+    arm_smooth: float = 0.8
+    # BAKED ARM TRAJECTORY: path to a zero-phase-smoothed arm trajectory (.npz from
+    # scripts/prep/bake_arm_traj.py). When set, arm_ik_follow PLAYS BACK these smoothed
+    # arm joints instead of solving IK live -- no per-step solver jitter and no lag (the
+    # whole path was filtered offline). The arm path is deterministic per song, so this is
+    # the clean fix for jittery arms. None = solve IK live. Single-song (indexed by step).
+    arm_traj_npz: str | None = None
+    # WRIST-TILT CAP: hard-limit wrist_1 so it can't tilt up past this value ("up" = more
+    # negative; locked = -4.782). Clamped to >= wrist1_cap each step; the IK repositions
+    # the rest of the arm to keep the hand over the keys. None = off (DEFAULT).
+    # Default -4.782 = the LOCKED-pose tilt: the wrist can never cock up MORE than the
+    # approved pose (the IK otherwise over-tilts to ~-5.0 during play), but it's never
+    # flattened below it -- so the functional finger-down geometry is preserved and only
+    # the ugly excess is trimmed. Set None to disable; a less-negative value (e.g. -3.4)
+    # flattens the wrist, which makes the fingers point forward and JAM (looks/plays worse).
+    wrist1_cap: float | None = -4.782
 
     # --- reward weights (PianoMime/RoboPianist composite) ---
     key_press_weight: float = 2.0     # reward sounding the right keys

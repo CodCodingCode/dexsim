@@ -109,6 +109,16 @@ class PianoEnv(DirectRLEnv):
             ]
             print("[PianoEnv] ARM-IK-FOLLOW: WristPoseIK servos arms to the fingering "
                   "centroid; policy drives only the 48 finger DoF")
+            # BAKED ARM TRAJECTORY: if a zero-phase-smoothed trajectory is provided, play
+            # it back instead of solving IK live (no per-step jitter, no lag). (T,2,30).
+            self._baked_arm = None
+            _bt = getattr(self.cfg, "arm_traj_npz", None)
+            if _bt:
+                _bd = np.load(_bt, allow_pickle=True)
+                _ba = np.stack([_bd["left"], _bd["right"]], axis=1)      # (T,2,30)
+                self._baked_arm = torch.as_tensor(_ba, dtype=torch.float32, device=self.device)
+                print(f"[PianoEnv] BAKED ARM TRAJECTORY: playing {self._baked_arm.shape[0]} "
+                      f"smoothed steps from {_bt} (no live IK)", flush=True)
 
         # PHASE 0 mode: joint_scale non-zero ONLY on the live arm joints (default
         # shoulder_pan + shoulder_lift); all else pinned, so the action can only
@@ -235,6 +245,9 @@ class PianoEnv(DirectRLEnv):
             raise ValueError(f"no body matching {substr!r} in {robot.body_names}")
         self.lwrist_id = _body_id(self.left_robot, "wrist_3")
         self.rwrist_id = _body_id(self.right_robot, "wrist_3")
+        # column of wrist_1_joint, for the wrist-tilt cap (same ordering on both arms)
+        _jn = self.left_robot.data.joint_names
+        self._wrist1_col = _jn.index("wrist_1_joint") if "wrist_1_joint" in _jn else None
 
         # --- residual base pose: the static ready pose, broadcast over every song/step.
         # In arm_ik_follow / slider the arm columns are overwritten each control step by
@@ -446,11 +459,22 @@ class PianoEnv(DirectRLEnv):
             base_l, base_r = self._ik_follow_base(base_l, base_r)
         self._left_target = torch.clamp(base_l + scale * a_left, lo, hi)
         self._right_target = torch.clamp(base_r + scale * a_right, lo, hi)
+        # WRIST-TILT CAP: hard-clamp commanded wrist_1 so it can't tilt up past wrist1_cap
+        # ("up" = more negative). The IK re-solves from the realised state next step, so
+        # the rest of the arm repositions to keep the hand over the keys (arm moves back
+        # instead of the wrist cocking up). None = off.
+        cap = getattr(self.cfg, "wrist1_cap", None)
+        if cap is not None and self._wrist1_col is not None:
+            c = self._wrist1_col
+            self._left_target[:, c] = self._left_target[:, c].clamp(min=float(cap))
+            self._right_target[:, c] = self._right_target[:, c].clamp(min=float(cap))
     def _ik_follow_base(self, base_l, base_r):
         """Base joint pose for ARM-IK-FOLLOW mode, (base_left, base_right) each (E,30).
         Arm columns = WristPoseIK servoing the palm to the upcoming-note centroid
         (hover above keys, ready-pose down quat). Finger columns are left as passed in
         (the ready pose); the policy residual is added on top by the caller."""
+        if getattr(self, "_baked_arm", None) is not None:
+            return self._play_baked_arm(base_l, base_r)
         if not hasattr(self, "ik_left"):
             from dexsim.piano.ik import WristPoseIK
             _planar = bool(getattr(self.cfg, "planar_ik", False))
@@ -565,6 +589,19 @@ class PianoEnv(DirectRLEnv):
         # finger columns stay at the ready-pose base; the policy presses as a residual.
         base_l = torch.where(m, arm_l, base_l)               # arm cols servo, finger cols base
         base_r = torch.where(m, arm_r, base_r)
+        # ARM-MOTION SMOOTHING: EMA the arm joint command toward the IK solution so the
+        # arm GLIDES between note targets instead of snapping to each step's centroid jump
+        # (the "sudden" motion). cmd = s*prev + (1-s)*ik; s in [0,1), 0 = instant. The
+        # ~5-step lookahead absorbs the small lag. Finger cols pass through untouched.
+        sm = float(getattr(self.cfg, "arm_smooth", 0.0))
+        if sm > 0.0:
+            if getattr(self, "_arm_prev_l", None) is None:
+                self._arm_prev_l = base_l.detach().clone()
+                self._arm_prev_r = base_r.detach().clone()
+            base_l = torch.where(m, sm * self._arm_prev_l + (1.0 - sm) * base_l, base_l)
+            base_r = torch.where(m, sm * self._arm_prev_r + (1.0 - sm) * base_r, base_r)
+            self._arm_prev_l = base_l.detach().clone()
+            self._arm_prev_r = base_r.detach().clone()
         # IDLE-FINGER CURL: lift fingers with no note THIS step up into the palm so the
         # hand stops mashing its ~8-key footprint; the active finger stays straight.
         curl = getattr(self.cfg, "idle_finger_curl", 0.0)
@@ -574,6 +611,26 @@ class PianoEnv(DirectRLEnv):
                 for fi in range(5):
                     cols = self._finger_flex_cols[fi]
                     idle = (~fa[:, hand_i * 5 + fi].bool()).float().unsqueeze(-1)  # (E,1)
+                    base[:, cols] = base[:, cols] + curl * idle
+        return base_l, base_r
+
+    def _play_baked_arm(self, base_l, base_r):
+        """ARM-IK-FOLLOW playback: set the arm columns from the pre-baked zero-phase
+        smoothed trajectory (no live IK -> no per-step jitter, no lag). Finger columns
+        stay at the ready pose; the policy residual rides on top, and idle-finger curl
+        still applies. (cfg.arm_traj_npz; single-song, indexed by song_step.)"""
+        idx = self.song_step.clamp(max=self._baked_arm.shape[0] - 1)   # (E,)
+        baked = self._baked_arm[idx]                                   # (E,2,30)
+        m = self._arm_dof_mask
+        base_l = torch.where(m, baked[:, 0], base_l)
+        base_r = torch.where(m, baked[:, 1], base_r)
+        curl = getattr(self.cfg, "idle_finger_curl", 0.0)
+        if curl != 0.0:
+            fa = self.finger_active[self.song_id, self.song_step]
+            for hand_i, base in enumerate((base_l, base_r)):
+                for fi in range(5):
+                    cols = self._finger_flex_cols[fi]
+                    idle = (~fa[:, hand_i * 5 + fi].bool()).float().unsqueeze(-1)
                     base[:, cols] = base[:, cols] + curl * idle
         return base_l, base_r
 
@@ -1045,3 +1102,8 @@ class PianoEnv(DirectRLEnv):
 
         self.song_step[env_ids] = 0
         self.key_sounding[env_ids] = False
+        # reset the arm-smoothing EMA for these envs to the ready pose, so a new episode
+        # doesn't glide in from the previous one's last arm command.
+        if getattr(self, "_arm_prev_l", None) is not None:
+            self._arm_prev_l[env_ids] = q0[0]
+            self._arm_prev_r[env_ids] = q0[1]

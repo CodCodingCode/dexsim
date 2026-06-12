@@ -24,6 +24,10 @@ parser.add_argument("--freeze_last_dof", action="store_true", help="freeze wrist
 parser.add_argument("--arm_ik_pos_only", action="store_true", help="position-only arm IK (drop orientation rows): smooth, no wrist fling (wrist swing 2.4->0.5 rad in rollout A/B)")
 parser.add_argument("--arm_ik_follow", action="store_true", help="arms servoed online by WristPoseIK to the fingering centroid; policy drives only the 48 finger DoF")
 parser.add_argument("--arm_ik_hover", type=float, default=None, help="override arm_ik_hover (m palm hovers above keys)")
+parser.add_argument("--arm_smooth", type=float, default=None, help="EMA factor smoothing the IK arm motion (0=snappy, 0.6 default, ->1=smooth/laggy)")
+parser.add_argument("--arm_traj", default=None, help="play back a baked zero-phase-smoothed arm trajectory (.npz from bake_arm_traj.py) instead of live IK (no jitter, no lag)")
+parser.add_argument("--wrist1_cap", type=float, default=None, help="cap UR10e wrist_1 up-tilt at this value (more-negative=more up; locked -4.782, -3.40~30%); arm IK repositions to compensate")
+parser.add_argument("--no_wrist1_cap", action="store_true", help="disable the wrist-tilt cap (wrist_1 free)")
 parser.add_argument("--strike_vel", type=float, default=None, help="override key_strike_vel (rad/s gate for a key to sound)")
 parser.add_argument("--idle_clear_weight", type=float, default=None, help="penalty weight for idle fingers hanging low (anti-mash)")
 parser.add_argument("--arm_sep_weight", type=float, default=None, help="penalty weight for the two palms getting closer than --arm_sep_min (anti arm-arm collision; policy-driven arms only)")
@@ -150,6 +154,14 @@ def main():
         env_cfg.max_songs = args.max_songs
     if args.arm_ik_hover is not None:
         env_cfg.arm_ik_hover = args.arm_ik_hover
+    if args.arm_smooth is not None:
+        env_cfg.arm_smooth = args.arm_smooth
+    if args.arm_traj is not None:
+        env_cfg.arm_traj_npz = args.arm_traj
+    if args.no_wrist1_cap:
+        env_cfg.wrist1_cap = None
+    elif args.wrist1_cap is not None:
+        env_cfg.wrist1_cap = args.wrist1_cap
     if args.strike_vel is not None:
         env_cfg.key_strike_vel = args.strike_vel
     if args.idle_clear_weight is not None:

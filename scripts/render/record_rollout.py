@@ -34,6 +34,13 @@ p.add_argument("--arm_ik_pos_only", action="store_true",
                help="position-only IK (drop orientation) -> smooth, no wrist fling")
 p.add_argument("--arm_ik_hover", type=float, default=None,
                help="override hover height (m) of the servoed palm above the keys")
+p.add_argument("--arm_smooth", type=float, default=None,
+               help="EMA factor smoothing the IK arm motion (0=snappy, 0.6 default)")
+p.add_argument("--arm_traj", default=None,
+               help="play back a baked zero-phase-smoothed arm trajectory (.npz) instead of live IK")
+p.add_argument("--wrist1_cap", type=float, default=None,
+               help="cap wrist_1 up-tilt (more-negative=more up; -3.40~30%); arm repositions")
+p.add_argument("--no_wrist1_cap", action="store_true", help="disable the wrist-tilt cap")
 p.add_argument("--hand_tilt", type=float, default=None,
                help="rotate the IK orientation target (rad about world X) so the fingers "
                     "point DOWN at the keys instead of sideways; ~-1.22 = -70 deg")
@@ -91,6 +98,14 @@ if a.arm_ik_follow:
         cfg.arm_ik_pos_only = True
 if a.arm_ik_hover is not None:
     cfg.arm_ik_hover = a.arm_ik_hover
+if a.arm_smooth is not None:
+    cfg.arm_smooth = a.arm_smooth
+if a.arm_traj is not None:
+    cfg.arm_traj_npz = a.arm_traj
+if a.no_wrist1_cap:
+    cfg.wrist1_cap = None
+elif a.wrist1_cap is not None:
+    cfg.wrist1_cap = a.wrist1_cap
 if a.hand_tilt is not None:
     cfg.hand_tilt = a.hand_tilt; cfg.hand_tilt_axis = 0    # rotate about world X -> fingers down
 env = gym.make("Dexsim-Piano-Bimanual-v0", cfg=cfg, render_mode=None)
