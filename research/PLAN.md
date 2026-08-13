@@ -2,11 +2,16 @@
 
 ## GOAL
 Identify proven, concrete techniques to make RL-based **bimanual dexterous piano-playing**
-(arm + Shadow Hand, RoboPianist / PianoMime lineage, Isaac Sim / MuJoCo) actually **learn to
+with **standalone Shadow Hands and no robot arms** actually **learn to
 press keys** and reach high key-press **F1** — covering reward shaping, action-space/embodiment
 design, PhysX/Isaac contact-stability for finger↔sprung-key contact, and imitation/warm-start/
 curriculum to escape the "hover-near-the-key-but-don't-press" local optimum. Want **sources +
 specific recommended settings**, not generalities.
+
+This is **Phase 1**, intentionally close to RoboPianist's hands-only embodiment.
+UR10e arms and full arm–hand coordination are deferred until the hands-only
+system plays reliably. Existing arm-IK results are prior evidence, not the
+embodiment to optimize in this phase.
 
 ### Concrete context driving the goal (our live failure modes)
 - Zero-residual reference (arm IK-positioned + ready fingers) reaches F1≈0.19 / recall≈0.67, but

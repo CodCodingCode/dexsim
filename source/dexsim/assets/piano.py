@@ -1,4 +1,4 @@
-"""ArticulationCfg for the generated 88-key piano.
+"""ArticulationCfg for the generated 88-key training keyboard.
 
 The piano is ONE articulation: a kinematic base with 88 keys, each hinged by a
 revolute joint (``joint_0``..``joint_87``, index = MIDI-21). The keys are
@@ -8,6 +8,9 @@ leave the target at 0, so PhysX holds each key up until a finger presses it down
 
 A key "sounds" when its joint angle drops below ``KEY_SOUND_ANGLE`` (radians,
 negative = pressed down).
+
+The layout and key dimensions are piano-like, but this is not a full piano action:
+there are no hammers, escapement, strings, pedals, or acoustic model.
 """
 
 from __future__ import annotations

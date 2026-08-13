@@ -21,8 +21,7 @@ class PianoPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     logger = "wandb"
     wandb_project = "dexsim-piano"
     policy = RslRlPpoActorCriticCfg(
-        init_noise_std=0.5,   # was 1.0 -> 60-DoF residual flailed, slamming the
-        #                       arms (NaN physics -> NaN reward -> std>=0 crash)
+        init_noise_std=0.5,   # 48-DoF standalone-hand residual
         actor_hidden_dims=[512, 256, 128],
         critic_hidden_dims=[512, 256, 128],
         activation="elu",

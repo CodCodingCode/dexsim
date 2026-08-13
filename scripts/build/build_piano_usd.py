@@ -1,4 +1,7 @@
-"""Generate an 88-key piano USD: each key is a sprung hinge the hands press.
+"""Generate an 88-key training-keyboard USD: each key is a sprung hinge.
+
+The 88-key layout and external key dimensions are piano-like. The mechanism is a
+simplified RL contact model, not a digital twin of a real hammer action.
 
 Layout: 52 white + 36 black keys (A0..C8) arranged along +Y. Each key is a rigid
 body hinged to a static base by a revolute joint about Y at the key's back edge;

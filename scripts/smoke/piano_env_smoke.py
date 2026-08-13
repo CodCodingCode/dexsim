@@ -1,6 +1,6 @@
 """Integration smoke test for the bimanual piano env: construct it, reset, step
 random actions, and print obs/reward/done shapes. No training, no policy --
-this just proves the whole env (2 arms + 88-key piano + MIDI goal) builds and
+this just proves the whole env (2 hands + 88-key keyboard + MIDI goal) builds and
 steps on GPU with the right tensor shapes.
 
   python scripts/piano_env_smoke.py --headless --num_envs 4
@@ -33,6 +33,8 @@ TASK = "Dexsim-Piano-Bimanual-v0"
 def main():
     cfg = PianoEnvCfg()
     cfg.scene.num_envs = args.num_envs
+    assert cfg.action_space == 48
+    assert cfg.observation_space == 1212
     print(f"[piano_smoke] action_space={cfg.action_space} obs_space={cfg.observation_space}")
 
     env = gym.make(TASK, cfg=cfg, render_mode=None)
@@ -44,6 +46,8 @@ def main():
     print(f"  left_robot DOFs : {le.left_robot.num_joints}")
     print(f"  right_robot DOFs: {le.right_robot.num_joints}")
     print(f"  piano key joints: {le.piano.num_joints}")
+    assert le.left_robot.num_joints == le.right_robot.num_joints == 24
+    assert le.piano.num_joints == 88
 
     rew_sum = torch.zeros(args.num_envs, device=le.device)
     for i in range(args.steps):

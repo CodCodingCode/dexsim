@@ -46,11 +46,10 @@ import numpy as np
 import torch
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import Articulation, AssetBaseCfg
+from isaaclab.assets import Articulation
 from isaaclab.sim import SimulationCfg, SimulationContext
 from isaaclab.sensors import Camera, CameraCfg
 
-from dexsim.assets import UR10E_SHADOW_CFG, PIANO_CFG
 from dexsim.tasks.piano.piano_env_cfg import PianoEnvCfg
 
 
@@ -63,25 +62,12 @@ def main():
     sim_utils.DomeLightCfg(intensity=3000.0, color=(1.0, 1.0, 1.0)).func(
         "/World/Light", sim_utils.DomeLightCfg(intensity=3000.0))
 
-    # piano + two arms using the ENV's configured cfgs (base pose + piano-ready
+    # piano + two hands using the environment's configured assets (hand pose + piano-ready
     # joint pose are already baked in by PianoEnvCfg.__post_init__), just
     # re-prim'd to single-env paths so the render matches what training sees.
     piano = Articulation(cfg.piano_cfg.replace(prim_path="/World/Piano"))
     left = Articulation(cfg.left_robot_cfg.replace(prim_path="/World/LeftRobot"))
     right = Articulation(cfg.right_robot_cfg.replace(prim_path="/World/RightRobot"))
-
-    # Pedestals under each base so the arms don't float (cosmetic; bases are
-    # world-fixed). Box runs ground -> base z, read live from the resolved cfg.
-    for _nm, _rc in (("LeftPedestal", cfg.left_robot_cfg),
-                     ("RightPedestal", cfg.right_robot_cfg)):
-        _bx, _by, _bz = _rc.init_state.pos
-        if _bz and _bz > 0.02:
-            _pc = sim_utils.CuboidCfg(
-                size=(0.26, 0.26, float(_bz)),
-                visual_material=sim_utils.PreviewSurfaceCfg(
-                    diffuse_color=(0.22, 0.22, 0.25), metallic=0.1, roughness=0.5))
-            _pc.func(f"/World/{_nm}", _pc,
-                     translation=(_bx, _by, float(_bz) / 2.0))
 
     # camera sensor
     cam = Camera(CameraCfg(

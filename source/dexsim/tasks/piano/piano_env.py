@@ -1,16 +1,12 @@
-"""DirectRLEnv for the bimanual piano task (decoupled control, RoboPianist-style).
+"""DirectRLEnv for two fixed-base Shadow Hands playing a sprung keyboard.
 
-Two UR10e+Shadow arms (60 action DoF total) over an 88-key spring-loaded piano.
+Two standalone Shadow Hands (48 action DoF total) over an 88-key sprung keyboard.
 A MIDI song defines a per-step key-activation goal; an automatic fingering assigns
-each note to a finger. The control is **decoupled**: pure-math IK (``WristPoseIK``)
-servos the arms onto the upcoming-note centroid, while the RL policy learns finger
-pressing as a residual on top of a static ready pose. The slider embodiment is the
-same recipe with an analytic 1-DoF rail in place of the arm servo.
+each note to a finger. The policy learns hand-joint residuals on a static ready pose;
+there are no UR10e joints or arm IK in the active embodiment.
 
 What this env implements from RoboPianist:
-  * **Residual action** over a ready-pose base: arm columns are overwritten each
-    step by IK; zero action already tracks a competent positioning, so the policy
-    only learns the press.
+  * **Residual action** over a fixed-hand ready pose.
   * **Fingering shaping reward** (finger -> assigned key): the term RoboPianist
     showed is make-or-break (F1 = 0 without it).
   * **Composite reward**: key-press (right keys down, none wrong) + fingering +
@@ -48,6 +44,11 @@ class PianoEnv(DirectRLEnv):
     cfg: PianoEnvCfg
 
     def __init__(self, cfg: PianoEnvCfg, render_mode: str | None = None, **kwargs):
+        if getattr(cfg, "arm_ik_follow", False) or getattr(cfg, "phase0_arm_positioning", False):
+            raise ValueError(
+                "The piano task now uses fixed-base standalone Shadow Hands; "
+                "UR10e arm IK and Phase-0 arm training are no longer supported."
+            )
         super().__init__(cfg, render_mode, **kwargs)
 
         self.per_arm_dof = self.left_robot.num_joints
@@ -73,9 +74,7 @@ class PianoEnv(DirectRLEnv):
             self.right_default[:, _flex] = torch.clamp(self.right_default[:, _flex] + _sc,
                                                        lo_r[:, _flex], hi_r[:, _flex])
 
-        # Per-joint residual scale: arm joints are stiff (blow up under a large residual),
-        # hand joints are weak (need a generous range to travel between keys). One global
-        # scale can't serve both -> scale the arm gently, the hand generously.
+        # Every joint belongs to a standalone Shadow Hand.
         is_hand = torch.tensor(
             [1.0 if "robot0_" in n else 0.0 for n in self.left_robot.data.joint_names],
             device=self.device,
@@ -84,14 +83,13 @@ class PianoEnv(DirectRLEnv):
             self.cfg.arm_action_scale * (1.0 - is_hand)
             + self.cfg.hand_action_scale * is_hand
         ).unsqueeze(0)                                  # (1, 30) broadcast over envs
-        # arm DoF (the non-"robot0_" joints): used by the arm-health diagnostics
-        # (_arm_limit_margin) to score only the 6-per-arm UR10e joints, not fingers.
+        # Kept for compatibility with old diagnostics; empty in the hand-only embodiment.
         self.arm_joint_mask = (is_hand < 0.5)           # (30,) bool, True for arm joints
         # FIXED-HANDS mode: zero the arm columns of joint_scale so the arms hold the
         # ready pose; the policy drives only the 48 finger DoF.
         if getattr(self.cfg, "freeze_arms", False):
             self.joint_scale = self.joint_scale * is_hand.unsqueeze(0)
-            print("[PianoEnv] FIXED ARMS: hands held over keyboard, fingers-only training")
+            print("[PianoEnv] FIXED HAND ROOTS: policy drives 48 Shadow Hand joints")
         # ARM-IK-FOLLOW mode: arm DoF servoed by WristPoseIK to the note centroid; the
         # policy drives only the finger DoF. Math positions the hands, RL presses.
         self._arm_ik_follow = bool(getattr(self.cfg, "arm_ik_follow", False))
@@ -236,25 +234,16 @@ class PianoEnv(DirectRLEnv):
         rfa, _ = self.right_robot.find_bodies(["robot0_forearm"], preserve_order=True)
         self.lforearm_id = torch.tensor(lfa, device=self.device)
         self.rforearm_id = torch.tensor(rfa, device=self.device)
-        # UR10e wrist link, for the wrist-vs-table clearance penalty. Substring match
-        # so it works regardless of "wrist_3" vs "wrist_3_link" naming.
-        def _body_id(robot, substr):
-            for i, n in enumerate(robot.body_names):
-                if substr in n:
-                    return torch.tensor([i], device=self.device)
-            raise ValueError(f"no body matching {substr!r} in {robot.body_names}")
-        self.lwrist_id = _body_id(self.left_robot, "wrist_3")
-        self.rwrist_id = _body_id(self.right_robot, "wrist_3")
+        # No UR10e wrist links exist in this embodiment.
+        self.lwrist_id = self.rwrist_id = None
         # column of wrist_1_joint, for the wrist-tilt cap (same ordering on both arms)
         _jn = self.left_robot.data.joint_names
         self._wrist1_col = _jn.index("wrist_1_joint") if "wrist_1_joint" in _jn else None
 
-        # --- residual base pose: the static ready pose, broadcast over every song/step.
-        # In arm_ik_follow / slider the arm columns are overwritten each control step by
-        # WristPoseIK; the policy learns finger pressing as a residual on top.
+        # --- residual base pose: the static hand pose, broadcast over every song/step.
         _Tpad = self.goal_padded.shape[1]                           # Tmax + L
-        _ready = torch.stack([self.left_default[0], self.right_default[0]], dim=0)  # (2,30)
-        self.base_pose = _ready[None, None].repeat(self.num_songs, _Tpad, 1, 1)  # (N,Tpad,2,30)
+        _ready = torch.stack([self.left_default[0], self.right_default[0]], dim=0)  # (2,24)
+        self.base_pose = _ready[None, None].repeat(self.num_songs, _Tpad, 1, 1)  # (N,Tpad,2,24)
 
         # action buffer / targets
         self.actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
@@ -390,22 +379,6 @@ class PianoEnv(DirectRLEnv):
 
         spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg())
 
-        # Pedestals under each UR10e base so the arms aren't floating in the air
-        # (purely cosmetic -- the bases are already world-fixed). Each box runs
-        # from the ground up to that base's z, read live from the resolved cfg so
-        # it adapts to the arm/slider layouts.
-        for _name, _rc in (("LeftPedestal", self.cfg.left_robot_cfg),
-                            ("RightPedestal", self.cfg.right_robot_cfg)):
-            _bx, _by, _bz = _rc.init_state.pos
-            if _bz and _bz > 0.02:
-                _ped = sim_utils.CuboidCfg(
-                    size=(0.26, 0.26, float(_bz)),
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=(0.22, 0.22, 0.25), metallic=0.1),
-                )
-                _ped.func(f"/World/{_name}", _ped,
-                          translation=(_bx, _by, float(_bz) / 2.0))
-
         self.scene.clone_environments(copy_from_source=False)
 
         self.scene.articulations["left_robot"] = self.left_robot
@@ -424,9 +397,8 @@ class PianoEnv(DirectRLEnv):
         self.prev_actions = self.actions.clone()
         a_left = self.actions[:, : self.per_arm_dof]
         a_right = self.actions[:, self.per_arm_dof :]
-        ref = self.base_pose[self.song_id, self.song_step]          # (E, 2, 30) ready pose
-        # residual on all joints, but per-joint scaled (gentle arm / generous hand;
-        # see self.joint_scale). Targets are clamped to joint limits and obs are
+        ref = self.base_pose[self.song_id, self.song_step]          # (E, 2, 24) ready pose
+        # Residual on all hand joints. Targets are clamped to joint limits and obs are
         # NaN-guarded, so a transient blow-up can't crash PPO.
         scale = self.joint_scale
         lo = self.left_robot.data.soft_joint_pos_limits[..., 0]
@@ -832,6 +804,8 @@ class PianoEnv(DirectRLEnv):
         1.0 = mid-range (healthy), 0.0 = pinned against a limit (contorting / about to
         fail, won't transfer to hardware). Scored over the 6-per-arm UR10e DoF only
         (fingers excluded via arm_joint_mask), across both arms."""
+        if not self.arm_joint_mask.any():
+            return torch.ones(self.num_envs, device=self.device)
         margins = []
         for robot in (self.left_robot, self.right_robot):
             q = robot.data.joint_pos
@@ -1001,7 +975,7 @@ class PianoEnv(DirectRLEnv):
         # WRIST-TABLE CLEARANCE: penalize a wrist dipping below wrist_clear_z (table top
         # ~0.72 m, keys ~0.76 m) so it never buries into the support block. Per arm.
         w_wc = getattr(self.cfg, "wrist_clear_weight", 0.0)
-        if w_wc > 0.0:
+        if w_wc > 0.0 and self.lwrist_id is not None:
             z_thr = getattr(self.cfg, "wrist_clear_z", 0.82)
             origins = self.scene.env_origins                              # (E,3)
             wl = self.left_robot.data.body_pos_w[:, self.lwrist_id].squeeze(1) - origins
@@ -1089,8 +1063,8 @@ class PianoEnv(DirectRLEnv):
             env_ids = self.left_robot._ALL_INDICES
         super()._reset_idx(env_ids)
 
-        # start each arm at the ready pose (the residual base's first frame)
-        q0 = self.base_pose[0, 0]                         # (2, 30) song 0, step 0
+        # start each hand at the ready pose
+        q0 = self.base_pose[0, 0]                         # (2, 24) song 0, step 0
         for robot, ref in ((self.left_robot, q0[0]), (self.right_robot, q0[1])):
             jp = ref.unsqueeze(0).repeat(len(env_ids), 1)
             jv = torch.zeros_like(jp)

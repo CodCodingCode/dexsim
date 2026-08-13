@@ -1,5 +1,10 @@
 # TRAINING SWARM — shared memory
 
+> **Scope update:** Phase 1 targets standalone bimanual dexterous hands on the
+> piano, without robot arms, following the RoboPianist-style hands-only setup.
+> The arm-IK experiments below are historical baselines, not the current target.
+> Arms return only in a later phase.
+
 GOAL: train an arm_ik_follow piano policy that PLAYS easy.mid — high key-press **F1**
 (recall AND precision both high), measured by `play/F1` etc. in the training log.
 
