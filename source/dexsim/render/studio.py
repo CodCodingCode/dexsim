@@ -70,9 +70,8 @@ def _spawn_studio_floor_lights():
     sim_utils.CuboidCfg(size=(40.0, 40.0, 0.04), visual_material=_fm).func(
         "/World/Floor", sim_utils.CuboidCfg(size=(40.0, 40.0, 0.04), visual_material=_fm),
         translation=(0.0, 0.0, -0.02))
-    # SUPPORTS so nothing floats: a table under the piano + two pedestals out front.
+    # Support table under the keyboard. Hand roots are intentionally fixed in space.
     _wood = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.20, 0.13, 0.08), roughness=0.7)
-    _ped = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.12, 0.12, 0.14), roughness=0.5)
     # real STATIC collider (collision_props, no rigid_props) so hands rest ON the
     # table instead of phasing through it during the settle steps.
     _table_cfg = sim_utils.CuboidCfg(
@@ -80,9 +79,6 @@ def _spawn_studio_floor_lights():
         collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True))
     _table_cfg.func("/World/PianoTable", _table_cfg,
                     translation=(0.60, 0.0, 0.36))             # under the piano (center x=0.60)
-    # (base pedestals are spawned by _spawn_base_pedestals(), auto-sized to the base z;
-    #  the old hardcoded 1.05-tall block at x=1.25 was a stale leftover -- removed.)
-    _ = _ped
     sim_utils.DomeLightCfg(intensity=700.0, color=(0.5, 0.55, 0.65)).func(
         "/World/Dome", sim_utils.DomeLightCfg(intensity=700.0, color=(0.5, 0.55, 0.65)))
     _c = (0.5, -0.5, 0.85)
@@ -103,22 +99,8 @@ def _spawn_simple_floor_lights():
         "/World/Light", sim_utils.DomeLightCfg(intensity=3000.0))
 
 
-def _spawn_base_pedestals(cfg):
-    """Cosmetic boxes under each world-fixed base so the arms don't float.
-    Box runs ground -> base z, read live from the resolved cfg."""
-    for _nm, _rc in (("LeftPedestal", cfg.left_robot_cfg),
-                     ("RightPedestal", cfg.right_robot_cfg)):
-        _bx, _by, _bz = _rc.init_state.pos
-        if _bz and _bz > 0.02:
-            _pc = sim_utils.CuboidCfg(
-                size=(0.26, 0.26, float(_bz)),
-                visual_material=sim_utils.PreviewSurfaceCfg(
-                    diffuse_color=(0.22, 0.22, 0.25), metallic=0.1, roughness=0.5))
-            _pc.func(f"/World/{_nm}", _pc, translation=(_bx, _by, float(_bz) / 2.0))
-
-
 def build_scene(cfg, *, style="studio"):
-    """Spawn floor/lights/supports + piano and both arms. Returns (piano, left, right).
+    """Spawn floor/lights/support + piano and both hands. Returns (piano, left, right).
 
     Articulations are re-prim'd to single-env ``/World/...`` paths so the render
     matches what training sees (base pose + piano-ready joint pose are already
@@ -132,15 +114,10 @@ def build_scene(cfg, *, style="studio"):
     piano = Articulation(cfg.piano_cfg.replace(prim_path="/World/Piano"))
     left = Articulation(cfg.left_robot_cfg.replace(prim_path="/World/LeftRobot"))
     right = Articulation(cfg.right_robot_cfg.replace(prim_path="/World/RightRobot"))
-    _spawn_base_pedestals(cfg)
     return piano, left, right
 
 
-# Canonical "hero" camera: front-centered (y=0, symmetric over both arms), gently
-# elevated looking down ~17deg at the keyboard + both hands. This is the default for
-# every scene/rollout render unless --eye/--target overrides it, so renders are
-# consistent instead of an ad-hoc angle each time. Tuned for the bimanual rig (bases
-# x=1.65, keyboard x~0.6 z~0.76, hands x~0.75 y~+/-0.25 z~0.95).
+# Canonical front-centered camera for the keyboard and two hands.
 HERO_EYE = (-0.50, 0.0, 1.25)
 HERO_TARGET = (0.80, 0.0, 0.84)
 

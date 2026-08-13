@@ -1,19 +1,14 @@
 # dexsim — Claude instructions
 
-## 🔒 LOCKED: the constant static arm+hand pose — DO NOT EDIT
+## Current piano embodiment
 
-`left_ready_pose` / `right_ready_pose` in
-`source/dexsim/tasks/piano/piano_env_cfg.py` are the **constant static config the
-arm + hands must ALWAYS have** (arm reach joints, `wrist_3_joint = 3.14159` (π),
-`wrist_1_joint = -4.782` + `shoulder_lift_joint = -0.640` — a deliberate +70° wrist-up
-pitch about y with the hand then lowered ~40 cm in z (two 20 cm lowers; set 2026-06-08;
-wrist_1 was -2.80, sh_lift -1.40; "up" is the *negative* wrist_1 direction; sh_lift+wrist_1
-held at sum -5.422 to preserve the tilt while lowering) — and the hand wrist tilt
-`robot0_WRJ0 = 0.45` / `robot0_WRJ1 = 0.13`. Fingertips land ~4.5 cm above the keys,
-pointing down. **FINAL frozen baseline — user declared PERFECT 2026-06-08, do NOT change.**).
-**Do NOT edit these poses** — not the wrist flip, not the tilt, not the arm joints.
-They are deliberately fixed; treat them as frozen unless the user explicitly says
-otherwise in a new request.
+The active piano task uses two fixed-base standalone Shadow Hands and no UR10e
+arms. Root transforms and the `robot0_WRJ*` ready pose live in
+`source/dexsim/tasks/piano/piano_env_cfg.py`. Tune root placement visually in the
+Isaac Sim GUI, then commit the exact numeric transforms for reproducibility.
+This is Phase 1, intentionally similar to RoboPianist's hands-only embodiment.
+Do not add arms to the piano task unless the user explicitly advances the project
+to Phase 2.
 
 ## Rendering & geometry measurement: ALWAYS use the warm render server
 
@@ -52,6 +47,6 @@ a cold-boot script.
 ## General
 
 - `source env.sh` before anything (venv + Omniverse EULA + the staged Vulkan driver + PYTHONPATH).
-- Isaac-only embodiment work: UR10e + Shadow Hand. No MuJoCo/RoboPianist routing.
+- Active piano embodiment: two standalone Shadow Hands; UR10e assets are legacy grasp tooling.
 - Heavy `isaaclab` imports (and `dexsim.render.studio`) must come AFTER `AppLauncher(...).app`.
 - `logs/` is gitignored (the render job-queue lives in `logs/render_jobs/`).

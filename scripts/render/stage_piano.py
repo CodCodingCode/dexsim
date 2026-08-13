@@ -1,6 +1,6 @@
 """Stage the bimanual piano scene and render a snapshot (NO training).
 
-Spawns the two UR10e+Shadow arms + the 88-key piano with your song loaded,
+Spawns the two standalone Shadow Hands + the 88-key keyboard with your song loaded,
 lets physics settle, and saves an RGB image so you can eyeball the layout
 (arm reach, hand-over-keys, base placement) before committing to training.
 
@@ -71,8 +71,8 @@ def main():
     print(f"  left arm DOFs   : {le.left_robot.num_joints}")
     print(f"  right arm DOFs  : {le.right_robot.num_joints}")
     print(f"  piano key joints: {le.piano.num_joints}")
-    print(f"  ACTION space    : {cfg.action_space}  (60 = 2 arms x 30 joint targets)")
-    print(f"  OBS space       : {cfg.observation_space}  (arms pos+vel + key angles + goal lookahead)")
+    print(f"  ACTION space    : {cfg.action_space}  (48 = 2 hands x 24 joint targets)")
+    print(f"  OBS space       : {cfg.observation_space}  (hands pos+vel + key angles + goal lookahead)")
     print(f"  REWARD          : + sound goal keys, - wrong keys, - energy")
     print("================================================\n")
     env.close()

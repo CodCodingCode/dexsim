@@ -1,3 +1,11 @@
+# Current scope — Phase 1 is hands only
+
+The immediate target is **two standalone dexterous Shadow Hands playing the
+piano, without robot arms**. Like RoboPianist's hands-only setup, Phase 1 focuses
+on hand placement, fingering, and reliable key presses. UR10e integration and
+full arm–hand coordination are deferred to Phase 2. The arm-based results below
+are retained as historical context, not as the current embodiment target.
+
 # ⚡ 2026-06-08 BREAKTHROUGH — the F1≈0 wall had TWO hard root causes (now fixed)
 
 After ~67 runs stuck at F1≈0.03, the cause was NOT reward/policy tuning — it was two

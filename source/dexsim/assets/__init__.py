@@ -1,8 +1,9 @@
-"""Asset configurations for the UR10e + Shadow Hand embodiment."""
+"""Asset configurations for Shadow Hands, legacy UR10e combinations, and piano."""
 
 from .ur10e_shadow import (
     UR10E_CFG,
     SHADOW_HAND_CFG,
+    PIANO_SHADOW_HAND_CFG,
     UR10E_SHADOW_CFG,
     UR10E_SHADOW_LEFT_CFG,
     COMBINED_USD_PATH,
@@ -17,6 +18,7 @@ from .piano import (
 __all__ = [
     "UR10E_CFG",
     "SHADOW_HAND_CFG",
+    "PIANO_SHADOW_HAND_CFG",
     "UR10E_SHADOW_CFG",
     "UR10E_SHADOW_LEFT_CFG",
     "COMBINED_USD_PATH",

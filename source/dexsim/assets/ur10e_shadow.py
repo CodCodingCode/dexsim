@@ -139,6 +139,26 @@ SHADOW_HAND_CFG = ArticulationCfg(
 reorientation embodiment. Values mirror Isaac Lab's built-in SHADOW_HAND_CFG."""
 
 
+# Piano-specific standalone hand.  The stock reorientation gains are deliberately
+# weak; pressing a sprung piano key needs the stronger, velocity-unclamped drive
+# that was previously configured on the hand portion of UR10E_SHADOW_CFG.
+PIANO_SHADOW_HAND_CFG = SHADOW_HAND_CFG.replace(
+    spawn=SHADOW_HAND_CFG.spawn.replace(activate_contact_sensors=True),
+    actuators={
+        "fingers": ImplicitActuatorCfg(
+            joint_names_expr=[".*"],
+            effort_limit_sim=40.0,
+            effort_limit=40.0,
+            velocity_limit_sim=50.0,
+            stiffness=45.0,
+            damping=2.0,
+            friction=0.01,
+        ),
+    },
+)
+"""Fixed-base, standalone Shadow Hand tuned to press the piano keys."""
+
+
 # ---------------------------------------------------------------------------
 # Combined UR10e + Shadow Hand  (== BODex-Tabletop embodiment)
 # ---------------------------------------------------------------------------

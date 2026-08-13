@@ -1,12 +1,16 @@
-# dexsim — UR10e + Shadow Hand in Isaac Lab
+# dexsim — Shadow Hands playing piano in Isaac Lab
 
-Pure-sim dexterous manipulation on the UR10e + Shadow Hand embodiment, on an
-H100. Two things live here:
+Pure-sim dexterous manipulation with Shadow Hands in Isaac Lab.
 
 ### 🎹 Current goal — bimanual piano (see [docs/PIANO.md](docs/PIANO.md))
-Two UR10e + Shadow arms (**60 action DoF**) over an 88-key piano, trained with
-PPO to play a specific MIDI song. The env builds and steps on GPU today
-(`scripts/smoke/piano_env_smoke.py` passes). Drop your `.mid` in `data/midi/` and:
+Two fixed-base Shadow Hands (**48 action DoF**) over an 88-key sprung keyboard, trained with
+PPO to play a specific MIDI song. Validate a rebuilt environment with
+`scripts/smoke/piano_env_smoke.py`, then drop your `.mid` in `data/midi/` and:
+
+This is intentionally **Phase 1: pure dexterous hands, with no robot arms**,
+similar to RoboPianist's hands-only embodiment. UR10e arms and full arm–hand
+coordination are deferred until the hands can play reliably.
+
 ```bash
 source env.sh
 python scripts/train/train_piano.py --headless --num_envs 2048 --midi data/midi/<song>.mid
@@ -28,10 +32,10 @@ python scripts/train/play_piano.py  --num_envs 1 --video --export_midi logs/play
 dexsim/
   env.sh                       # source this first (venv + EULA + PYTHONPATH)
   source/dexsim/
-    assets/ur10e_shadow.py     # UR10e, Shadow Hand, and combined ArticulationCfgs
+    assets/ur10e_shadow.py     # Shadow Hand configs; legacy UR10e configs remain for grasp tools
     assets/piano.py            # 88-key piano ArticulationCfg
     piano/                     # MIDI->goal parser + reward (framework-agnostic)
-    tasks/piano/               # Dexsim-Piano-Bimanual-v0 (DirectRLEnv) + PPO cfg
+    tasks/piano/               # fixed-base Shadow Hands: DirectRLEnv + PPO cfg
     tasks/reorient/            # RL cube reorientation (Dexsim-Reorient-Cube-Shadow-v0)
     tasks/grasp/               # tabletop scene + BODex trajectory loader
   scripts/
@@ -107,16 +111,16 @@ path-tracing — drop `--spp` for faster previews). The RTX *shader* cache
 (`~/.cache/ov`) already persists across runs; the server adds the missing
 app-process + built-scene cache, which is what dominated cold iteration.
 
-The combined UR10e+Shadow articulation is built once by `build_combined_usd.py`
-(the genuinely fiddly part — two separate articulations bonded into one tree by
-a fixed joint at the tool flange). The reorientation path doesn't need it.
+The active piano task uses Isaac's standalone Shadow Hand USD directly and does
+not require the generated UR10e+Shadow articulation. The combined asset builders
+remain only for the separate grasp-data experiments.
 
 ## Stack
 
 | piece     | choice                                   |
 |-----------|------------------------------------------|
-| Arm       | UR10e (6-DOF, native USD)                |
-| Hand      | Shadow Hand (24-DOF, instanceable USD)   |
+| Placement | Fixed hand roots over two key windows     |
+| Hands     | 2× Shadow Hand (24-DOF each)              |
 | Sim       | Isaac Sim 4.5.0 (pip)                    |
 | Framework | Isaac Lab v2.1.0 (rsl_rl PPO, Mimic)     |
 | Dataset   | BODex-Tabletop (primary) + DexGraspNet   |
