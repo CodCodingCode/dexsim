@@ -39,7 +39,7 @@ class TabletopGraspSceneCfg(InteractiveSceneCfg):
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.55, 0.0, 0.0)),
     )
 
-    # combined arm + hand (requires assets/ur10e_shadow.usd; see build script)
+    # combined arm + hand (requires assets/ur10e_shadow_right.usd; see build script)
     robot = UR10E_SHADOW_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
     # a graspable object on the table -- swap for a BODex/DexGraspNet mesh.

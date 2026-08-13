@@ -11,7 +11,7 @@ What this script does:
   3. disables the Shadow Hand's articulation root (the arm root wins),
   4. adds a fixed joint:  ur10e/<flange_link>  ->  shadow/<hand_root_link>,
   5. positions the hand at the flange with a configurable mount transform,
-  6. writes assets/ur10e_shadow.usd.
+  6. writes assets/ur10e_shadow_right.usd.
 
 Run ``--inspect`` first to print both source hierarchies and the auto-detected
 flange / hand-root link names, then re-run without it to build.
@@ -40,10 +40,10 @@ parser.add_argument("--mount-xyz", default="0,0,0.0",
 parser.add_argument("--mount-rpy", default="0,0,0",
                     help="Hand orientation offset from flange, radians 'r,p,y'.")
 parser.add_argument("--hand-usd", default=None,
-                    help="Hand USD to bond (default: stock RIGHT shadow_hand_instanceable.usd). "
+                    help="Hand USD to bond (default: vendored RIGHT shadow_hand_right.usd). "
                          "Pass a LEFT-hand USD here to build the left combined.")
 parser.add_argument("--out", default=None,
-                    help="Output combined USD path (default: assets/ur10e_shadow.usd).")
+                    help="Output combined USD path (default: assets/ur10e_shadow_right.usd).")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 
@@ -59,13 +59,15 @@ import os
 from pxr import Usd, UsdGeom, UsdPhysics, Gf, Sdf
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
+from dexsim import ASSETS_DIR
 from dexsim.assets import COMBINED_USD_PATH
 
 UR10E_USD = f"{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
 # RIGHT hand by default; --hand-usd overrides (e.g. a LEFT-hand USD). Local paths
 # are abspath'd so the reference resolves regardless of the output USD's dir.
-SHADOW_USD = os.path.abspath(args.hand_usd) if args.hand_usd else \
-    f"{ISAAC_NUCLEUS_DIR}/Robots/ShadowHand/shadow_hand_instanceable.usd"
+SHADOW_USD = os.path.abspath(args.hand_usd) if args.hand_usd else str(
+    ASSETS_DIR / "nvidia_shadow_right" / "shadow_hand_right.usd"
+)
 OUT_PATH = os.path.abspath(args.out) if args.out else COMBINED_USD_PATH
 
 # preferred link names, in priority order, when nothing is passed on the CLI

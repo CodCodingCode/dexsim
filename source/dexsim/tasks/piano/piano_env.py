@@ -1,6 +1,8 @@
-"""DirectRLEnv for the bimanual piano task (decoupled control, RoboPianist-style).
+"""DirectRLEnv for two physical Shadow Hands sliding along independent Y rails.
 
-Two UR10e+Shadow arms (60 action DoF total) over an 88-key spring-loaded piano.
+Each hand has one prismatic base joint plus its 24 physical hand joints.  The
+rail locks world X/Z and all base rotations; disjoint travel lanes prevent the
+two hands from crossing while finger/key and hand/hand contacts use PhysX.
 A MIDI song defines a per-step key-activation goal; an automatic fingering assigns
 each note to a finger. The control is **decoupled**: pure-math IK (``WristPoseIK``)
 servos the arms onto the upcoming-note centroid, while the RL policy learns finger
@@ -73,9 +75,8 @@ class PianoEnv(DirectRLEnv):
             self.right_default[:, _flex] = torch.clamp(self.right_default[:, _flex] + _sc,
                                                        lo_r[:, _flex], hi_r[:, _flex])
 
-        # Per-joint residual scale: arm joints are stiff (blow up under a large residual),
-        # hand joints are weak (need a generous range to travel between keys). One global
-        # scale can't serve both -> scale the arm gently, the hand generously.
+        # The sole non-robot0 joint is the physical Y rail. All other joints belong
+        # to the Shadow Hand finger/wrist chain.
         is_hand = torch.tensor(
             [1.0 if "robot0_" in n else 0.0 for n in self.left_robot.data.joint_names],
             device=self.device,
@@ -83,15 +84,13 @@ class PianoEnv(DirectRLEnv):
         self.joint_scale = (
             self.cfg.arm_action_scale * (1.0 - is_hand)
             + self.cfg.hand_action_scale * is_hand
-        ).unsqueeze(0)                                  # (1, 30) broadcast over envs
-        # arm DoF (the non-"robot0_" joints): used by the arm-health diagnostics
-        # (_arm_limit_margin) to score only the 6-per-arm UR10e joints, not fingers.
-        self.arm_joint_mask = (is_hand < 0.5)           # (30,) bool, True for arm joints
+        ).unsqueeze(0)                                  # (1, 25) broadcast over envs
+        self.arm_joint_mask = (is_hand < 0.5)           # railJoint only
         # FIXED-HANDS mode: zero the arm columns of joint_scale so the arms hold the
         # ready pose; the policy drives only the 48 finger DoF.
         if getattr(self.cfg, "freeze_arms", False):
             self.joint_scale = self.joint_scale * is_hand.unsqueeze(0)
-            print("[PianoEnv] FIXED ARMS: hands held over keyboard, fingers-only training")
+            print("[PianoEnv] FIXED RAILS: policy drives fingers only")
         # ARM-IK-FOLLOW mode: arm DoF servoed by WristPoseIK to the note centroid; the
         # policy drives only the finger DoF. Math positions the hands, RL presses.
         self._arm_ik_follow = bool(getattr(self.cfg, "arm_ik_follow", False))
@@ -236,15 +235,7 @@ class PianoEnv(DirectRLEnv):
         rfa, _ = self.right_robot.find_bodies(["robot0_forearm"], preserve_order=True)
         self.lforearm_id = torch.tensor(lfa, device=self.device)
         self.rforearm_id = torch.tensor(rfa, device=self.device)
-        # UR10e wrist link, for the wrist-vs-table clearance penalty. Substring match
-        # so it works regardless of "wrist_3" vs "wrist_3_link" naming.
-        def _body_id(robot, substr):
-            for i, n in enumerate(robot.body_names):
-                if substr in n:
-                    return torch.tensor([i], device=self.device)
-            raise ValueError(f"no body matching {substr!r} in {robot.body_names}")
-        self.lwrist_id = _body_id(self.left_robot, "wrist_3")
-        self.rwrist_id = _body_id(self.right_robot, "wrist_3")
+        self.lwrist_id = self.rwrist_id = None
         # column of wrist_1_joint, for the wrist-tilt cap (same ordering on both arms)
         _jn = self.left_robot.data.joint_names
         self._wrist1_col = _jn.index("wrist_1_joint") if "wrist_1_joint" in _jn else None
@@ -253,8 +244,8 @@ class PianoEnv(DirectRLEnv):
         # In arm_ik_follow / slider the arm columns are overwritten each control step by
         # WristPoseIK; the policy learns finger pressing as a residual on top.
         _Tpad = self.goal_padded.shape[1]                           # Tmax + L
-        _ready = torch.stack([self.left_default[0], self.right_default[0]], dim=0)  # (2,30)
-        self.base_pose = _ready[None, None].repeat(self.num_songs, _Tpad, 1, 1)  # (N,Tpad,2,30)
+        _ready = torch.stack([self.left_default[0], self.right_default[0]], dim=0)  # (2,25)
+        self.base_pose = _ready[None, None].repeat(self.num_songs, _Tpad, 1, 1)  # (N,Tpad,2,25)
 
         # action buffer / targets
         self.actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
@@ -390,22 +381,6 @@ class PianoEnv(DirectRLEnv):
 
         spawn_ground_plane(prim_path="/World/ground", cfg=GroundPlaneCfg())
 
-        # Pedestals under each UR10e base so the arms aren't floating in the air
-        # (purely cosmetic -- the bases are already world-fixed). Each box runs
-        # from the ground up to that base's z, read live from the resolved cfg so
-        # it adapts to the arm/slider layouts.
-        for _name, _rc in (("LeftPedestal", self.cfg.left_robot_cfg),
-                            ("RightPedestal", self.cfg.right_robot_cfg)):
-            _bx, _by, _bz = _rc.init_state.pos
-            if _bz and _bz > 0.02:
-                _ped = sim_utils.CuboidCfg(
-                    size=(0.26, 0.26, float(_bz)),
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=(0.22, 0.22, 0.25), metallic=0.1),
-                )
-                _ped.func(f"/World/{_name}", _ped,
-                          translation=(_bx, _by, float(_bz) / 2.0))
-
         self.scene.clone_environments(copy_from_source=False)
 
         self.scene.articulations["left_robot"] = self.left_robot
@@ -424,7 +399,7 @@ class PianoEnv(DirectRLEnv):
         self.prev_actions = self.actions.clone()
         a_left = self.actions[:, : self.per_arm_dof]
         a_right = self.actions[:, self.per_arm_dof :]
-        ref = self.base_pose[self.song_id, self.song_step]          # (E, 2, 30) ready pose
+        ref = self.base_pose[self.song_id, self.song_step]          # (E, 2, 25) ready pose
         # residual on all joints, but per-joint scaled (gentle arm / generous hand;
         # see self.joint_scale). Targets are clamped to joint limits and obs are
         # NaN-guarded, so a transient blow-up can't crash PPO.
@@ -1001,7 +976,7 @@ class PianoEnv(DirectRLEnv):
         # WRIST-TABLE CLEARANCE: penalize a wrist dipping below wrist_clear_z (table top
         # ~0.72 m, keys ~0.76 m) so it never buries into the support block. Per arm.
         w_wc = getattr(self.cfg, "wrist_clear_weight", 0.0)
-        if w_wc > 0.0:
+        if w_wc > 0.0 and self.lwrist_id is not None:
             z_thr = getattr(self.cfg, "wrist_clear_z", 0.82)
             origins = self.scene.env_origins                              # (E,3)
             wl = self.left_robot.data.body_pos_w[:, self.lwrist_id].squeeze(1) - origins
@@ -1090,7 +1065,7 @@ class PianoEnv(DirectRLEnv):
         super()._reset_idx(env_ids)
 
         # start each arm at the ready pose (the residual base's first frame)
-        q0 = self.base_pose[0, 0]                         # (2, 30) song 0, step 0
+        q0 = self.base_pose[0, 0]                         # (2, 25) song 0, step 0
         for robot, ref in ((self.left_robot, q0[0]), (self.right_robot, q0[1])):
             jp = ref.unsqueeze(0).repeat(len(env_ids), 1)
             jv = torch.zeros_like(jp)

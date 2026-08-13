@@ -1,6 +1,6 @@
-"""Config for the bimanual piano task: two UR10e+Shadow arms over an 88-key piano.
+"""Config for two physical Shadow Hands on independent Y rails over a piano.
 
-Two combined UR10e+Shadow articulations (~30 DoF each = 60 action DoF) over a
+Two Shadow Hand articulations (Y rail + 24 hand DoF each = 50 action DoF) over a
 separate 88-key piano articulation whose keys are passive springs. A MIDI song
 defines, per control step, which keys should sound -- the goal the policy is
 rewarded on. Articulation cfgs are fields here and instantiated in
@@ -16,7 +16,11 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg, PhysxCfg
 from isaaclab.utils import configclass
 
-from dexsim.assets import UR10E_SHADOW_CFG, UR10E_SHADOW_LEFT_CFG, PIANO_CFG
+from dexsim.assets import (
+    PIANO_SHADOW_HAND_LEFT_CFG,
+    PIANO_SHADOW_HAND_RIGHT_CFG,
+    PIANO_CFG,
+)
 from dexsim import DATA_DIR
 
 # 20 Hz policy (decimation 6 @ 120 Hz sim) -> matches MIDI control_dt 0.05
@@ -26,7 +30,7 @@ CONTROL_DT = SIM_DT * DECIMATION
 
 GOAL_LOOKAHEAD = 10               # steps of upcoming notes the policy sees (~0.5s)
 NUM_KEYS = 88
-PER_ARM_DOF = 30                  # UR10e(6) + Shadow(24)
+PER_HAND_DOF = 25                 # one Y rail + Shadow Hand(24)
 NUM_FINGERS = 10                  # 5 per hand
 
 
@@ -35,7 +39,7 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # --- spaces ---
     decimation = DECIMATION
     episode_length_s = 30.0
-    action_space = 2 * PER_ARM_DOF                       # 60 (residual on the ready pose)
+    action_space = 2 * PER_HAND_DOF                      # 50 (rail + hand joints)
     observation_space = 0                                # computed in __post_init__
     state_space = 0
 
@@ -60,11 +64,11 @@ class PianoEnvCfg(DirectRLEnvCfg):
     )
 
     # --- articulations (instantiated in _setup_scene) ---
-    # left arm = left-hand combined asset, right arm = right-hand asset.
-    left_robot_cfg: ArticulationCfg = UR10E_SHADOW_LEFT_CFG.replace(
+    # Separate physical hands; each root is a world-anchored prismatic Y joint.
+    left_robot_cfg: ArticulationCfg = PIANO_SHADOW_HAND_LEFT_CFG.replace(
         prim_path="/World/envs/env_.*/LeftRobot"
     )
-    right_robot_cfg: ArticulationCfg = UR10E_SHADOW_CFG.replace(
+    right_robot_cfg: ArticulationCfg = PIANO_SHADOW_HAND_RIGHT_CFG.replace(
         prim_path="/World/envs/env_.*/RightRobot"
     )
     piano_cfg: ArticulationCfg = PIANO_CFG.replace(
@@ -91,29 +95,28 @@ class PianoEnvCfg(DirectRLEnvCfg):
     left_key_window: tuple[int, int] = (19, 26)
     right_key_window: tuple[int, int] = (63, 70)
 
-    # --- layout: robots in front of the piano, facing it ---
-    # Piano keys' player side faces +X; the robots sit at large +X and are rotated
-    # 180deg about Z to reach -X back onto the keys.
+    # --- layout: level, non-overlapping one-axis hand rails ---
     piano_pos = (0.61, 0.598, 0.746)     # keyboard centered at (0.60, 0, 0.756)
     piano_rot = (0.0, 0.0, 0.0, 1.0)     # 180deg about Z
-    left_base_pos = (1.65, -0.30, 0.85)  # left hand over the low keys (-Y)
-    right_base_pos = (1.65, 0.30, 0.85)  # right hand over the high keys (+Y)
-    arm_base_rot = (0.0, 0.0, 0.0, 1.0)  # wxyz: 180deg about Z so the arm faces the piano
+    hand_fixed_z: float = 0.88
+    left_base_pos = (0.82, -0.30, hand_fixed_z)
+    right_base_pos = (0.82, 0.30, hand_fixed_z)
+    hand_base_rot = (0.0, 0.0, 0.0, 1.0)  # same orientation and height
 
     # --- action scaling: target = default + scale * action (action in [-1,1]) ---
     # Per-joint (see PianoEnv.joint_scale): the stiff arm joints (stiffness 6000)
     # blow up under a large residual; the weak hand joints (stiffness 3) need a
     # generous range to travel between keys. So scale the arm gently, the hand more.
-    arm_action_scale: float = 0.15    # 0.15 is the stable max (0.30 crashed physics)
+    arm_action_scale: float = 0.12    # legacy name: rootJoint rail travel scale
     hand_action_scale: float = 0.35   # travels between keys without mashing
     action_scale: float = 0.15        # legacy global scale (unused; back-compat)
 
     # --- arm mode ---
     # FIXED HANDS: arms hold a constant pose; only the fingers train (RoboPianist-style).
-    freeze_arms: bool = True
+    freeze_arms: bool = False
     # mute the right hand (hold its fingers at the ready pose) for left-hand-only
     # songs so it can't mash idle keys. MUST be False for two-handed songs.
-    mute_right_hand: bool = True
+    mute_right_hand: bool = False
 
     # ARM-IK-FOLLOW: WristPoseIK servos the 12 arm DoF to the per-hand note centroid
     # each step; the policy action is masked to the 48 finger DoF. Set freeze_arms=False.
@@ -147,7 +150,7 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # or drifting forward of x (lying flat); keep it up and back toward the base.
     forearm_clear_z: float = 0.90
     forearm_back_x: float = 0.93
-    forearm_clear_weight: float = 3.0
+    forearm_clear_weight: float = 0.0
     # INTER-ARM SEPARATION: penalize palm-palm distance below arm_sep_min (anti-collision).
     # Only acts when the POLICY drives the arms; in arm_ik_follow lane_clamp handles it.
     arm_sep_weight: float = 0.0
@@ -221,7 +224,7 @@ class PianoEnvCfg(DirectRLEnvCfg):
     arm_home_idle: bool = True
     # ARM-HEALTH penalties: subtract jerk_weight*action_jerk + limit_weight*(1-limit_margin).
     jerk_weight: float = 0.1
-    limit_weight: float = 0.2
+    limit_weight: float = 0.0
 
     # --- recall-gated annealing (press-discovery curriculum) ---
     # Hold the false-press penalty low (and energy at 0) so pressing gets discovered,
@@ -254,30 +257,20 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # User-declared final baseline -- do NOT change without an explicit request. See CLAUDE.md.
     # ===============================================================================
     left_ready_pose = {
-        "shoulder_pan_joint": -0.275,
-        "shoulder_lift_joint": -0.640,
-        "elbow_joint": 2.20,
-        "wrist_1_joint": -4.782,
-        "wrist_2_joint": -1.570,
-        "wrist_3_joint": 3.14159,
+        "railJoint": 0.0,
         "robot0_WRJ0": 0.45,   # wrist tilt up, range [-0.70, 0.49]
         "robot0_WRJ1": 0.13,   # range [-0.49, 0.14]
         "robot0_(?!WRJ).*": 0.0,
     }
     right_ready_pose = {
-        "shoulder_pan_joint": -0.275,
-        "shoulder_lift_joint": -0.640,
-        "elbow_joint": 2.20,
-        "wrist_1_joint": -4.782,
-        "wrist_2_joint": -1.570,
-        "wrist_3_joint": 3.14159,
+        "railJoint": 0.0,
         "robot0_WRJ0": 0.45,
         "robot0_WRJ1": 0.13,
         "robot0_(?!WRJ).*": 0.0,
     }
 
     def __post_init__(self):
-        per_arm = PER_ARM_DOF
+        per_arm = PER_HAND_DOF
         # observation size from the feature flags (single source of truth)
         obs = (
             2 * per_arm * 2                        # both arms pos+vel
@@ -299,7 +292,10 @@ class PianoEnvCfg(DirectRLEnvCfg):
             self.piano_cfg.actuators["keys"].damping = self.key_damping
         self.left_robot_cfg.init_state.pos = self.left_base_pos
         self.right_robot_cfg.init_state.pos = self.right_base_pos
-        _br = getattr(self, "arm_base_rot", (1.0, 0.0, 0.0, 0.0))
+        # Enforce identical world-Z even if a caller edited one tuple directly.
+        self.left_robot_cfg.init_state.pos = (*self.left_base_pos[:2], self.hand_fixed_z)
+        self.right_robot_cfg.init_state.pos = (*self.right_base_pos[:2], self.hand_fixed_z)
+        _br = getattr(self, "hand_base_rot", (1.0, 0.0, 0.0, 0.0))
         self.left_robot_cfg.init_state.rot = _br
         self.right_robot_cfg.init_state.rot = _br
         self.left_robot_cfg.init_state.joint_pos = dict(self.left_ready_pose)

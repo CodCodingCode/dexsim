@@ -331,7 +331,102 @@ def handle_query(job):
     return res
 
 
-HANDLERS = {"scene": handle_scene, "rollout": handle_rollout, "query": handle_query}
+def handle_rerun(job):
+    """Dump the scene's geometry + link poses for the Rerun viewer.
+
+    Writes an npz here (Isaac's numpy<2 world) and shells out to the .venv-rerun
+    interpreter to turn it into the .rrd -- see rerun_export for why the two
+    can't share a venv. Pass a rollout to get an animated recording instead of
+    the static ready pose.
+    """
+    import omni.usd
+    from dexsim.render import rerun_export as rx
+
+    out = job.get("out") or "results/piano_scene.rrd"
+    dump = job.get("dump") or os.path.splitext(out)[0] + ".npz"
+    for path in (out, dump):
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+    stage = omni.usd.get_context().get_stage()
+    arts = {"piano": (piano, "/World/Piano"), "left": (left, "/World/LeftRobot"),
+            "right": (right, "/World/RightRobot")}
+
+    d = rx.SceneDump()
+    meshes = {}
+    for key, (art, prim_path) in arts.items():
+        meshes[key] = rx.collect_link_meshes(stage, art, prim_path)
+        d.add_geometry(rx.ROOTS[key], meshes[key], rx.COLORS[key])
+
+    rdt = control_dt
+    if job.get("physics_demo"):
+        # Drive targets, never teleport body poses: every captured transform is
+        # the result of PhysX integration, joint limits, gravity and contacts.
+        frames = max(2, int(job.get("max_frames", 120)))
+        substeps = max(1, int(round(control_dt / sim.get_physics_dt())))
+        li = LEFT_NAMES.index("railJoint")
+        ri = RIGHT_NAMES.index("railJoint")
+        lflex = [i for i, n in enumerate(LEFT_NAMES)
+                 if n.startswith("robot0_") and n[-1:] in ("1", "2", "3")]
+        rflex = [i for i, n in enumerate(RIGHT_NAMES)
+                 if n.startswith("robot0_") and n[-1:] in ("1", "2", "3")]
+        for t in range(frames):
+            phase = 2.0 * np.pi * t / max(1, frames - 1)
+            ltarget = left.data.default_joint_pos.clone()
+            rtarget = right.data.default_joint_pos.clone()
+            ltarget[:, li] = 0.10 * np.sin(phase)
+            rtarget[:, ri] = -0.10 * np.sin(phase)
+            curl = 0.32 * (0.5 - 0.5 * np.cos(2.0 * phase))
+            ltarget[:, lflex] += curl
+            rtarget[:, rflex] += curl
+            left.set_joint_position_target(ltarget)
+            right.set_joint_position_target(rtarget)
+            piano.set_joint_position_target(piano.data.default_joint_pos)
+            for _ in range(substeps):
+                for art in (piano, left, right):
+                    art.write_data_to_sim()
+                sim.step()
+                for art in (piano, left, right):
+                    art.update(sim.get_physics_dt())
+            for key, (art, _) in arts.items():
+                d.add_frame(rx.ROOTS[key], art, meshes[key])
+            d.end_frame()
+    elif job.get("rollout"):
+        data = np.load(job["rollout"], allow_pickle=True)
+        trajs = {k: torch.tensor(data[k], dtype=torch.float32, device=args.device)
+                 for k in ("left", "right", "keys")}
+        rdt = float(data["control_dt"]) if "control_dt" in data else control_dt
+        stride = max(1, int(job.get("stride", 1)))
+        idxs = list(range(0, trajs["left"].shape[0], stride))
+        if job.get("max_frames"):
+            idxs = idxs[: int(job["max_frames"])]
+        for t in idxs:
+            studio.set_state(left, trajs["left"][t:t + 1])
+            studio.set_state(right, trajs["right"][t:t + 1])
+            piano.write_joint_state_to_sim(trajs["keys"][t:t + 1],
+                                           torch.zeros_like(trajs["keys"][t:t + 1]))
+            piano.write_data_to_sim()
+            sim.step()
+            for key, (art, _) in arts.items():
+                d.add_frame(rx.ROOTS[key], art, meshes[key])
+            d.end_frame()
+        rdt *= stride
+    else:                                        # single frame at the ready pose
+        _drive_default()
+        for _ in range(int(job.get("settle", 30))):
+            sim.step()
+        for key, (art, _) in arts.items():
+            d.add_frame(rx.ROOTS[key], art, meshes[key])
+        d.end_frame()
+
+    stats = d.save(dump, control_dt=rdt)
+    py = job.get("rerun_python", ".venv-rerun/bin/python")
+    subprocess.run([py, "scripts/render/rrd_from_dump.py", "--dump", dump,
+                    "--out", out], check=True)
+    return {"out": out, "dump": dump, **stats}
+
+
+HANDLERS = {"scene": handle_scene, "rollout": handle_rollout, "query": handle_query,
+            "rerun": handle_rerun}
 
 
 # --------------------------------------------------------------------------- #

@@ -53,7 +53,7 @@ Key assets (generated once, already built here):
 - `assets/piano88.usd` — 88 keys, each a sprung hinge (`joint_0..joint_87`,
   index = MIDI−21). A key "sounds" when its hinge angle ≤ `KEY_SOUND_ANGLE`.
   Rebuild: `python scripts/build/build_piano_usd.py`.
-- `assets/ur10e_shadow.usd` — UR10e + Shadow bonded into one articulation
+- `assets/ur10e_shadow_right.usd` — UR10e + right Shadow Hand bonded into one articulation
   (`wrist_3_link → robot0_forearm`). Rebuild:
   `python scripts/build/build_combined_usd.py --inspect` then without `--inspect`.
 

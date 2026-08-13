@@ -1,5 +1,6 @@
 # --- large / regenerable: never commit ---
 .venv/
+.venv-rerun/
 IsaacLab/
 # 769MB staged NVIDIA driver (regenerate via scripts/setup_nvidia_gl.sh)
 .nvidia-gl/

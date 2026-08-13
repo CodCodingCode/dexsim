@@ -7,6 +7,8 @@ Isaac boot is paid once by the long-lived server, not per render.
   python scripts/render/render.py rollout --rollout logs/rollout.npz --out results/v.mp4 --spp 96
   python scripts/render/render.py query   --kind layout --out logs/layout.json
   python scripts/render/render.py query   --kind palm --rollout logs/rollout.npz --out logs/palm.json
+  python scripts/render/render.py rerun   --out results/piano_scene.rrd
+  python scripts/render/render.py rerun   --rollout logs/rollout.npz --out results/play.rrd
   python scripts/render/render.py shutdown
 
 Start the server first (once):
@@ -36,7 +38,7 @@ def build_job(a):
     job = {"type": a.cmd}
     if a.cmd == "shutdown":
         return job
-    for k in ("out", "rollout", "eye", "target", "frames_dir", "kind"):
+    for k in ("out", "rollout", "eye", "target", "frames_dir", "kind", "dump"):
         v = getattr(a, k, None)
         if v is not None:
             job[k] = v
@@ -46,6 +48,8 @@ def build_job(a):
             job[k] = v
     if getattr(a, "fps", 0):
         job["fps"] = a.fps
+    if getattr(a, "physics_demo", False):
+        job["physics_demo"] = True
     if getattr(a, "left_joints", None):
         job["left_joints"] = _kv_json(a.left_joints)
     if getattr(a, "right_joints", None):
@@ -60,7 +64,7 @@ def build_job(a):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("cmd", choices=["scene", "rollout", "query", "shutdown"])
+    p.add_argument("cmd", choices=["scene", "rollout", "query", "rerun", "shutdown"])
     p.add_argument("--jobs_dir", default="logs/render_jobs")
     p.add_argument("--timeout", type=float, default=600.0)
     p.add_argument("--out")
@@ -74,6 +78,9 @@ def main():
     p.add_argument("--frame", type=int, default=-1, help="scene: render this rollout frame")
     p.add_argument("--fps", type=float, default=0)
     p.add_argument("--frames_dir")
+    p.add_argument("--dump", help="rerun: intermediate npz path (default: <out>.npz)")
+    p.add_argument("--physics_demo", action="store_true",
+                   help="rerun: record PhysX-driven rail and finger motion")
     p.add_argument("--kind", default="bodies",
                    help="query preset: layout | orient | palm | bodies")
     p.add_argument("--bodies", help="query bodies: comma-separated name substrings")

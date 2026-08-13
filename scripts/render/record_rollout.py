@@ -16,6 +16,8 @@ p.add_argument("--checkpoint", default=None)
 p.add_argument("--zero", action="store_true", help="zero residual = pure IK reference")
 p.add_argument("--midi", default="data/midi/song.mid")
 p.add_argument("--out", default="logs/rollout.npz")
+p.add_argument("--rerun", nargs="?", const="auto", default=None, metavar="OUT.RRD",
+               help="also write a scrub-able Rerun recording (default: same stem as --out)")
 p.add_argument("--arm_ik_follow", action="store_true",
                help="online WristPoseIK servos the arms to the fingering centroid")
 p.add_argument("--planar_ik", action="store_true",
@@ -160,4 +162,13 @@ g = np.array(GOAL); s = np.array(SOUND)
 tp = (g.astype(bool) & s.astype(bool)).sum()
 print(f"[record_rollout] saved {len(L)} frames -> {a.out}  "
       f"goal_notes={int(g.sum())} sounded={int(s.sum())} correct={int(tp)}")
+if a.rerun is not None:
+    from pathlib import Path
+    import subprocess
+    rrd_out = Path(a.out).with_suffix(".rrd") if a.rerun == "auto" else Path(a.rerun)
+    subprocess.run([
+        ".venv-rerun/bin/python", "scripts/render/view_rollout_rerun.py",
+        a.out, "--out", str(rrd_out),
+    ], check=True)
+    print(f"[record_rollout] Rerun recording -> {rrd_out}")
 app.close()

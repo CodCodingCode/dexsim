@@ -5,11 +5,11 @@ Everything here is *native USD* from the Isaac Sim asset library -- no URDF
 conversion. The two sub-assets are:
 
   * UR10e          {ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd
-  * Shadow Hand    {ISAAC_NUCLEUS_DIR}/Robots/ShadowHand/shadow_hand_instanceable.usd
+  * Shadow Hand    assets/nvidia_shadow_right/shadow_hand_right.usd
 
 The combined articulation (arm flange -> hand base, joined by a fixed joint
 with a single articulation root) is produced by
-``scripts/build_combined_usd.py`` and written to ``assets/ur10e_shadow.usd``.
+``scripts/build_combined_usd.py`` and written to ``assets/ur10e_shadow_right.usd``.
 ``UR10E_SHADOW_CFG`` points at that file.
 """
 
@@ -23,14 +23,18 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from dexsim import ASSETS_DIR
 
 # Where build_combined_usd.py writes the composed arm+hand articulation.
-COMBINED_USD_PATH = str(ASSETS_DIR / "ur10e_shadow.usd")
+SHADOW_HAND_RIGHT_USD_PATH = str(ASSETS_DIR / "nvidia_shadow_right" / "shadow_hand_right.usd")
+SHADOW_HAND_LEFT_USD_PATH = str(ASSETS_DIR / "shadow_hand_left.usd")
+SHADOW_HAND_LEFT_SLIDER_USD_PATH = str(ASSETS_DIR / "shadow_hand_left_slider.usda")
+SHADOW_HAND_RIGHT_SLIDER_USD_PATH = str(ASSETS_DIR / "shadow_hand_right_slider.usda")
+COMBINED_USD_PATH = str(ASSETS_DIR / "ur10e_shadow_right.usd")
 
 # LEFT-hand combined. Isaac ships only a RIGHT Shadow Hand and PhysX rejects a
 # negative-scale mirror, so the left hand is a one-time import of the MuJoCo-
 # menagerie LEFT model (pure-Isaac USD at runtime), renamed lh_* -> robot0_* so
 # it shares the right hand's joint/body convention. Build it with:
 #   python scripts/build/build_combined_usd.py --headless \
-#       --hand-usd assets/shadow_hand_left_r0.usd --out assets/ur10e_shadow_left.usd \
+#       --hand-usd assets/shadow_hand_left.usd --out assets/ur10e_shadow_left.usd \
 #       --flange-link wrist_3_link
 COMBINED_LEFT_USD_PATH = str(ASSETS_DIR / "ur10e_shadow_left.usd")
 
@@ -101,7 +105,7 @@ UR10E_CFG = ArticulationCfg(
 # ---------------------------------------------------------------------------
 SHADOW_HAND_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{ISAAC_NUCLEUS_DIR}/Robots/ShadowHand/shadow_hand_instanceable.usd",
+        usd_path=SHADOW_HAND_RIGHT_USD_PATH,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=True,
             retain_accelerations=True,
@@ -137,6 +141,54 @@ SHADOW_HAND_CFG = ArticulationCfg(
 )
 """Shadow Hand only (24-DOF, gravity-disabled) -- the canonical in-hand
 reorientation embodiment. Values mirror Isaac Lab's built-in SHADOW_HAND_CFG."""
+
+
+def _piano_slider_hand(usd_path: str) -> ArticulationCfg:
+    """Physical Shadow Hand whose base has exactly one world-Y rail joint."""
+    return SHADOW_HAND_CFG.replace(
+        spawn=SHADOW_HAND_CFG.spawn.replace(
+            usd_path=usd_path,
+            activate_contact_sensors=True,
+            rigid_props=SHADOW_HAND_CFG.spawn.rigid_props.replace(
+                disable_gravity=False,
+                max_depenetration_velocity=5.0,
+            ),
+            articulation_props=SHADOW_HAND_CFG.spawn.articulation_props.replace(
+                enabled_self_collisions=True,
+                solver_position_iteration_count=16,
+                solver_velocity_iteration_count=2,
+            ),
+        ),
+        actuators={
+            "rail": ImplicitActuatorCfg(
+                joint_names_expr=["railJoint"],
+                effort_limit_sim=500.0,
+                velocity_limit_sim=1.0,
+                stiffness=1200.0,
+                damping=120.0,
+            ),
+            "fingers": ImplicitActuatorCfg(
+                # 20 independently actuated hand DoFs. The four *J0 distal
+                # joints are tendon-coupled to *J1 and must not get a second
+                # actuator model.
+                joint_names_expr=[
+                    "robot0_WRJ(1|0)",
+                    "robot0_(FF|MF|RF|LF)J(3|2|1)",
+                    "robot0_(LF|TH)J4",
+                    "robot0_THJ(3|2|1|0)",
+                ],
+                effort_limit_sim=40.0,
+                velocity_limit_sim=50.0,
+                stiffness=45.0,
+                damping=2.0,
+                friction=0.01,
+            ),
+        },
+    )
+
+
+PIANO_SHADOW_HAND_LEFT_CFG = _piano_slider_hand(SHADOW_HAND_LEFT_SLIDER_USD_PATH)
+PIANO_SHADOW_HAND_RIGHT_CFG = _piano_slider_hand(SHADOW_HAND_RIGHT_SLIDER_USD_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +283,6 @@ UR10E_SHADOW_LEFT_CFG = UR10E_SHADOW_CFG.replace(
 )
 """UR10e + true LEFT Shadow Hand. The left combined asset
 (assets/ur10e_shadow_left.usd) is rebuilt from the joint-ref-fixed
-shadow_hand_left_r0.usd so the hand chain stays connected to the forearm
+shadow_hand_left.usd so the hand chain stays connected to the forearm
 (earlier the combined was stale -- built before the joint-ref fix -- so palm+
 fingers detached). See note above."""

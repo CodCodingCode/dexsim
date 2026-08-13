@@ -73,7 +73,7 @@ python scripts/train/play_rl.py --num_envs 16 --video
 python scripts/prep/download_bodex.py --list          # inspect the repo first
 python scripts/prep/download_bodex.py --include "..."  # grab a subset
 python scripts/build/build_combined_usd.py --inspect    # verify mount frames
-python scripts/build/build_combined_usd.py              # build assets/ur10e_shadow.usd
+python scripts/build/build_combined_usd.py              # build assets/ur10e_shadow_right.usd
 python scripts/prep/replay_bodex.py --traj data/bodex/<file>.npz --headless
 ```
 
@@ -100,6 +100,24 @@ python scripts/render/render.py query   --kind orient  --out logs/orient.json   
 python scripts/render/render.py query   --kind palm --rollout logs/r.npz --out logs/palm.json  # verify_palm
 python scripts/render/render.py shutdown            # stop the server
 ```
+
+For time-scrubbed debugging without another Isaac boot, convert any recorded
+rollout to a Rerun recording:
+
+```bash
+python scripts/render/record_rollout.py --headless --zero --rerun
+.venv-rerun/bin/rerun logs/rollout.rrd
+
+# or convert an existing rollout instantly:
+.venv-rerun/bin/python scripts/render/view_rollout_rerun.py logs/rollout.npz --open
+
+# export the full robot + piano meshes through the warm render server:
+python scripts/render/render.py rerun --rollout logs/rollout.npz --out results/rollout.rrd
+```
+
+Rerun includes palm/target motion, reach error, goal versus sounding keys, and
+all left/right joint traces. Keep this to one debug environment; full training
+runs should remain headless.
 
 Measured on this box (while a training swarm shared the GPU): boot 28 s; then a
 `layout` query 1.6 s, an `orient` query 1.7 s, a 64-spp still 10 s (pure

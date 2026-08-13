@@ -10,7 +10,7 @@ Reflection R = diag(-1,1,1). For a consistent global reflection:
     joint command still flexes the finger INWARD (verified below).
 Inertia principal axes / CoM mirrored if authored.
 
-Output: assets/shadow_hand_left_mirror.usd  (bodies already robot0_* -> drop-in
+Output: assets/shadow_hand_left.usd  (bodies already robot0_* -> drop-in
 for build_combined_usd.py, no rename needed).
 
   python scripts/build/mirror_right_to_left.py --headless
@@ -29,8 +29,8 @@ import numpy as np
 from pxr import Usd, UsdGeom, UsdPhysics, Gf, Vt
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-SRC = f"{ISAAC_NUCLEUS_DIR}/Robots/ShadowHand/shadow_hand.usd"
-OUT = "assets/shadow_hand_left_mirror.usd"
+SRC = "assets/nvidia_shadow_right/shadow_hand.usd"
+OUT = "assets/shadow_hand_left.usd"
 
 R3 = Gf.Matrix3d(-1, 0, 0, 0, 1, 0, 0, 0, 1)
 R4 = Gf.Matrix4d(R3, Gf.Vec3d(0, 0, 0))
