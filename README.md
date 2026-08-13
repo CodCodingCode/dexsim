@@ -58,6 +58,19 @@ dexsim/
 
 ## Quickstart
 
+This repository stores Rerun recordings (`*.rrd`) with Git LFS. Install Git LFS
+before cloning so a normal clone downloads the recordings automatically:
+
+```bash
+sudo apt-get install git-lfs   # Ubuntu/Debian; see https://git-lfs.com for other platforms
+git lfs install
+git clone https://github.com/CodCodingCode/dexsim.git
+```
+
+If you cloned before installing Git LFS, install it and download the real files
+in the existing checkout with `git lfs pull`. Without LFS, the `.rrd` paths may
+contain only small pointer files rather than the recordings.
+
 ```bash
 cd ~/dexsim
 source env.sh

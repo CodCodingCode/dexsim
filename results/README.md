@@ -1,5 +1,10 @@
 # Result: a working RL policy plays a bit of the easy song (Isaac, no MuJoCo)
 
+> **Git LFS:** Rerun recordings (`*.rrd`) are stored with Git LFS. A normal
+> `git clone` downloads them automatically when Git LFS is installed and
+> initialized. For an existing clone containing only pointer files, run
+> `git lfs install && git lfs pull` from the repository root.
+
 Built using RoboPianist's information (piano physics + their residual-RL recipe),
 ported into Isaac Lab. Verified by **F1 of actual key presses** (not reward),
 checked via wandb every 5 minutes during training.

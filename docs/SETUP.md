@@ -3,6 +3,20 @@
 Target box: single **H100 80GB**, Ubuntu 22.04, Python 3.10, **compute-only
 container** (CUDA present, graphics driver NOT — this matters, see below).
 
+## 0. Clone with Git LFS
+
+Rerun recordings (`results/*.rrd`) are stored with Git LFS. Install and
+initialize LFS before cloning; `git clone` will then download them automatically:
+
+```bash
+sudo apt-get install git-lfs
+git lfs install
+git clone https://github.com/CodCodingCode/dexsim.git
+```
+
+For an existing clone made without Git LFS, run `git lfs install` followed by
+`git lfs pull` from the repository root.
+
 ## 1. Isaac Sim + Isaac Lab
 
 ```bash
