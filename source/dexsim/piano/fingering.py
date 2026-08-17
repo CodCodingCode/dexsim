@@ -134,7 +134,7 @@ def plan_fingering(key_activation: np.ndarray, method: str = "heuristic",
         **ot_kwargs: forwarded to :func:`plan_fingering_ot` when ``method="ot"``.
     """
     if method == "ot":
-        return plan_fingering_ot(key_activation, **ot_kwargs)
+        return plan_fingering_ot(key_activation, swap_hands=swap_hands, **ot_kwargs)
     if method != "heuristic":
         raise ValueError(f"unknown fingering method: {method!r}")
     T = key_activation.shape[0]
@@ -221,6 +221,7 @@ _THUMBS = (L_THUMB, R_THUMB)
 def plan_fingering_ot(
     key_activation: np.ndarray,
     *,
+    swap_hands: bool = False,
     side_weight: float = 2.5,
     black_thumb_weight: float = 0.03,
     home_pull_weight: float = 0.15,
@@ -237,6 +238,11 @@ def plan_fingering_ot(
       + side_weight * (how far k is into the *wrong* keyboard half for f)
       + black_thumb_weight * [k is a black key and f is a thumb]
 
+    ``swap_hands`` is the same GEOMETRY GUARDRAIL as in :func:`plan_fingering`:
+    the side penalty and the home spread assume the left finger group sits on the
+    low-pitch side of the keyboard, so a 180deg-flipped piano must flip them or
+    every note is routed across the body.
+
     Idle fingers are pulled gently back toward their spread "home" so they stay
     ready (``home_pull_weight``). ``current_pos`` carries across steps (when
     ``smooth=True``) so fingers prefer to stay put — giving temporally coherent,
@@ -252,8 +258,13 @@ def plan_fingering_ot(
     key_pos = geom.key_local_top_positions()                  # (88, 3)
     mid_y = float(key_pos[NUM_KEYS // 2, 1])                   # keyboard centre (local Y)
     home = _home_keys()                                        # (10,) home key idx
+    if swap_hands:                                             # flip which group owns which half
+        home = np.concatenate([home[FINGERS_PER_HAND:], home[:FINGERS_PER_HAND]])
     home_pos = key_pos[home]                                   # (10, 3)
     is_black = geom.KEY_IS_BLACK                               # (88,)
+    # finger groups on the low-Y / high-Y side of the keyboard (flipped by swap_hands)
+    low_fingers, high_fingers = ((_RIGHT_FINGERS, _LEFT_FINGERS) if swap_hands
+                                 else (_LEFT_FINGERS, _RIGHT_FINGERS))
 
     finger_key = np.full((T, NUM_FINGERS), -1, dtype=np.int64)
     finger_active = np.zeros((T, NUM_FINGERS), dtype=bool)
@@ -273,11 +284,11 @@ def plan_fingering_ot(
         cost = np.linalg.norm(cur[:, None, :] - kp[None, :, :], axis=2)  # (10, K)
         # hand-side penalty: left fingers pay for keys above mid, right below.
         dy = kp[:, 1] - mid_y                                 # (K,) +ve = right half
-        left_pen = np.maximum(dy, 0.0)[None, :]               # left fingers cross up
-        right_pen = np.maximum(-dy, 0.0)[None, :]             # right fingers cross down
+        low_pen = np.maximum(dy, 0.0)[None, :]                # low-side fingers reaching up
+        high_pen = np.maximum(-dy, 0.0)[None, :]              # high-side fingers reaching down
         side = np.zeros((NUM_FINGERS, K), dtype=np.float64)
-        side[list(_LEFT_FINGERS), :] = left_pen
-        side[list(_RIGHT_FINGERS), :] = right_pen
+        side[list(low_fingers), :] = low_pen
+        side[list(high_fingers), :] = high_pen
         cost = cost + side_weight * side
         # black-key-on-thumb penalty (thumbs are short / awkward on black keys)
         black = is_black[active][None, :].astype(np.float64)  # (1, K)

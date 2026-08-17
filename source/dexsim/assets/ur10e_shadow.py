@@ -162,15 +162,13 @@ def _piano_slider_hand(usd_path: str) -> ArticulationCfg:
         actuators={
             "rail": ImplicitActuatorCfg(
                 joint_names_expr=["railJoint"],
-                effort_limit_sim=500.0,
+                effort_limit_sim=5000.0,
                 velocity_limit_sim=1.0,
-                stiffness=1200.0,
-                damping=120.0,
+                stiffness=10000.0,
+                damping=500.0,
             ),
             "fingers": ImplicitActuatorCfg(
-                # 20 independently actuated hand DoFs. The four *J0 distal
-                # joints are tendon-coupled to *J1 and must not get a second
-                # actuator model.
+                # 20 independently actuated hand DoFs (J0 handled below).
                 joint_names_expr=[
                     "robot0_WRJ(1|0)",
                     "robot0_(FF|MF|RF|LF)J(3|2|1)",
@@ -181,6 +179,23 @@ def _piano_slider_hand(usd_path: str) -> ArticulationCfg:
                 velocity_limit_sim=50.0,
                 stiffness=45.0,
                 damping=2.0,
+                friction=0.01,
+            ),
+            # DISTAL JOINTS (2026-08-15): on the real Shadow Hand each finger's
+            # J1+J0 share ONE tendon; the USD models that by leaving *J0 with
+            # zero drives, expecting a coupling constraint that nothing in this
+            # scene implements. Result (measured via `query --kind drives` +
+            # `--settle`): J0 flops freely, the finger cannot hold a commanded
+            # curl (FFJ1=1.0 settles at 0.33), fingertips end ~24 mm above
+            # target, and no key ever goes down. Until a real PhysX tendon is
+            # authored, actuate J0 directly as the tendon's stand-in -- slightly
+            # softer than the proximal joints to keep tendon-like compliance.
+            "distal": ImplicitActuatorCfg(
+                joint_names_expr=["robot0_(FF|MF|RF|LF)J0"],
+                effort_limit_sim=30.0,
+                velocity_limit_sim=50.0,
+                stiffness=30.0,
+                damping=1.5,
                 friction=0.01,
             ),
         },

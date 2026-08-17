@@ -49,6 +49,21 @@ def set_total_spp(total_spp):
     carb.settings.get_settings().set("/rtx/pathtracing/totalSpp", int(total_spp))
 
 
+def apply_realtime_settings():
+    """RTX Real-Time (rasterised + RT lighting) instead of the path tracer.
+
+    Path tracing accumulates hundreds of samples per still -- right for a final
+    frame, absurd for "is the hand over the keys?". Real-time mode renders in
+    one pass, ~1-2 orders of magnitude faster, and is plenty for placement and
+    geometry checks. Call apply_pathtrace_settings() again to go back.
+    """
+    import carb
+    s = carb.settings.get_settings()
+    s.set("/rtx/rendermode", "RaytracedLighting")
+    s.set("/rtx/post/tonemap/op", 1)
+    s.set("/app/asyncRendering", False)
+
+
 # --------------------------------------------------------------------------- #
 # scene construction
 # --------------------------------------------------------------------------- #
@@ -109,7 +124,9 @@ def _spawn_base_pedestals(cfg):
     for _nm, _rc in (("LeftPedestal", cfg.left_robot_cfg),
                      ("RightPedestal", cfg.right_robot_cfg)):
         _bx, _by, _bz = _rc.init_state.pos
-        if _bz and _bz > 0.02:
+        # Overhead rail mounts (z > 1) hang the hands from above; a floor-to-mount
+        # tower would fill the whole camera frame, so skip the pedestal there.
+        if _bz and 0.02 < _bz < 1.0:
             _pc = sim_utils.CuboidCfg(
                 size=(0.26, 0.26, float(_bz)),
                 visual_material=sim_utils.PreviewSurfaceCfg(

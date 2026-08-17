@@ -124,8 +124,20 @@ python scripts/render/record_rollout.py --headless --zero --rerun
 # or convert an existing rollout instantly:
 .venv-rerun/bin/python scripts/render/view_rollout_rerun.py logs/rollout.npz --open
 
+# recordings open with a baked-in layout and carry name/properties for run
+# comparison; tag them at conversion time:
+.venv-rerun/bin/python scripts/render/view_rollout_rerun.py logs/rollout.npz \
+    --name "rp1m baseline" --prop reward_mode=rp1m --prop seed=0
+
 # export the full robot + piano meshes through the warm render server:
 python scripts/render/render.py rerun --rollout logs/rollout.npz --out results/rollout.rrd
+```
+
+Both converters draw a falling-note roll above the keyboard (Synthesia-style:
+box height = hold duration; the box's bottom face reaches the key exactly at
+onset, then is consumed while the note is held).
+
+```bash
 ```
 
 Rerun includes palm/target motion, reach error, goal versus sounding keys, and
@@ -137,6 +149,23 @@ Measured on this box (while a training swarm shared the GPU): boot 28 s; then a
 path-tracing — drop `--spp` for faster previews). The RTX *shader* cache
 (`~/.cache/ov`) already persists across runs; the server adds the missing
 app-process + built-scene cache, which is what dominated cold iteration.
+
+### Kinematics in the browser (PyRoki, no Isaac, no GPU)
+
+The Shadow Hands are exported from USD to URDF so PyRoki/viser can drive them.
+The export is verified against PhysX (0.000 mm on all 27 bodies per hand), so an
+IK solution here is valid in the simulator:
+
+```bash
+source env.sh && python scripts/tools/export_hand_urdf.py   # ~1 s, no app boot
+.venv-pyroki/bin/python scripts/smoke/check_urdf_fk.py      # URDF FK vs Isaac
+.venv-pyroki/bin/python scripts/tools/piano_ik_viser.py     # http://localhost:8013
+```
+
+The demo shows both hands at the locked base poses over the real 88-key board,
+with a draggable gizmo per fingertip and a snap-a-finger-to-a-key panel. Since
+the hands ride a Y rail with no arm, X into the keyboard is unactuated — the
+"worst tip miss (mm)" readout tells you when a target is simply unreachable.
 
 The combined UR10e+Shadow articulation is built once by `build_combined_usd.py`
 (the genuinely fiddly part — two separate articulations bonded into one tree by

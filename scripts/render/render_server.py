@@ -30,10 +30,41 @@ p.add_argument("--width", type=int, default=1280)
 p.add_argument("--height", type=int, default=720)
 p.add_argument("--style", default="studio", choices=["studio", "simple"])
 p.add_argument("--poll", type=float, default=0.2, help="idle poll interval (s)")
+p.add_argument("--force", action="store_true",
+               help="boot even if another live server already owns this jobs_dir")
 AppLauncher.add_app_launcher_args(p)
 args = p.parse_args()
 args.headless = True
 args.enable_cameras = True
+
+# ---- SINGLETON GUARD (must run BEFORE AppLauncher: the boot below costs ~30 s
+# and ~5 GiB of VRAM, and duplicates are exactly how this box ends up with six
+# servers holding 22 GiB). Previously every boot simply overwrote server.ready
+# with its own pid, which silently orphaned the server that was already running:
+# still resident, still holding VRAM, but no longer reachable by the job client.
+# Now a boot that would duplicate refuses instead.
+def _incumbent(jobs_dir: str):
+    """PID of a LIVE server already owning this jobs_dir, else None."""
+    import json as _json
+    import os as _os
+    try:
+        with open(_os.path.join(jobs_dir, "server.ready")) as f:
+            pid = int(_json.load(f)["pid"])
+        _os.kill(pid, 0)              # signal 0 = liveness probe only
+        return pid
+    except Exception:
+        return None                   # missing, malformed, or stale -> free to boot
+
+
+_held = _incumbent(args.jobs_dir)
+if _held is not None and not args.force:
+    raise SystemExit(
+        f"[render_server] a live server already owns {args.jobs_dir} (pid {_held}).\n"
+        f"  Submit jobs to it:   python scripts/render/render.py scene --out logs/x.png\n"
+        f"  Or stop it first:    python scripts/render/render.py shutdown\n"
+        f"  Inspect the GPU:     python scripts/tools/gpu_watch.py\n"
+        f"  Really want a second server on this GPU? re-run with --force."
+    )
 
 app = AppLauncher(args).app
 
@@ -112,8 +143,10 @@ def _apply_joint_overrides(art, names, overrides):
 
 
 def _accumulate(spp, settle=0):
+    # Settling is PHYSICS -- rendering those frames path-traces images nobody
+    # ever sees (60 settle steps cost more than the final image did).
     for _ in range(max(0, settle)):
-        sim.step()
+        sim.step(render=False)
     sim.step()                                # restarts path-trace accumulation
     for _ in range(int(spp)):
         sim.render()
@@ -150,9 +183,16 @@ def _keyboard_bbox():
 # --------------------------------------------------------------------------- #
 def handle_scene(job):
     """Single path-traced still at the ready pose (or a rollout frame / overrides)."""
-    spp = int(job.get("spp", 160))
+    # FAST preview: RTX Real-Time instead of the path tracer. Placement checks
+    # don't need film-quality light transport; final stills/videos still do.
+    fast = bool(job.get("fast"))
+    spp = int(job.get("spp", 8 if fast else 160))
     settle = int(job.get("settle", 60))
-    studio.set_total_spp(spp)
+    if fast:
+        studio.apply_realtime_settings()
+    else:
+        studio.apply_pathtrace_settings(spp, tonemap=(args.style == "studio"))
+        studio.set_total_spp(spp)
 
     if job.get("rollout") and "frame" in job:
         data = np.load(job["rollout"], allow_pickle=True)
@@ -255,7 +295,10 @@ def handle_query(job):
             _apply_joint_overrides(left, LEFT_NAMES, job["left_joints"])
         if job.get("right_joints"):
             _apply_joint_overrides(right, RIGHT_NAMES, job["right_joints"])
-        for _ in range(5):
+        # 5 steps (42 ms) is enough to read a pose back, but NOT enough for the
+        # position drives to converge on a commanded fingertip pose -- ask for a
+        # real settle when you care about where the fingers ended up.
+        for _ in range(int(job.get("settle", 5))):
             sim.step()
         frames = None
 
@@ -296,6 +339,24 @@ def handle_query(job):
         over = all(kbx[0] - 0.1 <= r["left_palm"][0] <= kbx[1] + 0.15 for r in rows)
         res.update({"keyboard_x_range": kbx, "frames": rows,
                     "verdict": "over keys" if over else "NOT over keys (still reaching past)"})
+    elif kind == "drives":
+        # Actuator-health check: the gains/limits ACTUALLY in PhysX for each DoF,
+        # plus target-vs-achieved -- catches configured-but-never-applied drives.
+        rows = []
+        for art, names, label in ((left, LEFT_NAMES, "L"), (right, RIGHT_NAMES, "R")):
+            stiff = art.root_physx_view.get_dof_stiffnesses()[0]
+            damp = art.root_physx_view.get_dof_dampings()[0]
+            emax = art.root_physx_view.get_dof_max_forces()[0]
+            for i, n in enumerate(names):
+                rows.append({
+                    "hand": label, "joint": n,
+                    "sim_stiffness": round(float(stiff[i]), 3),
+                    "sim_damping": round(float(damp[i]), 3),
+                    "sim_max_force": round(float(emax[i]), 3),
+                    "default": round(float(art.data.default_joint_pos[0, i]), 3),
+                    "actual": round(float(art.data.joint_pos[0, i]), 3),
+                })
+        res.update({"dofs": rows})
     elif kind == "joints":
         # disambiguate L/R asset differences: applied default pose + limits per joint.
         def _lim(art, i):
@@ -317,6 +378,44 @@ def handle_query(job):
             })
         res.update({"name_symdiff": sorted(set(LEFT_NAMES) ^ set(RIGHT_NAMES)),
                     "joints": rows})
+    elif kind == "skeleton":
+        # EVERY body's world position on both hands (for the viser placement
+        # tool's live finger-pose preview). Joint overrides already applied above.
+        def _all_bodies(art):
+            return {n: {"pos": [round(float(v), 4) for v in
+                                art.data.body_pos_w[0, i].cpu().tolist()]}
+                    for i, n in enumerate(art.body_names)}
+        res.update({"left_bodies": _all_bodies(left),
+                    "right_bodies": _all_bodies(right)})
+    elif kind == "fk":
+        # Ground truth for the URDF export (scripts/tools/export_hand_urdf.py):
+        # ACHIEVED joint values (not commanded -- physics has settled) plus every
+        # body's world pose and the articulation root pose, so an external
+        # forward kinematics can be compared against PhysX exactly.
+        def _dump(art):
+            # Refresh the lazily-cached buffers first: without this, joint_pos and
+            # body_pos_w can be snapshots of DIFFERENT sim times, which shows up as
+            # a few mm of phantom "FK error" in the fingers.
+            art.update(sim.get_physics_dt())
+            pos = art.data.body_pos_w[0].cpu().numpy()
+            quat = art.data.body_quat_w[0].cpu().numpy()
+            return {
+                "root_pos": art.data.root_pos_w[0].cpu().tolist(),
+                "root_quat": art.data.root_quat_w[0].cpu().tolist(),   # wxyz
+                "joint_names": list(art.joint_names),
+                "joint_pos": art.data.joint_pos[0].cpu().tolist(),
+                "bodies": {n: {"pos": pos[i].tolist(), "quat": quat[i].tolist()}
+                           for i, n in enumerate(art.body_names)},
+            }
+        # Which keys are actually DOWN. This is the end-to-end proof that a
+        # scripted press works: drive the joints, then read the key angles PhysX
+        # produced from contact -- no reliance on our own kinematics at all.
+        kq = piano.data.joint_pos[0].cpu().numpy()
+        down = {int(i): round(float(kq[i]), 5)
+                for i in np.argsort(-np.abs(kq))[:8] if abs(kq[i]) > 1e-4}
+        res.update({"left": _dump(left), "right": _dump(right),
+                    "keys_down": down,
+                    "key_travel_max": round(float(np.abs(kq).max()), 5)})
     else:  # generic: dump the requested body world poses on each arm
         which = job.get("bodies", ["robot0_palm", "forearm", "wrist_3", "upper_arm"])
         res.update({"left_bodies": _bodies_world(left, which),
@@ -363,6 +462,12 @@ def handle_rerun(job):
         # the result of PhysX integration, joint limits, gravity and contacts.
         frames = max(2, int(job.get("max_frames", 120)))
         substeps = max(1, int(round(control_dt / sim.get_physics_dt())))
+        # A settled scene falls asleep in PhysX, and drive-target updates alone
+        # do not wake a sleeping articulation -- kick each one awake by writing
+        # its current joint state once, or the whole demo records a still.
+        for art in (piano, left, right):
+            art.write_joint_state_to_sim(art.data.joint_pos, art.data.joint_vel)
+            art.write_data_to_sim()
         li = LEFT_NAMES.index("railJoint")
         ri = RIGHT_NAMES.index("railJoint")
         lflex = [i for i, n in enumerate(LEFT_NAMES)
@@ -375,7 +480,11 @@ def handle_rerun(job):
             rtarget = right.data.default_joint_pos.clone()
             ltarget[:, li] = 0.10 * np.sin(phase)
             rtarget[:, ri] = -0.10 * np.sin(phase)
-            curl = 0.32 * (0.5 - 0.5 * np.cos(2.0 * phase))
+            # The wrist holds its locked ready tilt (see cfg wrist_lock); the key
+            # press comes from finger flexion: the arched fingers' curl arc has a
+            # downward component, so the curl itself drives the keys through
+            # contact. Two press cycles over the demo.
+            curl = 0.45 * (0.5 - 0.5 * np.cos(2.0 * phase))
             ltarget[:, lflex] += curl
             rtarget[:, rflex] += curl
             left.set_joint_position_target(ltarget)
@@ -384,7 +493,10 @@ def handle_rerun(job):
             for _ in range(substeps):
                 for art in (piano, left, right):
                     art.write_data_to_sim()
-                sim.step()
+                # render=False: this job exports GEOMETRY + transforms, never
+                # pixels, so the default rendering step would path-trace 6 frames
+                # per captured frame and throw every one away (~10x the runtime).
+                sim.step(render=False)
                 for art in (piano, left, right):
                     art.update(sim.get_physics_dt())
             for key, (art, _) in arts.items():
@@ -405,11 +517,18 @@ def handle_rerun(job):
             piano.write_joint_state_to_sim(trajs["keys"][t:t + 1],
                                            torch.zeros_like(trajs["keys"][t:t + 1]))
             piano.write_data_to_sim()
-            sim.step()
+            sim.step(render=False)          # geometry export -- no pixels needed
             for key, (art, _) in arts.items():
                 d.add_frame(rx.ROOTS[key], art, meshes[key])
             d.end_frame()
         rdt *= stride
+        if "goal" in data:            # rrd_from_dump draws the falling-note roll
+            from dexsim.piano.geometry import KEY_IS_BLACK, key_local_top_positions
+            piano_pos = (np.asarray(data["piano_pos"], np.float32)
+                         if "piano_pos" in data else np.asarray(cfg.piano_pos, np.float32))
+            d.arrays["__goal__"] = np.asarray(data["goal"], np.uint8)[idxs]
+            d.arrays["__key_xyz__"] = (key_local_top_positions() + piano_pos).astype(np.float32)
+            d.arrays["__key_black__"] = KEY_IS_BLACK
     else:                                        # single frame at the ready pose
         _drive_default()
         for _ in range(int(job.get("settle", 30))):

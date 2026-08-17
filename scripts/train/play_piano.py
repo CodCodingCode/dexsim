@@ -134,12 +134,16 @@ def main():
     else:
         print("[play_piano] ZERO action (engineered reference)")
 
-    obs, _ = env.get_observations()
+    # rsl-rl API drift: 2.x returns (obs, extras), 3.x returns just obs;
+    # step() likewise moved from 4-tuple to 3-tuple. Handle both stacks.
+    _o = env.get_observations()
+    obs = _o[0] if isinstance(_o, tuple) else _o
     sounded = []
     for _ in range(le.song_len):
         with torch.inference_mode():
             act = policy(obs) if policy is not None else torch.zeros(le.num_envs, cfg.action_space, device=le.device)
-            obs, _, _, _ = env.step(act)
+            _r = env.step(act)
+            obs = _r[0]
         snd = (le.piano.data.joint_pos[0] <= KEY_SOUND_ANGLE).cpu().numpy()
         sounded.append(snd)
     export_played_midi(sounded, cfg.control_dt, args.export_midi)

@@ -4,15 +4,13 @@ Each hand has one prismatic base joint plus its 24 physical hand joints.  The
 rail locks world X/Z and all base rotations; disjoint travel lanes prevent the
 two hands from crossing while finger/key and hand/hand contacts use PhysX.
 A MIDI song defines a per-step key-activation goal; an automatic fingering assigns
-each note to a finger. The control is **decoupled**: pure-math IK (``WristPoseIK``)
-servos the arms onto the upcoming-note centroid, while the RL policy learns finger
-pressing as a residual on top of a static ready pose. The slider embodiment is the
-same recipe with an analytic 1-DoF rail in place of the arm servo.
+each note to a finger. The RL policy drives everything: the rail slide positions
+the hand along the keyboard and the fingers press, as a residual on top of a
+static ready pose (RoboPianist's floating-forearm recipe with a 1-DoF base).
 
 What this env implements from RoboPianist:
-  * **Residual action** over a ready-pose base: arm columns are overwritten each
-    step by IK; zero action already tracks a competent positioning, so the policy
-    only learns the press.
+  * **Residual action** over a ready-pose base: zero action holds the ready
+    pose over the keys, so the policy only learns to slide and press.
   * **Fingering shaping reward** (finger -> assigned key): the term RoboPianist
     showed is make-or-break (F1 = 0 without it).
   * **Composite reward**: key-press (right keys down, none wrong) + fingering +
@@ -39,8 +37,10 @@ from dexsim.piano import (
 )
 from dexsim.piano.reward import (
     piano_reward, fingering_reward, onset_reward, arm_position_reward,
-    idle_hover_reward, PianoRewardCfg,
+    idle_hover_reward, PianoRewardCfg, RP1MRewardCfg, rp1m_reward,
+    hands_in_proximity,
 )
+from dexsim.piano.ot import ot_finger_cost
 from dexsim.piano.goal_encoding import nearest_active_distance
 from dexsim.assets import KEY_SOUND_ANGLE
 from .piano_env_cfg import PianoEnvCfg
@@ -91,51 +91,48 @@ class PianoEnv(DirectRLEnv):
         if getattr(self.cfg, "freeze_arms", False):
             self.joint_scale = self.joint_scale * is_hand.unsqueeze(0)
             print("[PianoEnv] FIXED RAILS: policy drives fingers only")
-        # ARM-IK-FOLLOW mode: arm DoF servoed by WristPoseIK to the note centroid; the
-        # policy drives only the finger DoF. Math positions the hands, RL presses.
-        self._arm_ik_follow = bool(getattr(self.cfg, "arm_ik_follow", False))
-        if self._arm_ik_follow:
-            self.joint_scale = self.joint_scale * is_hand.unsqueeze(0)
-            self._arm_dof_mask = (is_hand < 0.5)            # (30,) bool: the arm joints
-            # per-finger flexion-joint columns (J1/J2/J3) for the idle-finger curl, in
-            # per-hand finger order [th,ff,mf,rf,lf]; same layout on both robots.
-            _names = self.left_robot.data.joint_names
-            self._finger_flex_cols = [
-                torch.tensor([i for i, n in enumerate(_names)
-                              if f"robot0_{tag}J" in n and n[-1] in "123"],
-                             device=self.device, dtype=torch.long)
-                for tag in ("TH", "FF", "MF", "RF", "LF")
-            ]
-            print("[PianoEnv] ARM-IK-FOLLOW: WristPoseIK servos arms to the fingering "
-                  "centroid; policy drives only the 48 finger DoF")
-            # BAKED ARM TRAJECTORY: if a zero-phase-smoothed trajectory is provided, play
-            # it back instead of solving IK live (no per-step jitter, no lag). (T,2,30).
-            self._baked_arm = None
-            _bt = getattr(self.cfg, "arm_traj_npz", None)
-            if _bt:
-                _bd = np.load(_bt, allow_pickle=True)
-                _ba = np.stack([_bd["left"], _bd["right"]], axis=1)      # (T,2,30)
-                self._baked_arm = torch.as_tensor(_ba, dtype=torch.float32, device=self.device)
-                print(f"[PianoEnv] BAKED ARM TRAJECTORY: playing {self._baked_arm.shape[0]} "
-                      f"smoothed steps from {_bt} (no live IK)", flush=True)
 
-        # PHASE 0 mode: joint_scale non-zero ONLY on the live arm joints (default
-        # shoulder_pan + shoulder_lift); all else pinned, so the action can only
-        # turn+lean the arm to cover its keys. Reward = arm_position_weight.
-        self._phase0 = bool(getattr(self.cfg, "phase0_arm_positioning", False))
-        if self._phase0:
-            live_tags = tuple(getattr(self.cfg, "phase0_arm_joints",
-                                      ("shoulder_pan", "shoulder_lift")))
-            names = self.left_robot.data.joint_names
-            live = torch.tensor(
-                [1.0 if any(t in n for t in live_tags) else 0.0 for n in names],
-                device=self.device,
-            )                                                       # (30,) 1 on live joints
-            self.joint_scale = (self.cfg.phase0_arm_scale * live).unsqueeze(0)  # (1,30)
-            n_live = int(live.sum().item())
-            print(f"[PianoEnv] PHASE 0: gross positioning -- policy drives {n_live} arm "
-                  f"DoF/arm {live_tags} (scale {self.cfg.phase0_arm_scale}); fingers & "
-                  f"distal arm frozen. Reward = arm_position_weight.")
+        # --- WRIST LOCK: keep both hands upright as a property of the mechanism ---
+        # Three parts, and all three are needed:
+        #   1. zero the policy's residual on WRJ0/WRJ1, so the commanded target is
+        #      permanently the locked ready-pose tilt;
+        #   2. collapse those joints' POSITION LIMITS to a hairline band around
+        #      that tilt, which makes "upright" a solver constraint rather than
+        #      something a PD gain has to win;
+        #   3. stiffen the joints (and lift their effort ceiling) so they sit at
+        #      the centre of the band instead of resting on its edge.
+        # Part 2 is the one that actually does the work. With the stock setup the
+        # wrist target IS the ready pose and the joint still ends up ~0.6 rad off
+        # it, because the load through the wrist saturates the actuator's ~27 N*m
+        # ceiling -- past saturation, raising stiffness changes nothing. A limit
+        # is enforced by the constraint solver and cannot saturate.
+        self.wrist_joint_ids = torch.tensor(
+            [i for i, n in enumerate(self.left_robot.data.joint_names) if "WRJ" in n],
+            device=self.device, dtype=torch.long)
+        if getattr(self.cfg, "wrist_lock", False) and len(self.wrist_joint_ids):
+            self.joint_scale = self.joint_scale.clone()
+            self.joint_scale[:, self.wrist_joint_ids] = 0.0
+            k = float(self.cfg.wrist_lock_stiffness)
+            d = float(self.cfg.wrist_lock_damping)
+            eff = float(self.cfg.wrist_lock_effort)
+            slack = float(self.cfg.wrist_lock_slack)
+            wj = self.wrist_joint_ids
+            for robot, ref in ((self.left_robot, self.left_default),
+                               (self.right_robot, self.right_default)):
+                n_env, n_w = robot.num_instances, len(wj)
+                hold = ref[:, wj]                                  # (E, n_w) locked tilt
+                lim = torch.stack([hold - slack, hold + slack], dim=-1)   # (E, n_w, 2)
+                robot.write_joint_position_limit_to_sim(lim, joint_ids=wj)
+                robot.write_joint_stiffness_to_sim(
+                    torch.full((n_env, n_w), k, device=self.device), joint_ids=wj)
+                robot.write_joint_damping_to_sim(
+                    torch.full((n_env, n_w), d, device=self.device), joint_ids=wj)
+                robot.write_joint_effort_limit_to_sim(
+                    torch.full((n_env, n_w), eff, device=self.device), joint_ids=wj)
+            names = [self.left_robot.data.joint_names[i] for i in wj]
+            print(f"[PianoEnv] WRIST LOCK: {names} constrained to +/-{slack} rad about the "
+                  f"ready-pose tilt (stiffness {k}, damping {d}, effort {eff}) -- hands held "
+                  f"upright, {2 * len(names)} action DoF inert")
 
         # --- song(s) -> goal / onset / fingering tensors, stacked over N songs ---
         # Single-song is N=1; multi-song (cfg.songs_npz) stacks N songs and assigns each
@@ -161,7 +158,8 @@ class PianoEnv(DirectRLEnv):
             gpad = torch.zeros((Tmax + L - T, NUM_KEYS), device=self.device)
             goals.append(torch.cat([g, gpad], 0))
             onsets.append(torch.cat([o, gpad.clone()], 0))
-            plan = plan_fingering(act, swap_hands=self._swap_hands)
+            plan = plan_fingering(act, method=getattr(self.cfg, "fingering_method", "heuristic"),
+                                  swap_hands=self._swap_hands)
             pfk = plan.finger_key.copy(); pfa = plan.finger_active.copy()
             if getattr(self.cfg, "remap_thumb_to_middle", False):
                 # the heuristic hands sparse notes to the THUMB -- a poor straight-down
@@ -230,19 +228,9 @@ class PianoEnv(DirectRLEnv):
         rpalm, _ = self.right_robot.find_bodies([self.cfg.hand_base_body], preserve_order=True)
         self.lpalm_id = torch.tensor(lpalm, device=self.device)
         self.rpalm_id = torch.tensor(rpalm, device=self.device)
-        # Shadow forearm housing, for the forearm-clearance penalty.
-        lfa, _ = self.left_robot.find_bodies(["robot0_forearm"], preserve_order=True)
-        rfa, _ = self.right_robot.find_bodies(["robot0_forearm"], preserve_order=True)
-        self.lforearm_id = torch.tensor(lfa, device=self.device)
-        self.rforearm_id = torch.tensor(rfa, device=self.device)
-        self.lwrist_id = self.rwrist_id = None
-        # column of wrist_1_joint, for the wrist-tilt cap (same ordering on both arms)
-        _jn = self.left_robot.data.joint_names
-        self._wrist1_col = _jn.index("wrist_1_joint") if "wrist_1_joint" in _jn else None
 
         # --- residual base pose: the static ready pose, broadcast over every song/step.
-        # In arm_ik_follow / slider the arm columns are overwritten each control step by
-        # WristPoseIK; the policy learns finger pressing as a residual on top.
+        # The policy's action is a residual on top of this pose (rail + fingers).
         _Tpad = self.goal_padded.shape[1]                           # Tmax + L
         _ready = torch.stack([self.left_default[0], self.right_default[0]], dim=0)  # (2,25)
         self.base_pose = _ready[None, None].repeat(self.num_songs, _Tpad, 1, 1)  # (N,Tpad,2,25)
@@ -271,6 +259,32 @@ class PianoEnv(DirectRLEnv):
             arm_position_close=self.cfg.arm_position_close,
             arm_position_margin_mult=self.cfg.arm_position_margin_mult,
         )
+        # RP1M reward mode: r_OT + r_Press + a1*r_Collision - a2*r_Energy, with the
+        # fingering re-solved online by optimal transport each step (dexsim.piano.ot).
+        self.rp1m_mode = getattr(self.cfg, "reward_mode", "dexsim") == "rp1m"
+        self.rp1m_cfg = RP1MRewardCfg(
+            ot_weight=self.cfg.rp1m_ot_weight,
+            ot_close=self.cfg.rp1m_ot_close,
+            ot_margin_mult=self.cfg.rp1m_ot_margin_mult,
+            ot_reduce=self.cfg.rp1m_ot_reduce,
+            ot_eps=self.cfg.rp1m_ot_eps,
+            ot_iters=self.cfg.rp1m_ot_iters,
+            ot_side_weight=self.cfg.rp1m_ot_side_weight,
+            press_weight=self.cfg.rp1m_press_weight,
+            press_close=self.cfg.rp1m_press_close,
+            press_margin_mult=self.cfg.rp1m_press_margin_mult,
+            press_false_soft=self.cfg.rp1m_press_false_soft,
+            collision_weight=self.cfg.rp1m_collision_weight,
+            collision_dist=self.cfg.rp1m_collision_dist,
+            energy_weight=self.cfg.rp1m_energy_weight,
+        )
+        if self.rp1m_mode:
+            print(f"[PianoEnv] REWARD=RP1M: r_OT(w={self.rp1m_cfg.ot_weight}, "
+                  f"reduce={self.rp1m_cfg.ot_reduce}) + r_Press(w={self.rp1m_cfg.press_weight}, "
+                  f"hard_fp={not self.rp1m_cfg.press_false_soft}) + "
+                  f"{self.rp1m_cfg.collision_weight}*r_Collision - "
+                  f"{self.rp1m_cfg.energy_weight}*r_Energy  [no sustain pedal in this piano]")
+
         # RECALL-GATED ANNEALING (press-discovery curriculum, see piano_env_cfg): hold
         # false-press at false_press_start (energy at 0) until recall EMA >= the gate,
         # then ramp both to their cfg finals over anneal_steps. Monotonic; updated per step.
@@ -293,20 +307,6 @@ class PianoEnv(DirectRLEnv):
         _names = ", ".join(self.song_names[:4]) + ("..." if self.num_songs > 4 else "")
         print(f"[PianoEnv] {self.num_songs} song(s) [{_names}]: longest {self.song_len} steps "
               f"@ {1/self.cfg.control_dt:.0f}Hz")
-
-        # PHASE-0 TARGET CALIBRATION: the palm body rides above + behind the fingertips,
-        # so target the palm's measured offset from the covered keys, not the bare key
-        # centroid (which a correctly-playing hand can't reach). Offsets are measured
-        # constants -- sim buffers are NOT valid at __init__, so don't measure them live.
-        self._palm_tgt_off = None
-        if self._phase0 and getattr(self.cfg, "arm_pos_calibrate", True):
-            off = torch.tensor([self.cfg.arm_pos_palm_offset_left,
-                                self.cfg.arm_pos_palm_offset_right],
-                               device=self.device).unsqueeze(0)                  # (1,2,3)
-            self._palm_tgt_off = off
-            print(f"[PianoEnv] PHASE 0 palm-target offset (m): "
-                  f"L={list(self.cfg.arm_pos_palm_offset_left)} "
-                  f"R={list(self.cfg.arm_pos_palm_offset_right)}")
 
     # ------------------------------------------------------------- songs
     def _compute_swap_hands(self) -> bool:
@@ -387,6 +387,48 @@ class PianoEnv(DirectRLEnv):
         self.scene.articulations["right_robot"] = self.right_robot
         self.scene.articulations["piano"] = self.piano
 
+        # --- contact sensors for RP1M's r_Collision ---------------------------
+        # The hand USDs already spawn with activate_contact_sensors=True, which
+        # puts PhysxContactReportAPI on every body but reports nothing on its own;
+        # these sensors are what actually read it.
+        #
+        # BOTH sides of the pair must resolve to exactly ONE prim per env:
+        #   * one sensor per left-hand body -- Isaac Lab documents filtered
+        #     reporting as one-to-many, and a prim_path matching several bodies
+        #     silently returns a wrong force matrix;
+        #   * one filter PATTERN per right-hand body -- a wildcard like
+        #     `RightRobot/.*` makes PhysX log "Filter pattern ... did not match the
+        #     correct number of entries (expected 4, found 112)" and collapse to a
+        #     single meaningless channel. So the "many" in one-to-many is the
+        #     length of the pattern LIST, not the breadth of one pattern.
+        # Net result: len(contact_bodies)^2 body-pair force channels.
+        #
+        # Only `force_matrix_w` is usable here -- `net_forces_w` cannot tell a key
+        # press from a hand collision, and every fingertip is pressing keys.
+        # Registered after clone_environments so the per-env prims exist; the
+        # sensors themselves initialize lazily when the sim starts playing.
+        self.hand_contacts = []
+        if self._wants_contact_sensors():
+            from isaaclab.sensors import ContactSensor, ContactSensorCfg
+            filters = [f"/World/envs/env_.*/RightRobot/{b}" for b in self.cfg.contact_bodies]
+            for body in self.cfg.contact_bodies:
+                sensor = ContactSensor(ContactSensorCfg(
+                    prim_path=f"/World/envs/env_.*/LeftRobot/{body}",
+                    filter_prim_paths_expr=filters,
+                    update_period=0.0,      # every sim step
+                    history_length=0,       # >0 forces a recompute every substep
+                    track_air_time=False,
+                ))
+                self.scene.sensors[f"contact_{body}"] = sensor
+                self.hand_contacts.append(sensor)
+            print(f"[PianoEnv] CONTACT SENSORS: {len(self.hand_contacts)} left-hand bodies x "
+                  f"{len(filters)} right-hand filters {list(self.cfg.contact_bodies)}")
+
+    def _wants_contact_sensors(self) -> bool:
+        return (getattr(self.cfg, "reward_mode", "dexsim") == "rp1m"
+                and getattr(self.cfg, "rp1m_collision_contacts", False)
+                and float(getattr(self.cfg, "rp1m_collision_weight", 0.0)) > 0.0)
+
         light = sim_utils.DomeLightCfg(intensity=2500.0, color=(0.95, 0.95, 0.98))
         light.func("/World/Light", light)
 
@@ -400,13 +442,13 @@ class PianoEnv(DirectRLEnv):
         a_left = self.actions[:, : self.per_arm_dof]
         a_right = self.actions[:, self.per_arm_dof :]
         ref = self.base_pose[self.song_id, self.song_step]          # (E, 2, 25) ready pose
-        # residual on all joints, but per-joint scaled (gentle arm / generous hand;
+        # residual on all joints, but per-joint scaled (gentle rail / generous hand;
         # see self.joint_scale). Targets are clamped to joint limits and obs are
         # NaN-guarded, so a transient blow-up can't crash PPO.
         scale = self.joint_scale
         lo = self.left_robot.data.soft_joint_pos_limits[..., 0]
         hi = self.left_robot.data.soft_joint_pos_limits[..., 1]
-        # mute_right_hand: for left-hand-only songs, hold the right arm at its
+        # mute_right_hand: for left-hand-only songs, hold the right hand at its
         # ref pose so it can't mash idle keys (kills the false-press noise).
         if getattr(self.cfg, "mute_right_hand", False):
             a_right = a_right * 0.0
@@ -416,231 +458,15 @@ class PianoEnv(DirectRLEnv):
             if not hasattr(self, "_solo_mask"):
                 _names = self.right_robot.data.joint_names
                 _m = torch.zeros(self.per_arm_dof, device=self.device)
-                _jset = ["robot0_MFJ3", "robot0_MFJ2", "robot0_MFJ1", "robot0_MFJ0"]
-                # ARM-DIP option: also drive shoulder_lift to press by dipping the arm
-                # straight down (no finger flex-arc that scatters to a neighbour key).
-                if getattr(self.cfg, "solo_arm_dip", False):
-                    _jset += ["shoulder_lift_joint"]
-                for _jn in _jset:
+                for _jn in ["robot0_MFJ3", "robot0_MFJ2", "robot0_MFJ1", "robot0_MFJ0"]:
                     if _jn in _names:
                         _m[_names.index(_jn)] = 1.0
                 self._solo_mask = _m
             a_right = a_right * self._solo_mask
             a_left = a_left * 0.0
         base_l, base_r = ref[:, 0], ref[:, 1]
-        # ARM-IK-FOLLOW: overwrite the arm columns with the WristPoseIK servo toward the
-        # note centroid; finger columns stay at the ready pose, policy presses on top.
-        if getattr(self, "_arm_ik_follow", False):
-            base_l, base_r = self._ik_follow_base(base_l, base_r)
         self._left_target = torch.clamp(base_l + scale * a_left, lo, hi)
         self._right_target = torch.clamp(base_r + scale * a_right, lo, hi)
-        # WRIST-TILT CAP: hard-clamp commanded wrist_1 so it can't tilt up past wrist1_cap
-        # ("up" = more negative). The IK re-solves from the realised state next step, so
-        # the rest of the arm repositions to keep the hand over the keys (arm moves back
-        # instead of the wrist cocking up). None = off.
-        cap = getattr(self.cfg, "wrist1_cap", None)
-        if cap is not None and self._wrist1_col is not None:
-            c = self._wrist1_col
-            self._left_target[:, c] = self._left_target[:, c].clamp(min=float(cap))
-            self._right_target[:, c] = self._right_target[:, c].clamp(min=float(cap))
-    def _ik_follow_base(self, base_l, base_r):
-        """Base joint pose for ARM-IK-FOLLOW mode, (base_left, base_right) each (E,30).
-        Arm columns = WristPoseIK servoing the palm to the upcoming-note centroid
-        (hover above keys, ready-pose down quat). Finger columns are left as passed in
-        (the ready pose); the policy residual is added on top by the caller."""
-        if getattr(self, "_baked_arm", None) is not None:
-            return self._play_baked_arm(base_l, base_r)
-        if not hasattr(self, "ik_left"):
-            from dexsim.piano.ik import WristPoseIK
-            _planar = bool(getattr(self.cfg, "planar_ik", False))
-            _pw = float(getattr(self.cfg, "planar_weight", 25.0))
-            _pi = int(getattr(self.cfg, "planar_iters", 6))
-            # frozen-joint set: optionally pin wrist_3 / the whole wrist / the elbow so
-            # only the proximal turn+lean joints move (kills the orientation "fling").
-            _frz = []
-            if bool(getattr(self.cfg, "freeze_wrist", False)):
-                _frz += ["wrist_1", "wrist_2", "wrist_3"]
-            elif bool(getattr(self.cfg, "freeze_last_dof", False)):
-                _frz += ["wrist_3"]
-            if bool(getattr(self.cfg, "freeze_elbow", False)):
-                _frz += ["elbow"]
-            _frz = tuple(_frz)
-            _pinx = bool(getattr(self.cfg, "planar_pin_x", False))
-            _pos_only = bool(getattr(self.cfg, "arm_ik_pos_only", False))
-            self.ik_left = WristPoseIK(self.left_robot, self.cfg.hand_base_body,
-                                       planar=_planar, planar_weight=_pw, planar_iters=_pi,
-                                       planar_pin_x=_pinx, pos_only=_pos_only, freeze_joints=_frz)
-            self.ik_right = WristPoseIK(self.right_robot, self.cfg.hand_base_body,
-                                        planar=_planar, planar_weight=_pw, planar_iters=_pi,
-                                        planar_pin_x=_pinx, pos_only=_pos_only, freeze_joints=_frz)
-            if _planar and not _pos_only:
-                print(f"[PianoEnv] PLANAR-IK: weighted DLS (w={_pw} on z+orientation) x{_pi} "
-                      f"iters -> arm holds the plane & slides in {'Y only (X pinned)' if _pinx else 'XY'}")
-            if _pos_only:
-                print("[PianoEnv] POSITION-ONLY IK (orientation dropped -> no wrist fling)")
-            if _frz:
-                print(f"[PianoEnv] FROZEN arm joints {_frz} held at init "
-                      "(excluded from the arm IK solve)")
-            # hold the ready-pose palm orientation (fingers down) as the servo target
-            _, self._arm_quat_l = self.ik_left.pose_w()
-            _, self._arm_quat_r = self.ik_right.pose_w()
-            self._arm_quat_l = self._arm_quat_l.clone()
-            self._arm_quat_r = self._arm_quat_r.clone()
-            # PALM-DOWN SERVO: override the servo orientation to palm-down/fingers-forward
-            # so finger flexion strikes top-down. Runtime-only; locked pose untouched.
-            if getattr(self.cfg, "palm_down_servo", False):
-                self._arm_quat_l = self._palm_down_quat(self.left_robot, slice(0, 5),
-                                                        self._arm_quat_l)
-                self._arm_quat_r = self._palm_down_quat(self.right_robot, slice(5, 10),
-                                                        self._arm_quat_r)
-                print("[PianoEnv] PALM-DOWN SERVO: arm holds hand flat (palm down, fingers "
-                      "fwd) so finger flexion presses top-down")
-            # HAND-TILT: rotate the servo target orientation away from palm-straight-down
-            # toward a pianist posture, so a finger curl strikes the key (vs lowering all).
-            tilt = float(getattr(self.cfg, "hand_tilt", 0.0))
-            if tilt != 0.0:
-                ax = int(getattr(self.cfg, "hand_tilt_axis", 1))
-                a = torch.zeros(3, device=self.device); a[ax] = 1.0
-                half = tilt * 0.5
-                qrot = torch.cat([torch.cos(torch.tensor([half], device=self.device)),
-                                  a * torch.sin(torch.tensor(half, device=self.device))])  # (4,) wxyz
-                self._arm_quat_l = self._quat_mul(qrot.unsqueeze(0), self._arm_quat_l)
-                self._arm_quat_r = self._quat_mul(qrot.unsqueeze(0), self._arm_quat_r)
-        # --- arm servo to the upcoming-note centroid ---
-        centroid, active = self._hand_note_centroids()      # (E,2,3), (E,2)
-        pl, _ = self.ik_left.pose_w()
-        pr, _ = self.ik_right.pose_w()                       # current palm positions
-        tgt_l = centroid[:, 0].clone()
-        tgt_r = centroid[:, 1].clone()
-        # DIP-TO-STRIKE: lift each hand `lift_between_notes` above the hover whenever no
-        # note is due within the next `strike_window` steps, dipping only to strike, so
-        # it clears the keys between notes. (lift=0 -> constant hover.)
-        _lift = float(getattr(self.cfg, "lift_between_notes", 0.0))
-        _base = self.cfg.arm_ik_hover
-        if _lift > 0.0:
-            _K = int(getattr(self.cfg, "strike_window", 4))
-            _ix = (self.song_step.unsqueeze(1)
-                   + torch.arange(_K, device=self.device).unsqueeze(0)).clamp(
-                       max=self.finger_active.shape[1] - 1)
-            _faw = self.finger_active[self.song_id.unsqueeze(1), _ix]      # (E,K,10)
-            _soon_l = _faw[..., :5].any(dim=2).any(dim=1).float()          # (E,)
-            _soon_r = _faw[..., 5:].any(dim=2).any(dim=1).float()
-            tgt_l[:, 2] += _base + _lift * (1.0 - _soon_l)
-            tgt_r[:, 2] += _base + _lift * (1.0 - _soon_r)
-        else:
-            tgt_l[:, 2] += _base
-            tgt_r[:, 2] += _base
-        # FINGER-OFFSET COMPENSATION: the arm centers the PALM on the key, but the
-        # assigned finger is laterally offset -> shift each active hand's xy target by
-        # -(assigned-fingertip - palm) so the FINGER, not the palm, lands over the key.
-        if getattr(self.cfg, "finger_offset_comp", True):
-            tips = self._fingertips_world()                       # (E,10,3)
-            palms = self._palms_world()                           # (E,2,3)
-            fa_now = self.finger_active[self.song_id, self.song_step].float()  # (E,10)
-            for h, sl in enumerate((slice(0, 5), slice(5, 10))):
-                m = fa_now[:, sl].unsqueeze(-1)                   # (E,5,1)
-                tip_xy = (tips[:, sl, :2] * m).sum(1) / m.sum(1).clamp(min=1e-6)
-                off = tip_xy - palms[:, h, :2]                    # (E,2) finger-from-palm
-                (tgt_l if h == 0 else tgt_r)[:, :2] -= off
-        # CONSTANT ALIGNED Z: pin BOTH active targets to one fixed hover height (max key
-        # top + hover) so the two wrists stay level with each other and never move in Z;
-        # only X/Y track the notes. (planar_ik then holds that Z tight.)
-        if getattr(self.cfg, "arm_z_constant", False):
-            _zc = self._key_top_world()[..., 2].amax(dim=-1, keepdim=True) + self.cfg.arm_ik_hover
-            tgt_l[:, 2:3] = _zc; tgt_r[:, 2:3] = _zc
-        # a hand with NO upcoming notes RETRACTS up off the keyboard (keeping its xy)
-        # so its resting fingers stop ringing keys -- e.g. the muted right hand on a
-        # left-only song was holding station AT key level, ringing ~5-7 false keys and
-        # masking every left-hand tweak. Retract height = keyboard top + idle_hand_retract.
-        kb_z = self._key_top_world()[..., 2].amax(dim=-1, keepdim=True)   # (E,1)
-        retract_z = kb_z + getattr(self.cfg, "idle_hand_retract", 0.20)
-        hi_l = pl.clone(); hi_l[:, 2:3] = retract_z
-        hi_r = pr.clone(); hi_r[:, 2:3] = retract_z
-        tgt_l = torch.where(active[:, 0:1], tgt_l, hi_l)
-        tgt_r = torch.where(active[:, 1:2], tgt_r, hi_r)
-        arm_l = self.ik_left.solve(tgt_l, self._arm_quat_l)  # (E,30); only arm cols move
-        arm_r = self.ik_right.solve(tgt_r, self._arm_quat_r)
-        m = self._arm_dof_mask                               # (30,) True = arm joint
-        # finger columns stay at the ready-pose base; the policy presses as a residual.
-        base_l = torch.where(m, arm_l, base_l)               # arm cols servo, finger cols base
-        base_r = torch.where(m, arm_r, base_r)
-        # ARM-MOTION SMOOTHING: EMA the arm joint command toward the IK solution so the
-        # arm GLIDES between note targets instead of snapping to each step's centroid jump
-        # (the "sudden" motion). cmd = s*prev + (1-s)*ik; s in [0,1), 0 = instant. The
-        # ~5-step lookahead absorbs the small lag. Finger cols pass through untouched.
-        sm = float(getattr(self.cfg, "arm_smooth", 0.0))
-        if sm > 0.0:
-            if getattr(self, "_arm_prev_l", None) is None:
-                self._arm_prev_l = base_l.detach().clone()
-                self._arm_prev_r = base_r.detach().clone()
-            base_l = torch.where(m, sm * self._arm_prev_l + (1.0 - sm) * base_l, base_l)
-            base_r = torch.where(m, sm * self._arm_prev_r + (1.0 - sm) * base_r, base_r)
-            self._arm_prev_l = base_l.detach().clone()
-            self._arm_prev_r = base_r.detach().clone()
-        # IDLE-FINGER CURL: lift fingers with no note THIS step up into the palm so the
-        # hand stops mashing its ~8-key footprint; the active finger stays straight.
-        curl = getattr(self.cfg, "idle_finger_curl", 0.0)
-        if curl != 0.0:
-            fa = self.finger_active[self.song_id, self.song_step]  # (E,10) global finger order
-            for hand_i, base in enumerate((base_l, base_r)):
-                for fi in range(5):
-                    cols = self._finger_flex_cols[fi]
-                    idle = (~fa[:, hand_i * 5 + fi].bool()).float().unsqueeze(-1)  # (E,1)
-                    base[:, cols] = base[:, cols] + curl * idle
-        return base_l, base_r
-
-    def _play_baked_arm(self, base_l, base_r):
-        """ARM-IK-FOLLOW playback: set the arm columns from the pre-baked zero-phase
-        smoothed trajectory (no live IK -> no per-step jitter, no lag). Finger columns
-        stay at the ready pose; the policy residual rides on top, and idle-finger curl
-        still applies. (cfg.arm_traj_npz; single-song, indexed by song_step.)"""
-        idx = self.song_step.clamp(max=self._baked_arm.shape[0] - 1)   # (E,)
-        baked = self._baked_arm[idx]                                   # (E,2,30)
-        m = self._arm_dof_mask
-        base_l = torch.where(m, baked[:, 0], base_l)
-        base_r = torch.where(m, baked[:, 1], base_r)
-        curl = getattr(self.cfg, "idle_finger_curl", 0.0)
-        if curl != 0.0:
-            fa = self.finger_active[self.song_id, self.song_step]
-            for hand_i, base in enumerate((base_l, base_r)):
-                for fi in range(5):
-                    cols = self._finger_flex_cols[fi]
-                    idle = (~fa[:, hand_i * 5 + fi].bool()).float().unsqueeze(-1)
-                    base[:, cols] = base[:, cols] + curl * idle
-        return base_l, base_r
-
-    def _palm_down_quat(self, robot, tip_sl, cur_quat):
-        """Servo quat that holds the hand PALM-DOWN, fingers-forward (world -X) so finger
-        flexion presses keys top-down. Built from the hand's currently-measured axes."""
-        from isaaclab.utils.math import matrix_from_quat, quat_from_matrix
-        tips = self._fingertips_world()[0, tip_sl]                 # (5,3) th,ff,mf,rf,lf
-        pid = self.lpalm_id if tip_sl.start == 0 else self.rpalm_id
-        P = robot.data.body_pos_w[0, pid].reshape(3)
-        R = matrix_from_quat(cur_quat[0:1])[0]                     # (3,3)
-        fwd_w = tips[2] - P; fwd_w = fwd_w / fwd_w.norm()          # mid tip - palm
-        nrm_w = torch.cross(tips[4] - tips[1], tips[2] - P)        # (lf-ff)x(mf-palm)
-        nrm_w = nrm_w / nrm_w.norm()
-        f_loc = R.t() @ fwd_w; n_loc = R.t() @ nrm_w
-        fW = torch.tensor([-1., 0., 0.], device=self.device)      # fingers -> -X
-        nW = torch.tensor([0., 0., -1.], device=self.device)      # palm normal -> down
-        def basis(u, v):
-            u = u / u.norm(); w = torch.cross(u, v); w = w / w.norm(); v2 = torch.cross(w, u)
-            return torch.stack([u, v2, w], dim=1)
-        R_t = basis(fW, nW) @ basis(f_loc, n_loc).t()
-        q_t = quat_from_matrix(R_t.unsqueeze(0))                   # (1,4)
-        return q_t.expand(self.num_envs, 4).clone()
-
-    @staticmethod
-    def _quat_mul(a, b):
-        """Hamilton product of wxyz quats (broadcast over leading dim)."""
-        aw, ax, ay, az = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
-        bw, bx, by, bz = b[..., 0], b[..., 1], b[..., 2], b[..., 3]
-        return torch.stack([
-            aw * bw - ax * bx - ay * by - az * bz,
-            aw * bx + ax * bw + ay * bz - az * by,
-            aw * by - ax * bz + ay * bw + az * bx,
-            aw * bz + ax * by - ay * bx + az * bw], dim=-1)
-
     def _apply_action(self):
         self.left_robot.set_joint_position_target(self._left_target)
         self.right_robot.set_joint_position_target(self._right_target)
@@ -653,6 +479,10 @@ class PianoEnv(DirectRLEnv):
         # a physics blow-up can NaN the key joints; keep it finite so the key/onset
         # reward terms (and their logged means) don't get poisoned to NaN.
         frac = torch.nan_to_num(frac, nan=0.0, posinf=2.0, neginf=0.0)
+        # RAW depression, before the velocity gate below. RP1M's press reward shapes
+        # on this: a key on its way down must already earn partial credit, which the
+        # gated value (0 until a strike latches) cannot provide.
+        self._key_frac_raw = frac
         # VELOCITY-GATED sounding (piano hammer): a key STARTS sounding only when struck
         # -- pressed past key_struck_frac AND moving down faster than key_strike_vel --
         # and rings until it springs back above key_release_frac. A statically-resting
@@ -803,10 +633,9 @@ class PianoEnv(DirectRLEnv):
         return {"policy": obs.clamp(-50.0, 50.0)}
 
     def _arm_limit_margin(self) -> torch.Tensor:
-        """(E,) normalized distance of the WORST arm joint to its nearest joint limit.
-        1.0 = mid-range (healthy), 0.0 = pinned against a limit (contorting / about to
-        fail, won't transfer to hardware). Scored over the 6-per-arm UR10e DoF only
-        (fingers excluded via arm_joint_mask), across both arms."""
+        """(E,) normalized distance of the WORST base joint to its nearest limit.
+        1.0 = mid-range (healthy), 0.0 = pinned against a limit. Scored over each
+        hand's rail joint only (fingers excluded via arm_joint_mask), both hands."""
         margins = []
         for robot in (self.left_robot, self.right_robot):
             q = robot.data.joint_pos
@@ -832,6 +661,96 @@ class PianoEnv(DirectRLEnv):
             return torch.zeros((), device=self.device)
         r = rec[has].mean(); p = prec[has].mean()
         return 2 * r * p / (r + p + 1e-9)
+
+    # ------------------------------------------------------------ RP1M reward
+    def _ot_side_cost(self, key_top: torch.Tensor) -> torch.Tensor | None:
+        """(E,10,88) optional penalty for a finger being matched to a key in the
+        OTHER hand's half. RP1M has no such term -- its hands share a workspace --
+        but ours ride disjoint rails, so without it the transport happily assigns a
+        key to a finger that physically cannot reach it. 0 weight = pure RP1M."""
+        w = float(self.rp1m_cfg.ot_side_weight)
+        if w <= 0.0:
+            return None
+        lb = float(self.cfg.left_base_pos[1]); rb = float(self.cfg.right_base_pos[1])
+        mid = 0.5 * (lb + rb) + self.scene.env_origins[:, 1]        # (E,) per-env midline
+        ky = key_top[..., 1]                                        # (E,88) key world Y
+        over = ky - mid.unsqueeze(-1)                               # +ve = high-Y half
+        half = NUM_FINGERS // 2
+        pen = torch.zeros(self.num_envs, NUM_FINGERS, NUM_KEYS, device=self.device)
+        lo_first = lb <= rb          # is the LEFT robot the low-Y one?
+        lo_sl = slice(0, half) if lo_first else slice(half, NUM_FINGERS)
+        hi_sl = slice(half, NUM_FINGERS) if lo_first else slice(0, half)
+        pen[:, lo_sl, :] = over.clamp(min=0.0).unsqueeze(1)         # low hand reaching up
+        pen[:, hi_sl, :] = (-over).clamp(min=0.0).unsqueeze(1)      # high hand reaching down
+        return w * pen
+
+    def _rp1m_terms(self, pressed: torch.Tensor, goal: torch.Tensor):
+        """The RP1M composite for this step. Returns ``(total (E,), parts dict)``.
+
+        The fingering is NOT read from the precomputed plan: the finger->key
+        matching is re-solved here, every step, from the live fingertip positions
+        by optimal transport -- the whole point of the paper.
+        """
+        key_top = self._key_top_world()                             # (E,88,3)
+        tips = self._fingertips_world()                             # (E,10,3)
+        # Re-centre on each env's own origin before measuring: world coordinates
+        # out on the env-spacing grid are large enough to cost real precision in
+        # the distance matrix, and only relative geometry matters here.
+        origin = self.scene.env_origins.unsqueeze(1)                # (E,1,3)
+        tips_rel = tips - origin
+        keys_rel = key_top - origin
+        if getattr(self.cfg, "rp1m_ot_ignore_x", False):
+            # X (depth into the keyboard) is UNACTUATED on the rail hands -- no
+            # arm, so no action can reduce a finger's X miss. Including X in the
+            # transport cost adds an irreducible floor that keeps r_OT's shaped
+            # exponential pinned in its flat tail (measured: stuck at ~0.065 for
+            # 5k iterations). Zero both X columns so the cost only measures the
+            # axes the policy can actually move (rail Y + curl Z).
+            tips_rel = tips_rel.clone(); keys_rel = keys_rel.clone()
+            tips_rel[..., 0] = 0.0
+            keys_rel[..., 0] = 0.0
+        ot_dist, n_active = ot_finger_cost(
+            tips_rel, keys_rel, goal, eps=self.rp1m_cfg.ot_eps,
+            iters=self.rp1m_cfg.ot_iters, side_cost=self._ot_side_cost(key_top))
+
+        collided = self._hands_collided(tips)                       # (E,) bool
+
+        # r_Energy = |tau|^T |v| over every actuated joint of both hands. Real
+        # mechanical power, not the action^2 proxy the dexsim reward uses.
+        energy = torch.zeros(self.num_envs, device=self.device)
+        for robot in (self.left_robot, self.right_robot):
+            tau = torch.nan_to_num(robot.data.applied_torque, nan=0.0)
+            vel = torch.nan_to_num(robot.data.joint_vel, nan=0.0)
+            energy = energy + (tau.abs() * vel.abs()).sum(-1)
+
+        return rp1m_reward(
+            ot_dist, n_active, self._key_frac_raw, self.key_sounding.float(), goal,
+            collided=collided, energy=energy, cfg=self.rp1m_cfg)
+
+    def _hands_collided(self, tips: torch.Tensor) -> torch.Tensor:
+        """(E,) bool -- are the two hands touching this step?
+
+        Real PhysX contacts when the sensors are up (``rp1m_collision_contacts``),
+        otherwise the geometric proximity stand-in. Touching ``sensor.data`` is
+        what triggers the buffer read: Isaac Lab's ``scene.update()`` only marks
+        the sensor outdated, the PhysX fetch happens lazily right here.
+        """
+        if self.hand_contacts:
+            hit = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            thresh = float(self.cfg.rp1m_collision_force)
+            for sensor in self.hand_contacts:
+                f = sensor.data.force_matrix_w              # (E, 1, M, 3)
+                if f is None:                              # not initialized yet
+                    continue
+                hit |= (torch.nan_to_num(f, nan=0.0).norm(dim=-1) > thresh).flatten(1).any(dim=1)
+            self._collided_src = "contact"
+            return hit
+        self._collided_src = "proximity"
+        half = NUM_FINGERS // 2
+        palms = self._palms_world()                                 # (E,2,3)
+        left_pts = torch.cat([tips[:, :half], palms[:, 0:1]], dim=1)
+        right_pts = torch.cat([tips[:, half:], palms[:, 1:2]], dim=1)
+        return hands_in_proximity(left_pts, right_pts, self.rp1m_cfg)
 
     # ---------------------------------------------------------------- reward
     def _get_rewards(self) -> torch.Tensor:
@@ -861,10 +780,7 @@ class PianoEnv(DirectRLEnv):
             else:
                 arm_tgt = centroid.clone()
                 arm_hands = arm_active                                # only active hands count
-            if self._palm_tgt_off is not None:
-                arm_tgt = arm_tgt + self._palm_tgt_off  # calibrated: where the PALM sits when the HAND covers these keys
-            else:
-                arm_tgt[..., 2] += self.cfg.arm_ik_hover              # aim above the keys
+            arm_tgt[..., 2] += self.cfg.arm_ik_hover                  # aim above the keys
             r_arm = arm_position_reward(self._palms_world(), arm_tgt, arm_hands, self.reward_cfg)
             # debug: raw palm-target gaps so the training log itself localizes any
             # discrepancy between logged arm_pos and offline deterministic replays
@@ -941,50 +857,11 @@ class PianoEnv(DirectRLEnv):
         jerk = self._action_jerk                                    # (E,) action thrash this step
         limit_margin = margin.mean()
         action_jerk = jerk.mean()
-        # ARM-HEALTH PENALTY: damp flailing (jerk) and contortion to joint limits.
+        # MOTION-HEALTH PENALTY: damp flailing (jerk) and contortion to joint limits.
         w_jerk = getattr(self.cfg, "jerk_weight", 0.0)
         w_limit = getattr(self.cfg, "limit_weight", 0.0)
         r_jerk = -w_jerk * jerk                                     # (E,) <= 0
         r_limit = -w_limit * (1.0 - margin)                        # (E,) <= 0, 0 when mid-range
-        # FOREARM CLEARANCE: the forearm housing isn't part of the coverage reward, so
-        # penalize it dipping below forearm_clear_z (onto the table) or forward of
-        # forearm_back_x -- keep it UP and BACK so the hand reaches down-forward onto the keys.
-        w_fa = getattr(self.cfg, "forearm_clear_weight", 0.0)
-        if w_fa > 0.0:
-            z_thr = getattr(self.cfg, "forearm_clear_z", 0.90)
-            x_thr = getattr(self.cfg, "forearm_back_x", 0.0)
-            origins = self.scene.env_origins                              # (E,3)
-            pl = self.left_robot.data.body_pos_w[:, self.lforearm_id].squeeze(1) - origins
-            pr = self.right_robot.data.body_pos_w[:, self.rforearm_id].squeeze(1) - origins
-            dip = (z_thr - torch.stack([pl[:, 2], pr[:, 2]], dim=1)).clamp(min=0.0)
-            fwd = (x_thr - torch.stack([pl[:, 0], pr[:, 0]], dim=1)).clamp(min=0.0)
-            r_forearm = -w_fa * (dip + fwd).sum(dim=1)                    # (E,) <= 0
-        else:
-            r_forearm = torch.zeros_like(r_jerk)
-        # INTER-ARM SEPARATION: keep the two hands from colliding. lane_clamp bounds the
-        # TARGET centroids to opposite halves, but the achieved palms can still drift
-        # together on cross-over passages. Penalize the palm-palm distance dropping below
-        # arm_sep_min (smooth hinge -> 0 once they're far enough apart, so it only acts
-        # near a collision and never fights normal play).
-        w_sep = getattr(self.cfg, "arm_sep_weight", 0.0)
-        if w_sep > 0.0:
-            palms = self._palms_world()                                   # (E,2,3)
-            d = (palms[:, 0] - palms[:, 1]).norm(dim=-1)                  # (E,) palm-palm dist
-            r_sep = -w_sep * (getattr(self.cfg, "arm_sep_min", 0.18) - d).clamp(min=0.0)
-        else:
-            r_sep = torch.zeros_like(r_jerk)
-        # WRIST-TABLE CLEARANCE: penalize a wrist dipping below wrist_clear_z (table top
-        # ~0.72 m, keys ~0.76 m) so it never buries into the support block. Per arm.
-        w_wc = getattr(self.cfg, "wrist_clear_weight", 0.0)
-        if w_wc > 0.0 and self.lwrist_id is not None:
-            z_thr = getattr(self.cfg, "wrist_clear_z", 0.82)
-            origins = self.scene.env_origins                              # (E,3)
-            wl = self.left_robot.data.body_pos_w[:, self.lwrist_id].squeeze(1) - origins
-            wr = self.right_robot.data.body_pos_w[:, self.rwrist_id].squeeze(1) - origins
-            dip = (z_thr - torch.stack([wl[:, 2], wr[:, 2]], dim=1)).clamp(min=0.0)
-            r_wrist = -w_wc * dip.sum(dim=1)                              # (E,) <= 0
-        else:
-            r_wrist = torch.zeros_like(r_jerk)
         # Per-component finite guard. The world-pos/key accessors are already
         # nan-guarded at source, but guard each term here too so (a) one blown-up
         # env can never NaN-poison the *summed* reward (which nan_to_num would then
@@ -994,8 +871,7 @@ class PianoEnv(DirectRLEnv):
         r_key, r_finger, r_onset = g(r_key), g(r_finger), g(r_onset)
         r_idle, r_hover = g(r_idle), g(r_hover)
         r_arm = g(r_arm)
-        r_jerk, r_limit, r_forearm = g(r_jerk), g(r_limit), g(r_forearm)
-        r_sep, r_wrist = g(r_sep), g(r_wrist)
+        r_jerk, r_limit = g(r_jerk), g(r_limit)
 
         if not hasattr(self, "extras") or self.extras is None:
             self.extras = {}
@@ -1017,10 +893,6 @@ class PianoEnv(DirectRLEnv):
             "reward/arm_pos": float(r_arm.mean()),
             "reward/jerk_pen": float(r_jerk.mean()),
             "reward/limit_pen": float(r_limit.mean()),
-            "reward/forearm_pen": float(r_forearm.mean()),
-            "reward/arm_sep_pen": float(r_sep.mean()),
-            "reward/wrist_clear_pen": float(r_wrist.mean()),
-            "arm/palm_sep": float((self._palms_world()[:, 0] - self._palms_world()[:, 1]).norm(dim=-1).mean()),
         }
         if self._anneal:
             self.extras["log"].update({
@@ -1034,10 +906,36 @@ class PianoEnv(DirectRLEnv):
                                        "debug/gap_median": gmed, "debug/gap_max": gmax})
         if getattr(self, "_dbg_blown", None) is not None:
             self.extras["log"]["debug/blown_frac"] = self._dbg_blown
+        # RP1M MODE: the paper's composite replaces the dexsim terms outright. The
+        # dexsim terms above are still computed and logged (they cost a handful of
+        # elementwise ops and make the two recipes directly comparable in wandb),
+        # they just don't enter the returned reward.
+        if self.rp1m_mode:
+            rp1m_total, rp1m_parts = self._rp1m_terms(pressed, goal)
+            for k, v in rp1m_parts.items():
+                self.extras["log"][f"rp1m/{k}"] = float(g(v).mean())
+            # r_Collision reads 0.5 when clean and 0 when colliding, so log the
+            # raw rate too -- it's the number you actually want to watch.
+            if "collision" in rp1m_parts and self.rp1m_cfg.collision_weight > 0:
+                self.extras["log"]["rp1m/collided_frac"] = float(
+                    1.0 - rp1m_parts["collision"].mean() / self.rp1m_cfg.collision_weight)
+            reward = g(rp1m_total)
+        else:
+            reward = (r_key + r_finger + r_onset + r_idle + r_hover + r_arm
+                      + r_jerk + r_limit)
+        # F1 BONUS (both reward modes): the eval metric itself, added as a weighted
+        # per-env, per-step term ON TOP of shaping -- never a replacement (pure F1
+        # is gradient-dead at F1=0, the exact failure the shaping exists to avoid).
+        # It is naturally self-annealing: pays ~0 until the policy earns nonzero
+        # F1, then aligns the objective with the metric we actually score.
+        w_f1 = float(getattr(self.cfg, "f1_weight", 0.0))
+        if w_f1 > 0.0:
+            f1_env = 2 * recall * precision / (recall + precision + 1e-9)  # (E,)
+            r_f1 = w_f1 * g(f1_env * has_goal.float())
+            reward = reward + r_f1
+            self.extras["log"]["reward/f1_bonus"] = float(r_f1.mean())
         # final band-clamp: a transient blow-up that slips past the per-term guards
         # still can't push a NaN/inf advantage -> NaN log_std -> PPO crash.
-        reward = (r_key + r_finger + r_onset + r_idle + r_hover + r_arm
-                  + r_jerk + r_limit + r_forearm + r_sep + r_wrist)
         reward = torch.nan_to_num(reward, nan=0.0, posinf=10.0, neginf=-10.0).clamp(-10.0, 10.0)
         self.extras["log"]["reward/total"] = float(reward.mean())
         return reward
@@ -1077,8 +975,3 @@ class PianoEnv(DirectRLEnv):
 
         self.song_step[env_ids] = 0
         self.key_sounding[env_ids] = False
-        # reset the arm-smoothing EMA for these envs to the ready pose, so a new episode
-        # doesn't glide in from the previous one's last arm command.
-        if getattr(self, "_arm_prev_l", None) is not None:
-            self._arm_prev_l[env_ids] = q0[0]
-            self._arm_prev_r[env_ids] = q0[1]

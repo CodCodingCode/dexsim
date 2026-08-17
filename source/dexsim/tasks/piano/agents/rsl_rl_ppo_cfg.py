@@ -42,3 +42,19 @@ class PianoPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=0.5,       # was 1.0 -> tighter grad clip
     )
+
+    def __post_init__(self):
+        if hasattr(super(), "__post_init__"):
+            super().__post_init__()
+        # Isaac Lab >= 2.3 (rsl-rl-lib 3.x) additions, version-gated so this one
+        # cfg drives BOTH stacks (.venv = 4.5/2.1, .venv-isaac51 = 5.1/2.3.2):
+        #  * obs_groups is a new REQUIRED mapping of algorithm obs sets -> env
+        #    obs groups; our env emits a single "policy" group used by both nets.
+        #  * per-network obs normalization replaces empirical_normalization.
+        #  * noise_std_type is now a first-class field (train_piano.py's kwargs
+        #    hack becomes redundant on the new stack but stays harmless).
+        if "obs_groups" in getattr(self, "__dataclass_fields__", {}):
+            self.obs_groups = {"policy": ["policy"], "critic": ["policy"]}
+            self.policy.actor_obs_normalization = True
+            self.policy.critic_obs_normalization = True
+            self.policy.noise_std_type = "log"

@@ -39,7 +39,9 @@ def build(source: Path, output: Path) -> None:
     rail = UsdPhysics.PrismaticJoint.Define(stage, "/shadow_hand/joints/railJoint")
     rail.CreateBody0Rel().SetTargets([anchor.GetPath()])
     rail.CreateBody1Rel().SetTargets(["/shadow_hand/robot0_hand_mount"])
-    rail.CreateAxisAttr(UsdPhysics.Tokens.y)
+    # The piano mounts the hand fingers-down (180deg about (1,1,0)/sqrt2): local
+    # +X (the knuckle row) maps to world Y, the keyboard-parallel rail direction.
+    rail.CreateAxisAttr(UsdPhysics.Tokens.x)
     rail.CreateLowerLimitAttr(-RAIL_LIMIT_M)
     rail.CreateUpperLimitAttr(RAIL_LIMIT_M)
     stage.GetRootLayer().Save()

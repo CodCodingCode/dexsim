@@ -1,19 +1,172 @@
 # dexsim — Claude instructions
 
-## 🔒 LOCKED: the constant static arm+hand pose — DO NOT EDIT
+## Embodiment: two rail-mounted Shadow Hands — NO UR10e arms
 
-`left_ready_pose` / `right_ready_pose` in
-`source/dexsim/tasks/piano/piano_env_cfg.py` are the **constant static config the
-arm + hands must ALWAYS have** (arm reach joints, `wrist_3_joint = 3.14159` (π),
-`wrist_1_joint = -4.782` + `shoulder_lift_joint = -0.640` — a deliberate +70° wrist-up
-pitch about y with the hand then lowered ~40 cm in z (two 20 cm lowers; set 2026-06-08;
-wrist_1 was -2.80, sh_lift -1.40; "up" is the *negative* wrist_1 direction; sh_lift+wrist_1
-held at sum -5.422 to preserve the tilt while lowering) — and the hand wrist tilt
-`robot0_WRJ0 = 0.45` / `robot0_WRJ1 = 0.13`. Fingertips land ~4.5 cm above the keys,
-pointing down. **FINAL frozen baseline — user declared PERFECT 2026-06-08, do NOT change.**).
-**Do NOT edit these poses** — not the wrist flip, not the tilt, not the arm joints.
-They are deliberately fixed; treat them as frozen unless the user explicitly says
-otherwise in a new request.
+The piano task uses **two armless Shadow Hands**, each on a world-anchored
+prismatic Y rail (RoboPianist-style floating hands; 25 DoF per hand = 1 rail +
+24 hand joints). **The UR10e arms were removed from the piano pipeline at the
+user's explicit request (2026-08-13)** — do not reintroduce arm kinematics, arm
+IK (`WristPoseIK` is deleted), or arm-pose machinery into the piano task. The
+UR10e asset configs remain in `source/dexsim/assets/ur10e_shadow.py` only for
+the grasp/reorient tasks.
+
+🔒 Still locked: the hand ready pose in `piano_env_cfg.py`
+(`robot0_WRJ0 = 0.45` / `robot0_WRJ1 = 0.13`, fingers at 0, rail at 0) — the
+wrist tilt carried over from the approved 2026-06-08 baseline. Do not edit it
+unless the user explicitly asks.
+
+`wrist_lock` (default **on**, 2026-08-13) enforces that tilt structurally: the
+policy's residual on `robot0_WRJ0/WRJ1` is zeroed and the joints are stiffened,
+so both hands stay upright no matter what the policy or a contact load does.
+It costs 4 of the 50 action DoF. Set `wrist_lock=False` to give the wrists back.
+
+## 🔒 LOCKED: the hand START placement (approved 2026-08-13)
+
+The per-hand base poses in `piano_env_cfg.py` are **the approved episode-start
+placement** — hands side-by-side mid-keyboard, forearms horizontal from behind,
+fingertips resting on the keys (RoboPianist-style fixed "home" pose; every
+episode resets to it):
+
+**Lowered 30 mm and moved 20 mm toward the keys on 2026-08-15 at the user's
+explicit request** — the previous placement parked the fingertips ~40 mm above
+the key tops and behind their front edge, so no finger could touch a key (see
+`scripts/tools/fit_base_placement.py`, which measures this and writes the
+result). The rotations were NOT touched. Read the live values from
+`piano_env_cfg.py`; as of that change:
+
+```python
+left_base_pos  = (0.2013,  0.1278, 0.7857)
+right_base_pos = (0.1940, -0.1786, 0.7838)
+```
+
+Why 30 mm down / 20 mm forward specifically: at −30 mm the index tip can reach
+11.7 mm below the key top (a press needs `PRESS_DEPTH` = 8 mm) while the middle
+phalanges still clear the keys by 10.5 mm at the ready pose, so nothing rests on
+a key at reset. Going deeper (−38 mm) cuts that clearance to 2.5 mm. The +20 mm
+forward shift matters because without it the only reachable spot is the key's
+front lip (x ≈ 0.538 against a 0.5375–0.6825 key) — the fingertip lands on a
+sliver and slides off; with it the tip lands at x ≈ 0.587, mid-key.
+Re-measure any time with `fit_base_placement.py` (dry-run by default).
+
+Reference visual: `results/two_shadow_hands_still_v7.rrd` (single-frame scene
+snapshot; older physics recordings were removed as superseded). Do NOT change
+these poses without an explicit user request. To re-place interactively, use
+`scripts/tools/place_scene_viser.py` (browser GUI, port 8012) — its 💾 button
+writes these fields; then regenerate the still rrd via the warm render server
+(`render.py rerun --out ...`, no `--physics_demo`, ~10 s).
+
+## Kinematics outside Isaac: URDF export + PyRoki IK
+
+PyRoki / yourdfpy / viser need **URDF**; the embodiment is authored in **USD**.
+Rather than substituting some other Shadow Hand model, export the actual asset:
+
+```bash
+source env.sh && python scripts/tools/export_hand_urdf.py   # ~1 s, no Isaac boot
+```
+
+writes `assets/urdf/shadow_hand_{left,right}/` (27 links, 25 DoF = rail + 24).
+Two traps this hits, both already handled — do not "fix" them back:
+
+* the USDs declare `metersPerUnit = 0.01` but are authored in **meters**
+  (forearm = 0.256 m), so the export runs at `--scale 1.0`;
+* USD gives a joint frame in both bodies; URDF wants the child frame to BE the
+  joint frame. The exporter keeps the USD child frame (so meshes need no
+  rebaking) via `origin = (localPos0, localRot0 · conj(localRot1))` and
+  `axis_child = R(localRot1) · axis_joint`.
+
+Verify after ANY asset change — it compares URDF FK against PhysX body poses and
+currently agrees to **0.000 mm / 0.000 deg** on all 27 bodies of both hands:
+
+```bash
+.venv-pyroki/bin/python scripts/smoke/check_urdf_fk.py   # needs the warm server
+```
+
+The browser IK demo (pyroki venv, no Isaac, no GPU) — both hands at the locked
+base poses over the real 88-key board, fingertip gizmos, snap-a-finger-to-a-key:
+
+```bash
+.venv-pyroki/bin/python scripts/tools/piano_ik_viser.py   # http://localhost:8013
+```
+
+Reachability is real: these hands have **no arm**, so X (into the keyboard) is
+unactuated and only the Y rail + finger curl can move a tip. The GUI's "worst
+tip miss (mm)" is the honest signal — a gizmo dragged off that manifold simply
+will not be reached. `pyroki` itself lives at `/home/ubuntu/pyroki` (editable
+install in `.venv-pyroki`).
+
+To script presses instead of dragging (`dexsim.kinematics`, pyroki venv):
+
+```bash
+.venv-pyroki/bin/python scripts/tools/press_notes.py left:index:C4 right:thumb:F4
+.venv-pyroki/bin/python scripts/tools/press_notes.py --reach left   # what it CAN touch
+```
+
+Target the **`*_tip` frames**, not the `*distal` links: the distal link ORIGIN
+sits ~30 mm short of the pad that touches a key (the sim's own fingertip reward
+measures that origin, which is fine for the reward but wrong for IK). The
+exporter emits `robot0_<f>distal_tip` at the far end of each distal mesh.
+
+## ⚠ Open: the fingers do not HOLD a commanded pose (J0 is unactuated)
+
+The reach problem is fixed (see the placement section) — four fingers per hand
+now solve a press at 0.0 mm. Presses still do not register in PhysX, for a
+second and unrelated reason found on 2026-08-15:
+
+* `query --kind drives` reports **`robot0_*J0` (the distal joints) with
+  stiffness 0, damping 0, max force 0** — they are completely unactuated, which
+  is how the real Shadow Hand's J0/J1 tendon coupling is usually modelled;
+* let physics settle (`--settle 240`) and the J1 joints fall **~0.67–0.72 rad
+  below their commanded value** — the hand does not even hold its own
+  `*_ready_pose` (cfg `FFJ1 = 1.00` settles to `0.33`);
+* so an IK solution is never realised: the fingertip ends up ~24 mm above where
+  it was commanded, and no key goes down.
+
+The `fk` query now takes `--settle` and reports `keys_down` / `key_travel_max`
+straight from PhysX, which is the honest end-to-end check. Note the default of
+5 steps is only 42 ms — far too short for the drives to converge; anything that
+cares where the fingers ENDED UP must pass a real settle.
+
+Fixing this means actuating J0 or modelling the coupling (and probably raising
+the J1 gains) — an actuator-tuning change, not a placement one. Not attempted;
+ask the user first.
+
+## Reward: two selectable recipes (`reward_mode`)
+
+* `"dexsim"` (default) — the composite grown in this repo: key press + fingering
+  (from the **precomputed** plan) + onset + idle-hover + arm/jerk penalties.
+* `"rp1m"` — a port of RP1M (Zhao et al., CoRL 2024):
+  `r_OT + r_Press + 0.5·r_Collision − 5e-3·r_Energy`. Its defining feature is
+  that fingering is **not** read from the precomputed plan — it is re-solved
+  every step by optimal transport from the live fingertip positions
+  (`dexsim/piano/ot.py`), which is what lets RP1M drop human fingering labels.
+  No `r_Sustain`: our piano articulation has no pedal joint, and the user
+  decided (2026-08-13) they don't want one. Do NOT add a pedal DoF or the
+  sustain term unless explicitly asked — the omission is intentional, not a gap.
+
+`fingering_method` (`"heuristic"` | `"ot"`) separately selects how the *offline*
+plan (observation targets, dexsim reward) is built.
+
+`r_Collision` reads **real PhysX contacts** (`rp1m_collision_contacts=True`): one
+`ContactSensor` per left-hand body in `cfg.contact_bodies`, each filtered against
+the matching right-hand bodies. Both sides of a filtered contact pair must
+resolve to exactly ONE prim per env — a sensor `prim_path` matching several
+bodies, or a filter pattern like `RightRobot/.*`, makes PhysX log *"did not match
+the correct number of entries"* and silently collapse to one junk channel. The
+"many" in Isaac Lab's one-to-many filtering is the **length of the pattern list**,
+not the breadth of one pattern. Set the flag False to fall back to a sensor-free
+proximity check.
+
+Verify reward changes with:
+
+```bash
+python scripts/smoke/check_rp1m_reward.py                                  # seconds, no Isaac
+python scripts/smoke/piano_env_smoke.py --reward_mode rp1m                 # end-to-end
+python scripts/smoke/piano_env_smoke.py --reward_mode rp1m --force_collision  # contacts really fire
+```
+
+The `--force_collision` run is the one that matters for `r_Collision`: with no
+collision happening, a dead sensor and a working one look identical (both report
+zero). It parks the hands inside each other and asserts the term actually trips.
 
 ## Rendering & geometry measurement: ALWAYS use the warm render server
 
@@ -48,6 +201,23 @@ truth → a warm render matches a cold render). The cold scripts still work
 standalone, but the server is the default path. If a render need isn't covered by
 an existing job type, ADD a handler to `render_server.py` rather than reintroducing
 a cold-boot script.
+
+## Two Isaac stacks side-by-side (migration 2026-08-15)
+
+* **OLD (default)**: `source env.sh` → `.venv` (py3.10, Isaac Sim 4.5, Isaac Lab
+  v2.1 in `IsaacLab/`). The render server + all existing tooling run here.
+* **NEW**: `source env51.sh` → `.venv-isaac51` (py3.11, Isaac Sim 5.1.0, Isaac
+  Lab v2.3.2 in `IsaacLab51/`, rsl-rl-lib 3.1.2). `piano_env_smoke.py` passes
+  UNCHANGED on it; `PianoPPORunnerCfg.__post_init__` version-gates the 2.3-only
+  fields (obs_groups, per-net obs normalization) so ONE cfg drives both stacks.
+  Source exactly ONE env file per shell.
+* Livestream semantics differ: 4.5: `--livestream 2`=WebRTC; 5.1: `1`=WebRTC
+  public (advertises `$PUBLIC_IP`), `2`=private/LAN. `live_scene.py` picks by
+  isaaclab version. 5.1 media rides FIXED UDP 47998 (+TCP 49100 signaling);
+  matching Mac client: **WebRTC Streaming Client 1.1.5** (arm64 dmg exists).
+* Gotchas hit during install: `flatdict==4.0.1` needs `setuptools<81` +
+  `--no-build-isolation`; keep isaacsim pins `packaging==23.0`,
+  `psutil==5.9.8`, `typing_extensions==4.12.2` when adding packages.
 
 ## General
 

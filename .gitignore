@@ -39,3 +39,10 @@ results/*.wav
 data/rp1m/
 data/corpus/
 wandb/
+
+# generated from the USD assets by scripts/tools/export_hand_urdf.py (~1 s)
+assets/urdf/
+.venv-isaac51/
+.venv-pyroki/
+IsaacLab51/
+.orca/

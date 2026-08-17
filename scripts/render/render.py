@@ -50,6 +50,8 @@ def build_job(a):
         job["fps"] = a.fps
     if getattr(a, "physics_demo", False):
         job["physics_demo"] = True
+    if getattr(a, "fast", False):
+        job["fast"] = True
     if getattr(a, "left_joints", None):
         job["left_joints"] = _kv_json(a.left_joints)
     if getattr(a, "right_joints", None):
@@ -81,6 +83,9 @@ def main():
     p.add_argument("--dump", help="rerun: intermediate npz path (default: <out>.npz)")
     p.add_argument("--physics_demo", action="store_true",
                    help="rerun: record PhysX-driven rail and finger motion")
+    p.add_argument("--fast", action="store_true",
+                   help="scene: RTX Real-Time instead of path tracing (seconds -> "
+                        "sub-second; use for placement checks, not final frames)")
     p.add_argument("--kind", default="bodies",
                    help="query preset: layout | orient | palm | bodies")
     p.add_argument("--bodies", help="query bodies: comma-separated name substrings")

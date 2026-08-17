@@ -22,6 +22,16 @@ from .fingering import (
     FINGERTIP_BODIES,
 )
 
+
+def __getattr__(name):
+    # .ot needs torch, which the torch-less rerun venv (rrd conversion) lacks.
+    # Resolving these two names lazily keeps the numpy-only pieces importable.
+    if name in ("ot_finger_cost", "hungarian_cost"):
+        from . import ot
+        return getattr(ot, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
     "PianoSong",
     "load_song",
@@ -31,6 +41,8 @@ __all__ = [
     "PIANO_MIN_MIDI",
     "PIANO_MAX_MIDI",
     "geometry",
+    "ot_finger_cost",
+    "hungarian_cost",
     "plan_fingering",
     "finger_targets_local",
     "FingeringPlan",

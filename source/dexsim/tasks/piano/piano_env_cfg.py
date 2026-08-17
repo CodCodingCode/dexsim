@@ -96,104 +96,120 @@ class PianoEnvCfg(DirectRLEnvCfg):
     right_key_window: tuple[int, int] = (63, 70)
 
     # --- layout: level, non-overlapping one-axis hand rails ---
-    piano_pos = (0.61, 0.598, 0.746)     # keyboard centered at (0.60, 0, 0.756)
-    piano_rot = (0.0, 0.0, 0.0, 1.0)     # 180deg about Z
-    hand_fixed_z: float = 0.88
-    left_base_pos = (0.82, -0.30, hand_fixed_z)
-    right_base_pos = (0.82, 0.30, hand_fixed_z)
-    hand_base_rot = (0.0, 0.0, 0.0, 1.0)  # same orientation and height
+    piano_pos = (0.6100, 0.5989, 0.7460)     # keyboard centered at (0.60, 0, 0.756)
+    piano_rot = (0.0000000, 0.0000000, 0.0000000, 1.0000000)     # 180deg about Z
+    # The mount hangs the hand fingers-down: the palm rides ~0.29 m below it, so
+    # the mounts sit high. Palm z ~0.90 puts the (tilted) fingertips ~1.5 cm
+    # above the key tops; palm x ~0.73 lands the tips at mid-key x~0.63.
+    # Each hand has its OWN full pose (position incl. z, wxyz rotation) -- place
+    # them independently (e.g. with scripts/tools/place_scene_viser.py).
+    left_base_pos = (0.2013, 0.1278, 0.7857)
+    left_base_rot = (0.5716125, 0.4318425, 0.4279437, 0.5510312)
+    right_base_pos = (0.1940, -0.1786, 0.7838)
+    right_base_rot = (0.5624963, 0.4394271, 0.4246139, 0.5569603)
 
     # --- action scaling: target = default + scale * action (action in [-1,1]) ---
-    # Per-joint (see PianoEnv.joint_scale): the stiff arm joints (stiffness 6000)
-    # blow up under a large residual; the weak hand joints (stiffness 3) need a
-    # generous range to travel between keys. So scale the arm gently, the hand more.
-    arm_action_scale: float = 0.12    # legacy name: rootJoint rail travel scale
+    # Per-joint (see PianoEnv.joint_scale): the stiff rail joint blows up under a
+    # large residual; the hand joints need a generous range to travel between keys.
+    # So scale the rail gently, the hand more.
+    arm_action_scale: float = 0.12    # legacy name: railJoint travel scale (m)
     hand_action_scale: float = 0.35   # travels between keys without mashing
     action_scale: float = 0.15        # legacy global scale (unused; back-compat)
 
-    # --- arm mode ---
-    # FIXED HANDS: arms hold a constant pose; only the fingers train (RoboPianist-style).
+    # --- base mode ---
+    # FIXED HANDS: rails hold station; only the fingers train (RoboPianist-style).
     freeze_arms: bool = False
     # mute the right hand (hold its fingers at the ready pose) for left-hand-only
     # songs so it can't mash idle keys. MUST be False for two-handed songs.
     mute_right_hand: bool = False
-
-    # ARM-IK-FOLLOW: WristPoseIK servos the 12 arm DoF to the per-hand note centroid
-    # each step; the policy action is masked to the 48 finger DoF. Set freeze_arms=False.
-    arm_ik_follow: bool = False
-    # PLANAR-IK: weight z+orientation heavily so the arm slides flat at constant
-    # height instead of tilting/sagging onto the keys.
-    planar_ik: bool = False
-    planar_weight: float = 25.0
-    planar_iters: int = 6
-    planar_pin_x: bool = False        # also hold world-X -> lateral-only (Y) slide
-    arm_z_constant: bool = False      # pin both arms' hover to one fixed Z (wrists level)
-    freeze_last_dof: bool = False     # IK holds wrist_3 at init (final wrist roll fixed)
-    freeze_wrist: bool = False        # freeze wrist 1/2/3 -> slider-like 2-3 DoF arm
-    freeze_elbow: bool = False        # also pin the elbow -> pure 2-DoF turn+lean arm
-    arm_ik_pos_only: bool = False     # drop orientation rows -> position-only solve
-
-    # --- PHASE 0: policy learns gross arm positioning (no IK, no pressing) ---
-    # The policy drives a reduced arm (default shoulder_pan + shoulder_lift) so each
-    # hand-base covers the centroid of the keys it must play; all other DoF frozen.
-    # Reward = arm_position_weight alone (zero the key/finger/onset weights).
-    # Run: freeze_arms=False, arm_ik_follow=False, mute_right_hand=False,
-    #      phase0_arm_positioning=True, arm_position_weight=1.0, others 0.
     lane_clamp: bool = True           # clamp each hand's target to its own half (anti-jam)
-    phase0_arm_positioning: bool = False
-    # Target the palm BODY's measured offset from the covered keys (the palm rides
-    # above + behind the fingertips, so the bare key centroid is unreachable).
-    arm_pos_calibrate: bool = True
-    arm_pos_palm_offset_left: tuple = (0.1515, 0.0666, 0.206)
-    arm_pos_palm_offset_right: tuple = (0.1491, 0.0894, 0.206)
-    # FOREARM CLEARANCE: penalize the forearm housing dipping below z (onto the table)
-    # or drifting forward of x (lying flat); keep it up and back toward the base.
-    forearm_clear_z: float = 0.90
-    forearm_back_x: float = 0.93
-    forearm_clear_weight: float = 0.0
-    # INTER-ARM SEPARATION: penalize palm-palm distance below arm_sep_min (anti-collision).
-    # Only acts when the POLICY drives the arms; in arm_ik_follow lane_clamp handles it.
-    arm_sep_weight: float = 0.0
-    arm_sep_min: float = 0.18
-    # WRIST-TABLE CLEARANCE: penalize a wrist dipping below wrist_clear_z (table top
-    # ~0.72, keys ~0.76). Policy-driven arms only (IK keeps the wrist up via arm_ik_hover).
-    wrist_clear_weight: float = 0.0
-    wrist_clear_z: float = 0.82
-    # which arm joints the policy may move in Phase 0 (substring match on names).
-    phase0_arm_joints: tuple = ("shoulder_pan", "shoulder_lift")
-    phase0_arm_scale: float = 0.30    # residual scale for the live Phase-0 arm joints
+
+    # --- WRIST LOCK: hold both hands upright, structurally ---
+    # The rail already pins the hand base's orientation, so the ONLY way a hand
+    # stops being upright is the policy (or a contact load) rotating the two
+    # Shadow wrist joints robot0_WRJ0/WRJ1. Locking them makes "upright" a
+    # property of the mechanism instead of something the reward has to keep
+    # buying back: the wrist targets are pinned at the locked ready-pose tilt
+    # (WRJ0=0.45 / WRJ1=0.13), the policy's residual on those joints is zeroed,
+    # and the joints are stiffened so contact can't push them off pose either.
+    # Costs 4 of the 50 action DoF (2 per hand); the fingers and rails are
+    # untouched. Set False to hand the wrists back to the policy.
+    wrist_lock: bool = True
+    wrist_lock_slack: float = 0.005       # rad of travel left around the tilt
+    wrist_lock_stiffness: float = 400.0   # vs the 45.0 finger default
+    wrist_lock_damping: float = 15.0
+    wrist_lock_effort: float = 400.0      # N*m; the stock 27 N*m ceiling saturates
 
     # --- fingering / press tweaks ---
     remap_thumb_to_middle: bool = False   # thumb fingering -> middle finger (better presser)
     solo_right_middle: bool = False       # mask action to ONLY the right middle finger
-    solo_arm_dip: bool = False            # solo mode also drives shoulder_lift (arm-dip press)
-    lift_between_notes: float = 0.0       # dip-to-strike: lift this many m between notes (0=off)
-    strike_window: int = 4                # dip this many steps before an onset
-    palm_down_servo: bool = False         # IK holds the hand palm-down/fingers-forward
-    hand_tilt: float = 0.0                # rad to tilt the IK servo orientation
-    hand_tilt_axis: int = 1               # world axis to tilt about (0=x,1=y,2=z)
-    idle_hand_retract: float = 0.20       # m an inactive hand (no upcoming notes) lifts off the keys
-    arm_ik_hover: float = 0.11            # m the servoed palm hovers above the key tops
-    # ARM-MOTION SMOOTHING: EMA factor on the IK arm-joint command so the arm glides
-    # between note targets instead of snapping to each step's centroid jump. 0 = instant
-    # (snappy), ->1 = very smooth/laggy. 0.6 ~ 100ms time constant @ 20Hz; the ~5-step
-    # lookahead absorbs the lag. arm_ik_follow only (no effect when the policy drives arms).
-    arm_smooth: float = 0.8
-    # BAKED ARM TRAJECTORY: path to a zero-phase-smoothed arm trajectory (.npz from
-    # scripts/prep/bake_arm_traj.py). When set, arm_ik_follow PLAYS BACK these smoothed
-    # arm joints instead of solving IK live -- no per-step solver jitter and no lag (the
-    # whole path was filtered offline). The arm path is deterministic per song, so this is
-    # the clean fix for jittery arms. None = solve IK live. Single-song (indexed by step).
-    arm_traj_npz: str | None = None
-    # WRIST-TILT CAP: hard-limit wrist_1 so it can't tilt up past this value ("up" = more
-    # negative; locked = -4.782). Clamped to >= wrist1_cap each step; the IK repositions
-    # the rest of the arm to keep the hand over the keys. None = off (DEFAULT).
-    # Default -4.782 = the LOCKED-pose tilt: the wrist can never cock up MORE than the
-    # approved pose (the IK otherwise over-tilts to ~-5.0 during play), but it's never
-    # flattened below it -- so the functional finger-down geometry is preserved and only
-    # the ugly excess is trimmed. Set None to disable; a less-negative value (e.g. -3.4)
-    # flattens the wrist, which makes the fingers point forward and JAM (looks/plays worse).
-    wrist1_cap: float | None = -4.782
+    arm_ik_hover: float = 0.11            # m the positioning-reward target sits above the key tops
+
+    # ===================== REWARD MODE =====================
+    # "dexsim" -- the composite grown in this repo (key press + fingering plan +
+    #             onset + idle-hover + arm/jerk penalties, all the knobs below).
+    # "rp1m"   -- a faithful port of RP1M (Zhao et al., CoRL 2024):
+    #                 r = r_OT + r_Press + 0.5*r_Collision - 5e-3*r_Energy
+    #             Nothing below the `--- reward weights` divider applies in this
+    #             mode EXCEPT the anneal block; the rp1m_* fields drive it instead.
+    #             The defining difference: fingering is NOT read from the
+    #             precomputed plan, it is re-solved every step by optimal transport
+    #             from the live fingertip positions (dexsim.piano.ot).
+    reward_mode: str = "dexsim"
+
+    # --- RP1M reward (used only when reward_mode == "rp1m") ---
+    rp1m_ot_weight: float = 1.0
+    rp1m_ot_close: float = 0.01        # m; full credit inside (the paper's 1 cm)
+    rp1m_ot_margin_mult: float = 10.0
+    # "sum" = the paper's cumulative d_OT (1:1). "mean" divides by the number of
+    # demanded keys, keeping a chord on the same scale as a single note.
+    rp1m_ot_reduce: str = "sum"
+    rp1m_ot_eps: float = 0.01          # Sinkhorn temperature (m)
+    # 0 = rank finger/key pairs nearest-first (default; within 0.25 mm of the
+    # exact assignment after 2-opt repair, ~3x cheaper). >0 = Sinkhorn ranking,
+    # ~0.03 mm. See dexsim.piano.ot for the measured table.
+    rp1m_ot_iters: int = 0
+    # Not in RP1M (its hands share a workspace): penalize matching a key to a
+    # finger on the far side of the keyboard midline, which our disjoint rails
+    # cannot reach. 0 = pure RP1M; ~2.5 mirrors the offline OT planner.
+    rp1m_ot_side_weight: float = 0.0
+    # Measure the OT distance only along actuated axes (drop X): the armless
+    # rail hands cannot move a fingertip in X, so a 3D cost carries an
+    # irreducible floor that parks r_OT's exponential in its gradient-dead
+    # tail (observed: flat 0.065 for 5k iters). True = cost over (Y, Z) only.
+    rp1m_ot_ignore_x: bool = True
+    rp1m_press_weight: float = 1.0
+    rp1m_press_close: float = 0.05     # normalized key state within this of 1 = full
+    rp1m_press_margin_mult: float = 10.0
+    # The paper forfeits the WHOLE 0.5 false-press half on any wrong key. With
+    # fingers that haven't learned to lift yet that half is just constant 0 and
+    # carries no gradient -- flip this on to charge per stray key instead.
+    rp1m_press_false_soft: bool = False
+    rp1m_collision_weight: float = 0.5    # alpha_1
+    # How r_Collision decides the hands are colliding:
+    #   True  -- real PhysX contact reports (what the paper does). One
+    #            ContactSensor per left-hand body in `contact_bodies`, each
+    #            filtered against the whole right hand; Isaac Lab only supports
+    #            one-to-many filtering, hence one sensor per body.
+    #   False -- geometric proximity: any left point within rp1m_collision_dist
+    #            of any right point. No sensors, no extra PhysX contact buffers.
+    rp1m_collision_contacts: bool = True
+    rp1m_collision_force: float = 1.0     # N; contact force that counts as a hit
+    rp1m_collision_dist: float = 0.02     # m; proximity fallback threshold
+    # Bodies the contact sensors watch (left hand only -- contact is symmetric,
+    # so left-vs-right catches every hand/hand collision).
+    contact_bodies: tuple[str, ...] = (
+        "robot0_palm", "robot0_thdistal", "robot0_ffdistal",
+        "robot0_mfdistal", "robot0_rfdistal", "robot0_lfdistal",
+    )
+    rp1m_energy_weight: float = 5e-3      # alpha_2 (subtracted)
+    # r_Sustain is omitted: our piano articulation has no pedal joint.
+
+    # --- automatic fingering used for the PLAN (observation + dexsim reward) ---
+    # "heuristic" -- the pitch-split rule; "ot" -- RP1M-style optimal transport
+    # precomputed offline over the song. reward_mode="rp1m" additionally solves OT
+    # online each step for its reward, independent of this setting.
+    fingering_method: str = "heuristic"
 
     # --- reward weights (PianoMime/RoboPianist composite) ---
     key_press_weight: float = 2.0     # reward sounding the right keys
@@ -216,6 +232,12 @@ class PianoEnvCfg(DirectRLEnvCfg):
     start_finger_curl: float = 0.0
     fingering_weight: float = 1.0     # fingertip -> assigned key spatial shaping
     onset_weight: float = 2.0         # reward sounding a key on its onset
+    # F1 BONUS (applies in BOTH reward modes): per-step, per-env F1 of pressed-vs-
+    # goal keys added to the reward with this weight. A metric-alignment term on
+    # top of shaping, never a replacement -- it pays ~0 until the policy earns
+    # nonzero F1 (self-annealing), then pulls the objective toward the number we
+    # actually evaluate. 0 = off.
+    f1_weight: float = 0.0
     # PHASE-0 gross-positioning reward (hand-base -> covered-key centroid). 0 = off.
     arm_position_weight: float = 0.0
     arm_position_close: float = 0.03         # m -> full positioning reward inside
@@ -250,23 +272,66 @@ class PianoEnvCfg(DirectRLEnvCfg):
     key_strike_vel: float = 0.35      # drop toward 0.25 if recall craters
 
     # ===================== 🔒 LOCKED STATIC POSE — DO NOT EDIT =====================
-    # left_ready_pose / right_ready_pose are the constant ready pose for both arms.
-    # wrist_1=-4.782 + shoulder_lift=-0.640 give a +70deg wrist-up tilt with the hand
-    # lowered ~40cm in z; WRJ0/WRJ1 tilt the Shadow wrist up so the hands don't droop
-    # into the table. Fingertips land ~4.5cm above the keys, pointing down.
-    # User-declared final baseline -- do NOT change without an explicit request. See CLAUDE.md.
+    # left_ready_pose / right_ready_pose are the constant ready pose for both hands.
+    # WRJ0=0.45 / WRJ1=0.13 tilt the Shadow wrist up so the hands don't droop into
+    # the table; fingers relaxed at 0. (The UR10e arms -- and their locked arm-joint
+    # pose -- were removed 2026-08-13 at the user's request; the hands now ride
+    # world-anchored Y rails. The WRJ tilt is carried over from that baseline.)
+    # Do NOT change without an explicit request. See CLAUDE.md.
     # ===============================================================================
     left_ready_pose = {
         "railJoint": 0.0,
-        "robot0_WRJ0": 0.45,   # wrist tilt up, range [-0.70, 0.49]
-        "robot0_WRJ1": 0.13,   # range [-0.49, 0.14]
-        "robot0_(?!WRJ).*": 0.0,
+        "robot0_WRJ0": 0.4500,
+        "robot0_WRJ1": 0.1300,
+        "robot0_FFJ3": 0.0000,
+        "robot0_MFJ3": 0.0000,
+        "robot0_RFJ3": 0.0000,
+        "robot0_LFJ3": 0.0000,
+        "robot0_FFJ2": 0.3500,
+        "robot0_MFJ2": 0.3500,
+        "robot0_RFJ2": 0.3500,
+        "robot0_LFJ2": 0.3500,
+        "robot0_FFJ1": 0.3000,
+        "robot0_MFJ1": 0.3000,
+        "robot0_RFJ1": 0.3000,
+        "robot0_LFJ1": 0.3000,
+        "robot0_FFJ0": 0.2500,
+        "robot0_MFJ0": 0.2500,
+        "robot0_RFJ0": 0.2500,
+        "robot0_LFJ0": 0.2500,
+        "robot0_LFJ4": 0.0500,
+        "robot0_THJ4": 0.3000,
+        "robot0_THJ3": 0.3000,
+        "robot0_THJ2": 0.0000,
+        "robot0_THJ1": 0.0000,
+        "robot0_THJ0": -0.3000,
     }
     right_ready_pose = {
         "railJoint": 0.0,
-        "robot0_WRJ0": 0.45,
-        "robot0_WRJ1": 0.13,
-        "robot0_(?!WRJ).*": 0.0,
+        "robot0_WRJ0": 0.4500,
+        "robot0_WRJ1": 0.1300,
+        "robot0_FFJ3": 0.0000,
+        "robot0_MFJ3": 0.0000,
+        "robot0_RFJ3": 0.0000,
+        "robot0_LFJ3": 0.0000,
+        "robot0_FFJ2": 0.3500,
+        "robot0_MFJ2": 0.3500,
+        "robot0_RFJ2": 0.3500,
+        "robot0_LFJ2": 0.3500,
+        "robot0_FFJ1": 0.3000,
+        "robot0_MFJ1": 0.3000,
+        "robot0_RFJ1": 0.3000,
+        "robot0_LFJ1": 0.3000,
+        "robot0_FFJ0": 0.2500,
+        "robot0_MFJ0": 0.2500,
+        "robot0_RFJ0": 0.2500,
+        "robot0_LFJ0": 0.2500,
+        "robot0_LFJ4": 0.0500,
+        "robot0_THJ4": 0.3000,
+        "robot0_THJ3": 0.3000,
+        "robot0_THJ2": 0.0000,
+        "robot0_THJ1": 0.0000,
+        "robot0_THJ0": -0.3000,
     }
 
     def __post_init__(self):
@@ -292,11 +357,7 @@ class PianoEnvCfg(DirectRLEnvCfg):
             self.piano_cfg.actuators["keys"].damping = self.key_damping
         self.left_robot_cfg.init_state.pos = self.left_base_pos
         self.right_robot_cfg.init_state.pos = self.right_base_pos
-        # Enforce identical world-Z even if a caller edited one tuple directly.
-        self.left_robot_cfg.init_state.pos = (*self.left_base_pos[:2], self.hand_fixed_z)
-        self.right_robot_cfg.init_state.pos = (*self.right_base_pos[:2], self.hand_fixed_z)
-        _br = getattr(self, "hand_base_rot", (1.0, 0.0, 0.0, 0.0))
-        self.left_robot_cfg.init_state.rot = _br
-        self.right_robot_cfg.init_state.rot = _br
+        self.left_robot_cfg.init_state.rot = self.left_base_rot
+        self.right_robot_cfg.init_state.rot = self.right_base_rot
         self.left_robot_cfg.init_state.joint_pos = dict(self.left_ready_pose)
         self.right_robot_cfg.init_state.joint_pos = dict(self.right_ready_pose)

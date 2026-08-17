@@ -53,6 +53,9 @@ p.add_argument("--phase0_joints", default=None,
                help="comma-separated arm-joint substrings the policy moves (must match training)")
 p.add_argument("--phase0_arm_scale", type=float, default=None,
                help="residual scale of the live phase0 arm joints (must match training)")
+p.add_argument("--steps", type=int, default=0,
+               help="record only the first N control steps (0 = the whole song). "
+                    "A full song is ~10k steps / ~9 min of video; 200 steps is a 10 s clip.")
 p.add_argument("--no_fold", action="store_true", help="real key positions (must match training)")
 p.add_argument("--no_mute", action="store_true", help="both arms active (must match training)")
 AppLauncher.add_app_launcher_args(p)
@@ -127,7 +130,9 @@ else:
 
 obs, _ = wrapped.get_observations()
 L, R, K, GOAL, SOUND, PALM, TGT, TACT = [], [], [], [], [], [], [], []
-for _ in range(le.song_len):
+n_steps = min(a.steps, le.song_len) if a.steps > 0 else le.song_len
+print(f"[record_rollout] recording {n_steps} steps ({n_steps * cfg.control_dt:.1f} s)")
+for _ in range(n_steps):
     goal_t = le._goal_now()[0].cpu().numpy().copy()      # which keys SHOULD sound now
     # gross-positioning target the arm is chasing (centroid of each hand's upcoming keys)
     cen, cact = le._hand_note_centroids()                # (1,2,3),(1,2)

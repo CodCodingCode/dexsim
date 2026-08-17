@@ -17,6 +17,16 @@ parser.add_argument("--midi", default=None, help="path to the song .mid (default
 parser.add_argument("--max_iterations", type=int, default=None)
 parser.add_argument("--save_interval", type=int, default=None, help="save a checkpoint every N iterations (default 10)")
 parser.add_argument("--seed", type=int, default=0)
+parser.add_argument("--reward_mode", choices=("dexsim", "rp1m"), default=None,
+                    help="reward recipe: dexsim composite (default) or the RP1M port "
+                         "(r_OT + r_Press + 0.5*r_Collision - 5e-3*r_Energy, live OT fingering)")
+parser.add_argument("--f1_weight", type=float, default=None,
+                    help="per-step F1 bonus weight (both reward modes): aligns the reward "
+                         "with the eval metric once the policy earns nonzero F1; 0=off")
+parser.add_argument("--ot_margin_mult", type=float, default=None,
+                    help="rp1m: widen r_OT's falloff (x rp1m_ot_close; paper=10 -> ~0.1 at 10cm). "
+                         "Rail hands start beyond 10cm from their OT assignments where the "
+                         "exponential is gradient-dead; 30-50 restores slope from the start.")
 parser.add_argument("--freeze_arms", action="store_true", help="fixed-hands mode: drive fingers only (arms held)")
 parser.add_argument("--planar_ik", action="store_true", help="weighted+iterated planar IK (gantry)")
 parser.add_argument("--planar_pin_x", action="store_true", help="pin depth (world X) too -> lateral-only gantry (best in rollout_f1 A/B)")
@@ -105,6 +115,12 @@ def main():
     env_cfg = PianoEnvCfg()
     env_cfg.scene.num_envs = args.num_envs
     env_cfg.seed = args.seed
+    if args.reward_mode:
+        env_cfg.reward_mode = args.reward_mode
+    if args.ot_margin_mult is not None:
+        env_cfg.rp1m_ot_margin_mult = args.ot_margin_mult
+    if args.f1_weight is not None:
+        env_cfg.f1_weight = args.f1_weight
     if args.midi:
         env_cfg.midi_path = args.midi
     if args.freeze_arms:
