@@ -20,6 +20,14 @@ data/robopianist_ref/
 assets/*.usd
 assets/*.usda
 
+# MuJoCo: vendored Menagerie checkout (auto-cloned by dexsim.mjcf.shadow_hand)
+# and generated scene XML (rebuild via scripts/mj/build_scene.py)
+assets/mujoco_menagerie/
+assets/mj/
+
+# mujoco warning dumps
+MUJOCO_LOG.TXT
+
 # python / editor / media
 __pycache__/
 *.pyc

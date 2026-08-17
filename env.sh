@@ -22,4 +22,8 @@ fi
 # dexsim is pip-installed editable, but export PYTHONPATH too as a belt-and-braces.
 export PYTHONPATH="${DEXSIM_ROOT}/source:${PYTHONPATH}"
 
+# MuJoCo headless rendering (EGL on the NVIDIA driver). The MuJoCo stack in
+# this checkout (scripts/mj/) needs no Isaac/Vulkan pieces at all.
+export MUJOCO_GL="${MUJOCO_GL:-egl}"
+
 echo "[dexsim] env ready  (python: $(python --version 2>&1), root: ${DEXSIM_ROOT})"

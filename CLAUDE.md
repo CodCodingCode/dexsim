@@ -1,57 +1,52 @@
-# dexsim — Claude instructions
+# dexsim (MuJoCo port) — Claude instructions
 
-## 🔒 LOCKED: the constant static arm+hand pose — DO NOT EDIT
+**This checkout is the MuJoCo rewrite.** The default stack lives in
+`source/dexsim/mjcf/` + `source/dexsim/tasks/piano_mj/` + `scripts/mj/` and
+runs in this repo's plain `.venv` (mujoco + rsl-rl, **no Isaac**). The Isaac
+Lab implementation is kept for reference but its venv lives in the original
+`~/dexsim` checkout, not here. See `docs/MUJOCO.md` for the full port map and
+the deliberate physics deviations (key damping, fingertip sites, mount
+calibration — each is documented with its reason; don't "fix" them back to
+the Isaac values).
 
-`left_ready_pose` / `right_ready_pose` in
-`source/dexsim/tasks/piano/piano_env_cfg.py` are the **constant static config the
-arm + hands must ALWAYS have** (arm reach joints, `wrist_3_joint = 3.14159` (π),
-`wrist_1_joint = -4.782` + `shoulder_lift_joint = -0.640` — a deliberate +70° wrist-up
-pitch about y with the hand then lowered ~40 cm in z (two 20 cm lowers; set 2026-06-08;
-wrist_1 was -2.80, sh_lift -1.40; "up" is the *negative* wrist_1 direction; sh_lift+wrist_1
-held at sum -5.422 to preserve the tilt while lowering) — and the hand wrist tilt
-`robot0_WRJ0 = 0.45` / `robot0_WRJ1 = 0.13`. Fingertips land ~4.5 cm above the keys,
-pointing down. **FINAL frozen baseline — user declared PERFECT 2026-06-08, do NOT change.**).
-**Do NOT edit these poses** — not the wrist flip, not the tilt, not the arm joints.
-They are deliberately fixed; treat them as frozen unless the user explicitly says
-otherwise in a new request.
+## 🔒 LOCKED: the constant static hand pose — DO NOT EDIT
 
-## Rendering & geometry measurement: ALWAYS use the warm render server
+`left_ready_pose` / `right_ready_pose` — defined identically in
+`source/dexsim/tasks/piano/piano_env_cfg.py` (Isaac) and
+`source/dexsim/tasks/piano_mj/piano_mj_env_cfg.py` (MuJoCo) — are the
+**constant static config the rail-mounted hands must ALWAYS have**:
+`railJoint = 0`, the hand wrist tilt `robot0_WRJ0 = 0.45` /
+`robot0_WRJ1 = 0.13`, all fingers at 0. Palms ride at the configured base
+positions (z = 0.88), fingertips hover a few cm above the keys, pointing
+down. **Do NOT edit these poses** in either cfg; treat them as frozen unless
+the user explicitly says otherwise in a new request. (The historical UR10e
+arm-joint values — `wrist_1_joint = -4.782`, `shoulder_lift_joint = -0.640`,
+`wrist_3_joint = π` — belong to the legacy Isaac arm embodiment and are
+likewise frozen where they appear.)
 
-Every cold render/diagnostic script (`render_scene.py`, `render_rollout.py`,
-`diag_*.py`, `verify_palm.py`) boots the **entire** Isaac Sim app (~30 s, longer
-under GPU contention) and rebuilds the scene from scratch on every run. A warm
-server caches that boot + built scene so each render/measurement takes seconds.
+## Rendering & measurement
 
-**For ANY rendering, video, or geometry/measurement task, use the warm server —
-do NOT cold-boot a render/diag script, and do NOT write a new one-shot
-`AppLauncher` script for it.**
-
-1. Check if the server is up: `logs/render_jobs/server.ready` exists AND its `pid` is alive.
-2. If not up, boot it ONCE (wait for `READY` in the log, ~30 s):
-   ```bash
-   source env.sh
-   python scripts/render/render_server.py --headless > logs/render_server.log 2>&1 &
-   ```
-3. Submit jobs with the thin client (returns in seconds, no Isaac boot):
-   ```bash
-   python scripts/render/render.py scene   --eye 2.2,-1.5,1.8 --target 0.45,0,0.78 --spp 160 --out logs/x.png
-   python scripts/render/render.py rollout --rollout logs/rollout.npz --out results/v.mp4 --spp 96
-   python scripts/render/render.py query   --kind layout|orient|palm|bodies [--rollout r.npz] --out logs/q.json
-   ```
-   - `query` kinds subsume the old diagnostics: `layout`←diag_layout, `orient`←diag_hand_orient,
-     `palm`←verify_palm, `bodies`←diag_arm_links (pass `--left_joints`/`--right_joints`/`--bodies`).
-   - Lower `--spp` for faster preview stills; raise it for final quality.
-4. Leave the server running for iteration; `python scripts/render/render.py shutdown` to free its GPU memory.
-
-Shared scene builders are in `source/dexsim/render/studio.py` (single source of
-truth → a warm render matches a cold render). The cold scripts still work
-standalone, but the server is the default path. If a render need isn't covered by
-an existing job type, ADD a handler to `render_server.py` rather than reintroducing
-a cold-boot script.
+- **MuJoCo (default):** no warm server needed — the scene compiles in ~0.3 s
+  and renders in-process (`MUJOCO_GL=egl`). Stills/queries: extend
+  `scripts/mj/smoke_piano_mj.py`-style probes; videos:
+  `scripts/mj/play_piano_mj.py --video`.
+- **Isaac (legacy only):** every cold render/diag script boots the whole
+  Isaac app (~30 s). If you ever work the Isaac stack, use the warm render
+  server (`scripts/render/render_server.py` + `scripts/render/render.py`) as
+  described in `README.md` — never write new one-shot `AppLauncher` scripts.
 
 ## General
 
-- `source env.sh` before anything (venv + Omniverse EULA + the staged Vulkan driver + PYTHONPATH).
-- Isaac-only embodiment work: UR10e + Shadow Hand. No MuJoCo/RoboPianist routing.
-- Heavy `isaaclab` imports (and `dexsim.render.studio`) must come AFTER `AppLauncher(...).app`.
-- `logs/` is gitignored (the render job-queue lives in `logs/render_jobs/`).
+- `source env.sh` before anything (activates the MuJoCo venv + PYTHONPATH).
+- The task recipe is shared: `source/dexsim/piano/` (MIDI → goal schedule,
+  fold-to-reach, fingering, rewards, key geometry) is framework-agnostic and
+  used by BOTH stacks — changes there affect both.
+- Embodiment: two Shadow Hands on Y rails (Menagerie E3M5, right + true
+  left, renamed to the `robot0_*` convention in `dexsim/mjcf/shadow_hand.py`).
+- MuJoCo scene geometry comes from `dexsim.piano.geometry` — the single
+  source of truth. Don't hardcode key positions anywhere else.
+- rsl-rl here is ≥5.x: its runner config is the dict in
+  `source/dexsim/tasks/piano_mj/ppo_cfg.py`, NOT the Isaac-Lab-era
+  `RslRlOnPolicyRunnerCfg` classes.
+- `logs/` is gitignored; `assets/mujoco_menagerie/` (auto-vendored) and
+  `assets/mj/` (generated XML) are gitignored too.

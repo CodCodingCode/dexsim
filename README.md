@@ -1,14 +1,34 @@
-# dexsim — UR10e + Shadow Hand in Isaac Lab
+# dexsim — bimanual Shadow-Hand piano (MuJoCo port)
 
-Pure-sim dexterous manipulation on the UR10e + Shadow Hand embodiment, on an
-H100. Two things live here:
+This checkout is the **MuJoCo rewrite** of dexsim: the same bimanual piano
+task (two rail-mounted Shadow Hands over an 88-key spring piano, PPO on a
+MIDI-defined goal), rebuilt on plain MuJoCo — no Isaac Sim boot, no Vulkan
+driver staging, ~0.3 s scene compile, in-process rendering. The original
+Isaac Lab implementation is still here for reference; the shared task logic
+(`source/dexsim/piano/`: MIDI → goals, fingering, rewards, key geometry) is
+used unchanged by both stacks.
 
-### 🎹 Current goal — bimanual piano (see [docs/PIANO.md](docs/PIANO.md))
-Two UR10e + Shadow arms (**60 action DoF**) over an 88-key piano, trained with
-PPO to play a specific MIDI song. The env builds and steps on GPU today
-(`scripts/smoke/piano_env_smoke.py` passes). Drop your `.mid` in `data/midi/` and:
+### 🎹 MuJoCo quickstart (see [docs/MUJOCO.md](docs/MUJOCO.md))
 ```bash
-source env.sh
+source env.sh          # activates the MuJoCo .venv
+python scripts/mj/smoke_piano_mj.py --render                       # sanity + PNG
+python scripts/mj/train_piano_mj.py --num_envs 64 --midi data/midi/<song>.mid
+python scripts/mj/play_piano_mj.py --checkpoint logs/piano_mj/<run>/model_final.pt \
+    --video results/mj_play.mp4 --export_midi results/played.mid
+```
+Stack: MuJoCo 3.11 (Menagerie Shadow Hand E3M5, right + true left) +
+rsl_rl ≥5.x PPO. Layout: `source/dexsim/mjcf/` (scene builders),
+`source/dexsim/tasks/piano_mj/` (env + vec env + PPO cfg), `scripts/mj/`.
+
+---
+
+## Legacy: the Isaac Lab implementation
+
+### 🎹 Bimanual piano on Isaac (see [docs/PIANO.md](docs/PIANO.md))
+Two UR10e + Shadow arms (**60 action DoF**) over an 88-key piano, trained with
+PPO to play a specific MIDI song. Requires the Isaac venv (see the original
+`~/dexsim` checkout — this repo's `.venv` is MuJoCo-only):
+```bash
 python scripts/train/train_piano.py --headless --num_envs 2048 --midi data/midi/<song>.mid
 python scripts/train/play_piano.py  --num_envs 1 --video --export_midi logs/played.mid
 ```

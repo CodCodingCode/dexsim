@@ -30,6 +30,17 @@ _SPAN = float(geom.KEYBOARD_SPAN_Y)
 _BIG = _SPAN * 4.0
 
 
+def nearest_active_distance_np(goal) -> "np.ndarray":
+    """NumPy twin of :func:`nearest_active_distance` for the MuJoCo env
+    (single env, ``goal`` (88,) bool/float -> (88,) float32)."""
+    import numpy as np
+
+    pair = _PAIR_DY.numpy()                                       # (88, 88)
+    g = np.asarray(goal, dtype=np.float32)
+    cost = pair + (1.0 - g)[None, :] * _BIG                       # (88, 88)
+    return np.clip(cost.min(axis=-1) / _SPAN, 0.0, 1.0).astype(np.float32)
+
+
 def nearest_active_distance(goal: torch.Tensor) -> torch.Tensor:
     """(E, 88) normalized distance from each key to the nearest *active* key.
 
