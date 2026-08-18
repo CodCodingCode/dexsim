@@ -52,6 +52,8 @@ parser.add_argument("--anneal_steps", type=int, default=None)
 parser.add_argument("--start_curl", type=float, default=None)
 parser.add_argument("--idle_finger_curl", type=float, default=None)
 parser.add_argument("--lookahead", type=int, default=None)
+parser.add_argument("--episode_s", type=float, default=None,
+                    help="episode length in seconds (default 30; raise so one episode covers the whole song)")
 parser.add_argument("--lr", type=float, default=None)
 parser.add_argument("--entropy_coef", type=float, default=None)
 parser.add_argument("--init_noise", type=float, default=None)
@@ -99,6 +101,7 @@ def build_env_cfg() -> PianoMjEnvCfg:
         ("start_finger_curl", args.start_curl),
         ("idle_finger_curl", args.idle_finger_curl),
         ("goal_lookahead", args.lookahead),
+        ("episode_length_s", args.episode_s),
         ("false_press_start", args.false_press_start),
         ("anneal_recall_gate", args.anneal_recall_gate),
         ("anneal_steps", args.anneal_steps),
