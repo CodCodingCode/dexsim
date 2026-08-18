@@ -15,6 +15,8 @@ p = argparse.ArgumentParser()
 p.add_argument("--checkpoint", default=None)
 p.add_argument("--zero", action="store_true", help="zero residual = pure IK reference")
 p.add_argument("--midi", default="data/midi/song.mid")
+p.add_argument("--strike_vel", type=float, default=None,
+               help="override key_strike_vel; 0 = RP1M sounding (active while depressed)")
 p.add_argument("--out", default="logs/rollout.npz")
 p.add_argument("--rerun", nargs="?", const="auto", default=None, metavar="OUT.RRD",
                help="also write a scrub-able Rerun recording (default: same stem as --out)")
@@ -69,6 +71,8 @@ from dexsim.tasks.piano import PianoEnvCfg
 from dexsim.tasks.piano.agents.rsl_rl_ppo_cfg import PianoPPORunnerCfg
 
 cfg = PianoEnvCfg(); cfg.scene.num_envs = 1; cfg.midi_path = a.midi
+if a.strike_vel is not None:
+    cfg.key_strike_vel = a.strike_vel
 if a.phase0:
     # mirror train_piano.py's --phase0 preset so a phase0 checkpoint maps as trained:
     # RL drives a reduced-DoF arm, fingers frozen, real key positions, both arms active.
@@ -128,7 +132,9 @@ else:
     runner.load(a.checkpoint)
     policy = runner.get_inference_policy(device=le.device)
 
-obs, _ = wrapped.get_observations()
+# rsl-rl API drift: 2.x returns (obs, extras) / 4-tuple step; 3.x returns obs / 3-tuple
+_o = wrapped.get_observations()
+obs = _o[0] if isinstance(_o, tuple) else _o
 L, R, K, GOAL, SOUND, PALM, TGT, TACT = [], [], [], [], [], [], [], []
 n_steps = min(a.steps, le.song_len) if a.steps > 0 else le.song_len
 print(f"[record_rollout] recording {n_steps} steps ({n_steps * cfg.control_dt:.1f} s)")
@@ -137,7 +143,8 @@ for _ in range(n_steps):
     # gross-positioning target the arm is chasing (centroid of each hand's upcoming keys)
     cen, cact = le._hand_note_centroids()                # (1,2,3),(1,2)
     with torch.inference_mode():
-        obs, _, _, _ = wrapped.step(policy(obs))
+        _r = wrapped.step(policy(obs))
+        obs = _r[0]
     L.append(le.left_robot.data.joint_pos[0].cpu().numpy())
     R.append(le.right_robot.data.joint_pos[0].cpu().numpy())
     K.append(le.piano.data.joint_pos[0].cpu().numpy())

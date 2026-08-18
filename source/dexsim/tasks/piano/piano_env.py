@@ -274,10 +274,13 @@ class PianoEnv(DirectRLEnv):
             press_close=self.cfg.rp1m_press_close,
             press_margin_mult=self.cfg.rp1m_press_margin_mult,
             press_false_soft=self.cfg.rp1m_press_false_soft,
+            press_one_sided=getattr(self.cfg, "rp1m_press_one_sided", True),
             collision_weight=self.cfg.rp1m_collision_weight,
             collision_dist=self.cfg.rp1m_collision_dist,
             energy_weight=self.cfg.rp1m_energy_weight,
         )
+        self._rp1m_ot_w0 = float(self.rp1m_cfg.ot_weight)   # pre-anneal value
+        self._rp1m_recall_ema = 0.0
         if self.rp1m_mode:
             print(f"[PianoEnv] REWARD=RP1M: r_OT(w={self.rp1m_cfg.ot_weight}, "
                   f"reduce={self.rp1m_cfg.ot_reduce}) + r_Press(w={self.rp1m_cfg.press_weight}, "
@@ -464,6 +467,22 @@ class PianoEnv(DirectRLEnv):
                 self._solo_mask = _m
             a_right = a_right * self._solo_mask
             a_left = a_left * 0.0
+        # SOLO the LEFT middle finger -- mirror of the above. The left hand is the
+        # one with a VERIFIED press (press_env_test: key 33 to 0.021 rad), so the
+        # single-key curriculum rung solos it. Optionally also frees the rail.
+        if getattr(self.cfg, "solo_left_middle", False):
+            if not hasattr(self, "_solo_mask_l"):
+                _names = self.left_robot.data.joint_names
+                _m = torch.zeros(self.per_arm_dof, device=self.device)
+                _jset = ["robot0_MFJ3", "robot0_MFJ2", "robot0_MFJ1", "robot0_MFJ0"]
+                if getattr(self.cfg, "solo_rail", False):
+                    _jset += ["railJoint"]
+                for _jn in _jset:
+                    if _jn in _names:
+                        _m[_names.index(_jn)] = 1.0
+                self._solo_mask_l = _m
+            a_left = a_left * self._solo_mask_l
+            a_right = a_right * 0.0
         base_l, base_r = ref[:, 0], ref[:, 1]
         self._left_target = torch.clamp(base_l + scale * a_left, lo, hi)
         self._right_target = torch.clamp(base_r + scale * a_right, lo, hi)
@@ -487,8 +506,19 @@ class PianoEnv(DirectRLEnv):
         # -- pressed past key_struck_frac AND moving down faster than key_strike_vel --
         # and rings until it springs back above key_release_frac. A statically-resting
         # hand (~0 velocity) never triggers a strike. Called once per step (_get_rewards).
-        vel = torch.nan_to_num(self.piano.data.joint_vel, nan=0.0)   # <0 = pressing down
-        struck = (frac >= getattr(self.cfg, "key_struck_frac", 1.0)) & (vel < -self.cfg.key_strike_vel)
+        # key_strike_vel <= 0 selects RoboPianist/RP1M semantics instead: a key is
+        # active while depressed past key_struck_frac (hysteresis release below
+        # key_release_frac), no velocity condition. The hammer gate samples at
+        # control rate (20 Hz), so a crisp strike that bottoms out and rebounds
+        # within one 50 ms step is INVISIBLE to it -- measured on the scripted
+        # ceiling: key held at full travel, vel at the sample already positive
+        # (rebound), sounding never latched.
+        strike_vel = float(self.cfg.key_strike_vel)
+        if strike_vel <= 0.0:
+            struck = frac >= getattr(self.cfg, "key_struck_frac", 1.0)
+        else:
+            vel = torch.nan_to_num(self.piano.data.joint_vel, nan=0.0)   # <0 = pressing down
+            struck = (frac >= getattr(self.cfg, "key_struck_frac", 1.0)) & (vel < -strike_vel)
         released = frac < getattr(self.cfg, "key_release_frac", 0.8)
         prev_sounding = self.key_sounding
         self.key_sounding = (self.key_sounding | struck) & ~released
@@ -723,8 +753,14 @@ class PianoEnv(DirectRLEnv):
             vel = torch.nan_to_num(robot.data.joint_vel, nan=0.0)
             energy = energy + (tau.abs() * vel.abs()).sum(-1)
 
+        # Normalize depth so key_state = 1.0 AT the sounding depth (frac ==
+        # key_struck_frac), keeping the depth credit aligned with what sounding
+        # actually requires when struck_frac > 1 demands deeper-than-threshold
+        # presses. frac itself is clamped to 2, so struck_frac must stay <= 2.
+        depth_norm = max(1.0, float(getattr(self.cfg, "key_struck_frac", 1.0)))
         return rp1m_reward(
-            ot_dist, n_active, self._key_frac_raw, self.key_sounding.float(), goal,
+            ot_dist, n_active, self._key_frac_raw / depth_norm,
+            self.key_sounding.float(), goal,
             collided=collided, energy=energy, cfg=self.rp1m_cfg)
 
     def _hands_collided(self, tips: torch.Tensor) -> torch.Tensor:
@@ -920,6 +956,21 @@ class PianoEnv(DirectRLEnv):
                 self.extras["log"]["rp1m/collided_frac"] = float(
                     1.0 - rp1m_parts["collision"].mean() / self.rp1m_cfg.collision_weight)
             reward = g(rp1m_total)
+            # optional idle-finger shaping: makes "lie on the keys" strictly
+            # worse than hovering, which the paper composite alone does not.
+            if getattr(self.cfg, "rp1m_idle_terms", False):
+                reward = reward + r_idle + r_hover
+            # recall-gated r_OT decay: pay for hover guidance only until presses land.
+            if getattr(self.cfg, "rp1m_ot_anneal", False):
+                if has_goal.any():
+                    b = float(self.cfg.anneal_recall_beta)
+                    self._rp1m_recall_ema = b * self._rp1m_recall_ema + (1.0 - b) * float(rec)
+                if self._rp1m_recall_ema >= float(self.cfg.anneal_recall_gate):
+                    floor = float(self.cfg.rp1m_ot_floor)
+                    rate = (self._rp1m_ot_w0 - floor) / max(1, int(self.cfg.anneal_steps))
+                    self.rp1m_cfg.ot_weight = max(floor, self.rp1m_cfg.ot_weight - rate)
+                self.extras["log"]["curriculum/rp1m_ot_w"] = float(self.rp1m_cfg.ot_weight)
+                self.extras["log"]["curriculum/rp1m_recall_ema"] = float(self._rp1m_recall_ema)
         else:
             reward = (r_key + r_finger + r_onset + r_idle + r_hover + r_arm
                       + r_jerk + r_limit)

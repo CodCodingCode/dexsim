@@ -284,6 +284,12 @@ class RP1MRewardCfg:
     # whole 0.5. Softening it to a per-key count is the single most useful knob
     # here for a hand that hasn't yet learned to lift its idle fingers.
     press_false_soft: bool = False
+    # The paper's depth half scores |key_state - 1|, which PENALIZES pressing past
+    # the target: with key_state normalized by the (shallow) sound threshold, the
+    # v4 run measurably learned feather presses (max 24% of mechanical travel).
+    # One-sided keeps full credit at-or-beyond the target; energy already
+    # discourages excess force. Set False for the paper-faithful two-sided band.
+    press_one_sided: bool = True
 
     # --- a1 * r_Collision ---
     collision_weight: float = 0.5
@@ -342,7 +348,11 @@ def rp1m_press_reward(key_state, sounding, goal, cfg: RP1MRewardCfg = RP1MReward
     eps = 1e-6
 
     gap = key_state - 1.0
-    gap = gap.abs() if is_torch else xp.abs(gap)
+    if getattr(cfg, "press_one_sided", True):
+        # only UNDER-pressing is a gap; at-or-past the target = full credit
+        gap = (-gap).clamp(min=0.0) if is_torch else xp.maximum(-gap, 0.0)
+    else:
+        gap = gap.abs() if is_torch else xp.abs(gap)
     shaped = tolerance(gap, lower=0.0, upper=cfg.press_close,
                        margin=cfg.press_close * cfg.press_margin_mult)
     n_on = goal_f.sum(-1)

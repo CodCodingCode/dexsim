@@ -14,6 +14,7 @@ from isaaclab.app import AppLauncher
 
 p = argparse.ArgumentParser()
 p.add_argument("--steps", type=int, default=200)
+p.add_argument("--hand", choices=("left", "right"), default="left")
 AppLauncher.add_app_launcher_args(p)
 a = p.parse_args()
 a.headless = True
@@ -59,22 +60,24 @@ cfg = PianoEnvCfg()
 cfg.scene.num_envs = 1
 env = gym.make("Dexsim-Piano-Bimanual-v0", cfg=cfg, render_mode=None)
 le = env.unwrapped
-names = list(le.left_robot.data.joint_names)
+rob = le.left_robot if a.hand == 'left' else le.right_robot
+other = le.right_robot if a.hand == 'left' else le.left_robot
+names = list(rob.data.joint_names)
 sim_dt = le.sim.get_physics_dt()
 thr = abs(KEY_SOUND_ANGLE)
 best = (None, 0.0)
 
 for label, pose in ATTEMPTS:
     env.reset()
-    target = le.left_robot.data.default_joint_pos.clone()
+    target = rob.data.default_joint_pos.clone()
     for jn, v in pose.items():
         target[0, names.index(jn)] = v
-    right_home = le.right_robot.data.default_joint_pos.clone()
+    other_home = other.data.default_joint_pos.clone()
     for _ in range(a.steps):
-        le.left_robot.set_joint_position_target(target)
-        le.right_robot.set_joint_position_target(right_home)
-        le.left_robot.write_data_to_sim()
-        le.right_robot.write_data_to_sim()
+        rob.set_joint_position_target(target)
+        other.set_joint_position_target(other_home)
+        rob.write_data_to_sim()
+        other.write_data_to_sim()
         le.sim.step()
         for art in (le.left_robot, le.right_robot, le.piano):
             art.update(sim_dt)

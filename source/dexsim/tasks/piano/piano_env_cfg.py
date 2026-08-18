@@ -96,8 +96,11 @@ class PianoEnvCfg(DirectRLEnvCfg):
     right_key_window: tuple[int, int] = (63, 70)
 
     # --- layout: level, non-overlapping one-axis hand rails ---
-    piano_pos = (0.6100, 0.5989, 0.7460)     # keyboard centered at (0.60, 0, 0.756)
-    piano_rot = (0.0000000, 0.0000000, 0.0000000, 1.0000000)     # 180deg about Z
+    piano_pos = (0.5900, -0.5969, 0.7460)     # keyboard stays centered at (0.60, 0, 0.756)
+    piano_rot = (1.0, 0.0, 0.0, 0.0)     # UN-FLIPPED 2026-08-17: was 180deg about Z, which put the
+    # black keys and key HINGES toward the player -- hands pressed the hinge end
+    # of every key (no leverage; the press-fragility root cause). Key fronts now
+    # face the hands; the swap_hands guardrail re-routes fingering automatically.
     # The mount hangs the hand fingers-down: the palm rides ~0.29 m below it, so
     # the mounts sit high. Palm z ~0.90 puts the (tilted) fingertips ~1.5 cm
     # above the key tops; palm x ~0.73 lands the tips at mid-key x~0.63.
@@ -185,6 +188,10 @@ class PianoEnvCfg(DirectRLEnvCfg):
     # fingers that haven't learned to lift yet that half is just constant 0 and
     # carries no gradient -- flip this on to charge per stray key instead.
     rp1m_press_false_soft: bool = False
+    # One-sided depth credit (full credit at-or-past target depth). The paper's
+    # two-sided |key_state-1| band penalizes over-pressing and, with our shallow
+    # sound threshold, trained visible feather presses (v4, 2026-08-18).
+    rp1m_press_one_sided: bool = True
     rp1m_collision_weight: float = 0.5    # alpha_1
     # How r_Collision decides the hands are colliding:
     #   True  -- real PhysX contact reports (what the paper does). One
@@ -204,6 +211,19 @@ class PianoEnvCfg(DirectRLEnvCfg):
     )
     rp1m_energy_weight: float = 5e-3      # alpha_2 (subtracted)
     # r_Sustain is omitted: our piano articulation has no pedal joint.
+
+    # --- RP1M-mode shaping additions (all default OFF = paper-faithful) ---
+    # Mix the dexsim idle-finger terms (idle_clear_weight / idle_hover_weight
+    # below) into the RP1M reward. Without them the RP1M composite's optimum is
+    # literally "rest the fingers on the demanded keys and never move" -- r_OT
+    # targets the key TOPS, r_Press's hard FP half is forfeited anyway, and
+    # r_Energy punishes motion (measured: 250M steps at F1=0.0008, run rp1m_12k_v3).
+    rp1m_idle_terms: bool = False
+    # Once the recall EMA crosses anneal_recall_gate, linearly decay r_OT's
+    # weight to rp1m_ot_floor over ~anneal_steps reward steps: the hover guide
+    # earns its keep early, then stops paying for hovering once presses land.
+    rp1m_ot_anneal: bool = False
+    rp1m_ot_floor: float = 0.3
 
     # --- automatic fingering used for the PLAN (observation + dexsim reward) ---
     # "heuristic" -- the pitch-split rule; "ot" -- RP1M-style optimal transport

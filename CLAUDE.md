@@ -106,29 +106,39 @@ sits ~30 mm short of the pad that touches a key (the sim's own fingertip reward
 measures that origin, which is fine for the reward but wrong for IK). The
 exporter emits `robot0_<f>distal_tip` at the far end of each distal mesh.
 
-## ⚠ Open: the fingers do not HOLD a commanded pose (J0 is unactuated)
+## 🚨 THE HAND HAD NO DRIVES UNTIL 2026-08-17 — how it was fixed, how to not regress
 
-The reach problem is fixed (see the placement section) — four fingers per hand
-now solve a press at 0.0 mm. Presses still do not register in PhysX, for a
-second and unrelated reason found on 2026-08-15:
+The vendored hand USDs (`nvidia_shadow_right/shadow_hand_right.usd`,
+`shadow_hand_left.usd`) author **no `PhysicsDriveAPI` on any joint**. PhysX only
+creates a drive for a joint that has the API at parse time, so on BOTH Isaac
+stacks every gain/target write from Isaac Lab's actuators silently no-oped: the
+hands were pure rag dolls (fingers gravity-flopped onto the keys, thumbs pinned
+at their THJ3 limit = the "inverted thumbs", rail drifting). All of it while
+`get_dof_stiffnesses()` read back the configured 45.0 — **the getter reads a
+cache, not the solver; never trust it as proof of actuation.** Every dynamic
+"verified press" before this date was a rag-doll artifact; the entire 250M-step
+`rp1m_12k_v3` run trained on driveless hands (F1 0.0008).
 
-* `query --kind drives` reports **`robot0_*J0` (the distal joints) with
-  stiffness 0, damping 0, max force 0** — they are completely unactuated, which
-  is how the real Shadow Hand's J0/J1 tendon coupling is usually modelled;
-* let physics settle (`--settle 240`) and the J1 joints fall **~0.67–0.72 rad
-  below their commanded value** — the hand does not even hold its own
-  `*_ready_pose` (cfg `FFJ1 = 1.00` settles to `0.33`);
-* so an IK solution is never realised: the fingertip ends up ~24 mm above where
-  it was commanded, and no key goes down.
+**The fix lives in the slider wrappers** `assets/shadow_hand_{left,right}_slider.usda`:
+`over` blocks apply `PhysicsDriveAPI:angular` to all 24 hand joints (+ `:linear`
+on `railJoint`). The authored numbers are per-degree placeholders; the real
+gains still come from the actuator cfgs at init (those writes bind now that
+drives exist). If a hand ever goes limp again, FIRST check those overs survived
+whatever touched the assets. The honest actuation check is behavioral:
+`scratchpad diag — free-air tracking` (lift bases, command the ready pose, joints
+must track within ~0.03 rad; driveless joints blast to their limits in <50 ms).
 
-The `fk` query now takes `--settle` and reports `keys_down` / `key_travel_max`
-straight from PhysX, which is the honest end-to-end check. Note the default of
-5 steps is only 42 ms — far too short for the drives to converge; anything that
-cares where the fingers ENDED UP must pass a real settle.
-
-Fixing this means actuating J0 or modelling the coupling (and probably raising
-the J1 gains) — an actuator-tuning change, not a placement one. Not attempted;
-ask the user first.
+The `fk` query's `keys_down`/`key_travel_max` (with a real `--settle`, e.g. 240)
+remains the press ground truth. Two more geometry facts measured 2026-08-17:
+* **Key indexing runs low-pitch = low world Y** (key 0 at y≈−0.60, key 87 at
+  +0.60; `piano.data.joint_pos` IS in key order). Key 33 sits at y=−0.14 —
+  the **RIGHT** hand's lane (right FF tip y=−0.13). The left hand's rail reach
+  is roughly keys 37–64. `solo_left_middle` + `one_key.mid` (key 33) was a
+  wrong-hand pairing; the scripted ceiling now picks hand+finger by geometry.
+* **`key_strike_vel <= 0` selects RoboPianist/RP1M sounding** (key active while
+  depressed past `key_struck_frac`, hysteresis release). The default hammer gate
+  samples at 20 Hz and provably misses crisp strikes that bottom out and rebound
+  within one 50 ms step — use `--strike_vel 0` for anything RP1M-shaped.
 
 ## Reward: two selectable recipes (`reward_mode`)
 

@@ -23,6 +23,21 @@ parser.add_argument("--reward_mode", choices=("dexsim", "rp1m"), default=None,
 parser.add_argument("--f1_weight", type=float, default=None,
                     help="per-step F1 bonus weight (both reward modes): aligns the reward "
                          "with the eval metric once the policy earns nonzero F1; 0=off")
+parser.add_argument("--press_false_soft", action="store_true",
+                    help="rp1m: per-wrong-key false-press cost instead of the paper's "
+                         "all-or-nothing 0.5 (restores the anti-mash gradient)")
+parser.add_argument("--rp1m_idle_terms", action="store_true",
+                    help="rp1m: add idle_clear/idle_hover shaping into the RP1M reward "
+                         "(their weights still come from --idle_clear_weight/--idle_hover_weight)")
+parser.add_argument("--rp1m_ot_anneal", action="store_true",
+                    help="rp1m: once recall EMA >= anneal_recall_gate, decay r_OT's weight "
+                         "to --rp1m_ot_floor over anneal_steps (stop paying for hovering)")
+parser.add_argument("--rp1m_ot_floor", type=float, default=None,
+                    help="rp1m: final r_OT weight after the anneal (default 0.3)")
+parser.add_argument("--rp1m_energy_weight", type=float, default=None,
+                    help="rp1m: override alpha_2 (paper 5e-3). Our finger actuators run "
+                         "~20x the real Shadow hand's torque scale, so the paper weight "
+                         "over-penalizes motion by the same factor; ~1e-3 compensates.")
 parser.add_argument("--ot_margin_mult", type=float, default=None,
                     help="rp1m: widen r_OT's falloff (x rp1m_ot_close; paper=10 -> ~0.1 at 10cm). "
                          "Rail hands start beyond 10cm from their OT assignments where the "
@@ -66,6 +81,8 @@ parser.add_argument("--struck_frac", type=float, default=None, help="key sounds 
 parser.add_argument("--no_norm", action="store_true", help="disable empirical_normalization (sparse-reward PPO degrades with it on)")
 parser.add_argument("--solo_arm_dip", action="store_true", help="solo mode: also allow shoulder_lift (press by arm dip, no finger flex-arc)")
 parser.add_argument("--solo_middle", action="store_true", help="mask action to ONLY the right middle finger (no other finger moves -> no mash; learns timing)")
+parser.add_argument("--solo_left_middle", action="store_true", help="mask action to ONLY the left middle finger (the hand with the VERIFIED press); zeroes the right hand")
+parser.add_argument("--solo_rail", action="store_true", help="solo modes: also let the rail slide (finger + 1D base)")
 parser.add_argument("--remap_thumb", action="store_true", help="remap thumb fingering -> middle finger (cleaner straight-down presser)")
 parser.add_argument("--lift_between", type=float, default=None, help="dip-to-strike: lift hand this many m above hover between notes (0=constant hover)")
 parser.add_argument("--wrist_up_delta", type=float, default=None, help="RUNTIME-ONLY: add this to wrist_1_joint in init_state (angle fingers forward for top-down strike); does NOT edit the locked ready-pose file")
@@ -119,6 +136,16 @@ def main():
         env_cfg.reward_mode = args.reward_mode
     if args.ot_margin_mult is not None:
         env_cfg.rp1m_ot_margin_mult = args.ot_margin_mult
+    if args.press_false_soft:
+        env_cfg.rp1m_press_false_soft = True
+    if args.rp1m_idle_terms:
+        env_cfg.rp1m_idle_terms = True
+    if args.rp1m_ot_anneal:
+        env_cfg.rp1m_ot_anneal = True
+    if args.rp1m_ot_floor is not None:
+        env_cfg.rp1m_ot_floor = args.rp1m_ot_floor
+    if args.rp1m_energy_weight is not None:
+        env_cfg.rp1m_energy_weight = args.rp1m_energy_weight
     if args.f1_weight is not None:
         env_cfg.f1_weight = args.f1_weight
     if args.midi:
@@ -216,6 +243,10 @@ def main():
         env_cfg.remap_thumb_to_middle = True
     if args.solo_middle:
         env_cfg.solo_right_middle = True
+    if args.solo_left_middle:
+        env_cfg.solo_left_middle = True
+    if args.solo_rail:
+        env_cfg.solo_rail = True
     if args.solo_arm_dip:
         env_cfg.solo_arm_dip = True
     if args.lift_between is not None:
