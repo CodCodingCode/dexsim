@@ -42,7 +42,6 @@ parser.add_argument("--false_press_weight", type=float, default=None)
 parser.add_argument("--fingering_weight", type=float, default=None)
 parser.add_argument("--onset_weight", type=float, default=None)
 parser.add_argument("--idle_hover_weight", type=float, default=None)
-parser.add_argument("--idle_clear_weight", type=float, default=None)
 parser.add_argument("--strike_vel", type=float, default=None)
 parser.add_argument("--anneal_false_press", action="store_true",
                     help="recall-gated curriculum: hold false-press at --false_press_start (energy 0) until recall EMA >= gate, then ramp to the cfg finals")
@@ -96,7 +95,6 @@ def build_env_cfg() -> PianoMjEnvCfg:
         ("fingering_weight", args.fingering_weight),
         ("onset_weight", args.onset_weight),
         ("idle_hover_weight", args.idle_hover_weight),
-        ("idle_clear_weight", args.idle_clear_weight),
         ("key_strike_vel", args.strike_vel),
         ("start_finger_curl", args.start_curl),
         ("idle_finger_curl", args.idle_finger_curl),

@@ -431,18 +431,7 @@ class PianoMjEnv:
                                           active.astype(np.float32), self.reward_cfg))
         r_onset = float(onset_reward(pressed, self._onset_now(), self.reward_cfg))
 
-        # idle-finger clearance penalty
-        icw = float(getattr(cfg, "idle_clear_weight", 0.0))
-        if icw > 0.0:
-            kb_top = key_top[:, 2].max()
-            plane = kb_top + float(getattr(cfg, "idle_clear_margin", 0.02))
-            below = np.clip(plane - tips[:, 2], 0.0, None)
-            idle = (~active).astype(np.float64)
-            r_idle = -icw * float((below * idle).sum() / max(idle.sum(), 1.0))
-        else:
-            r_idle = 0.0
-
-        # idle-finger hover shaping (positive twin)
+        # idle-finger hover shaping
         if self.reward_cfg.idle_hover_weight > 0.0:
             r_hover = float(idle_hover_reward(tips, press_tgt,
                                               active.astype(np.float32),
@@ -479,8 +468,7 @@ class PianoMjEnv:
         on_timing = float((played_on * near).sum() / n_played) if n_played > 0 else 0.0
 
         g = lambda x: float(np.clip(np.nan_to_num(x), -10.0, 10.0))
-        reward = (g(r_key) + g(r_finger) + g(r_onset) + g(r_idle) + g(r_hover)
-                  + g(r_jerk))
+        reward = g(r_key) + g(r_finger) + g(r_onset) + g(r_hover) + g(r_jerk)
         reward = float(np.clip(reward, -10.0, 10.0))
 
         logs = {
@@ -496,7 +484,6 @@ class PianoMjEnv:
             "reward/key": g(r_key),
             "reward/finger": g(r_finger),
             "reward/onset": g(r_onset),
-            "reward/idle_clear": g(r_idle),
             "reward/idle_hover": g(r_hover),
             "reward/jerk_pen": g(r_jerk),
             "reward/total": reward,

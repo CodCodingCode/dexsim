@@ -102,8 +102,6 @@ class PianoMjEnvCfg:
     key_press_weight: float = 2.0
     false_press_weight: float = 1.0
     energy_weight: float = 0.0005
-    idle_clear_weight: float = 0.0
-    idle_clear_margin: float = 0.02
     idle_hover_weight: float = 0.0
     idle_hover_close: float = 0.005
     idle_hover_margin_mult: float = 5.0
