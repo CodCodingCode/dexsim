@@ -5,17 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dexsim"
 version = "0.1.0"
-description = "UR10e + Shadow Hand dexterous manipulation tasks for Isaac Lab (RL reorientation + BODex imitation)"
+description = "Two rail-mounted Shadow Hands learning piano with PPO in MuJoCo"
 requires-python = ">=3.10"
-# Isaac Sim / Isaac Lab / torch are provided by the environment install
-# (see SETUP.md); only the lightweight extras live here.
+# torch is installed separately (CUDA build on the GPU box, CPU on a laptop).
 dependencies = [
     "numpy",
-    "huggingface_hub>=0.23",
+    "scipy",
+    "mujoco",
+    "rsl-rl-lib>=5",
+    "gymnasium",
+    "tensorboard",
     "pretty_midi",
     "mido",
+    "imageio[ffmpeg]",
     "wandb>=0.18",
-    "protobuf>=4.25,<5",  # keep <5 for Isaac Lab; wandb works with 4.25
 ]
 
 [tool.setuptools.packages.find]

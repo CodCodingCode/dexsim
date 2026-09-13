@@ -31,7 +31,7 @@ class PianoRewardCfg:
     onset_weight: float = 0.5         # extra reward for sounding a key on its onset
     finger_close_enough: float = 0.01    # m; inside this -> full fingering reward
     finger_margin_mult: float = 25.0     # gaussian falloff reaches ~0.1 at 25x (~25 cm)
-    # --- idle-finger hover shaping (positive twin of the idle-clear penalty) ---
+    # --- idle-finger hover shaping ---
     # Reward idle fingers for sitting at their hover-home; the smooth gradient that
     # holds them UP so "press one finger, rest hovering" beats mash AND droop. 0 = off.
     idle_hover_weight: float = 0.0
@@ -69,7 +69,7 @@ def _backend(x):
 
 
 def piano_reward(pressed, goal, cfg: PianoRewardCfg = PianoRewardCfg(),
-                 energy=None):
+                 energy=None, goal_weight=None):
     """Per-env reward. ``pressed`` (..., 88) float; ``goal`` (..., 88) bool/float.
 
     Reward = key_press_weight * mean over goal keys of a soft "is it down" term
@@ -89,7 +89,11 @@ def piano_reward(pressed, goal, cfg: PianoRewardCfg = PianoRewardCfg(),
     eps = 1e-6
     n_goal = goal_f.sum(-1)
 
-    hit = (sounded * goal_f).sum(-1) / (n_goal + eps)          # want -> 1
+    # goal_weight (88,) or (E,88): per-key importance, mean ~1 over goal keys.
+    # Rare / not-yet-learned keys > 1, frequent / mastered keys < 1, so the
+    # SAME per-step budget is redistributed toward what is still missing.
+    gw = goal_f if goal_weight is None else goal_f * goal_weight
+    hit = (sounded * gw).sum(-1) / (n_goal + eps)              # want -> 1
     # wrong keys are COUNTED per intended note (denom = #goal keys, min 1), NOT
     # averaged over all ~87 non-goal keys -- else a misclick dilutes to ~1/87 and
     # precision rots. A rest step (no goal) charges full weight per false press.
@@ -140,8 +144,8 @@ def idle_hover_reward(fingertip_pos, hover_target_pos, active_mask, cfg: PianoRe
     onto its key; this one pulls each *idle* finger to its hover point (home key
     top + HOVER_CLEARANCE -- the same targets the observation already exposes).
     Together they make "one finger down, the rest up" the shaped optimum, with a
-    gradient on the idle fingers at all times -- unlike the idle-clear penalty,
-    which is flat 0 until a finger has already dropped below the clearance plane.
+    gradient on the idle fingers at all times (not only after a finger has
+    already dropped onto the keys).
     Mean is taken over idle fingers only; a step with all 10 fingers assigned
     contributes 0 (nothing is asked to hover).
 
@@ -208,7 +212,8 @@ def arm_position_reward(palm_pos, target_pos, active_mask, cfg: PianoRewardCfg =
     return cfg.arm_position_weight * mean_over_active
 
 
-def onset_reward(pressed, onsets, cfg: PianoRewardCfg = PianoRewardCfg()):
+def onset_reward(pressed, onsets, cfg: PianoRewardCfg = PianoRewardCfg(),
+                 goal_weight=None):
     """Reward sounding a key on the exact step its note begins (not just holding).
 
     ``onsets`` (E, 88) bool marks note-start steps. Encourages crisp attacks /
@@ -220,7 +225,8 @@ def onset_reward(pressed, onsets, cfg: PianoRewardCfg = PianoRewardCfg()):
     sounded = 1.0 / (1.0 + xp.exp(-over))
     eps = 1e-6
     n = onset_f.sum(-1)
-    hit = (sounded * onset_f).sum(-1) / (n + eps)
+    ow = onset_f if goal_weight is None else onset_f * goal_weight
+    hit = (sounded * ow).sum(-1) / (n + eps)
     return cfg.onset_weight * hit
 
 

@@ -31,6 +31,9 @@ from dexsim.tasks.piano_mj import PianoMjEnv, PianoMjEnvCfg
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--midi", default=None)
+    parser.add_argument("--songs_npz", default=None,
+                        help="multi-song goal bundle (e.g. data/multisong/repertoire40.npz)")
+    parser.add_argument("--max_songs", type=int, default=1)
     parser.add_argument("--render", action="store_true",
                         help="offscreen-render the ready pose to logs/mj_smoke.png")
     args = parser.parse_args()
@@ -38,13 +41,17 @@ def main():
     cfg = PianoMjEnvCfg()
     if args.midi:
         cfg.midi_path = args.midi
+    if args.songs_npz:
+        cfg.songs_npz = args.songs_npz
+        cfg.max_songs = args.max_songs
 
     t0 = time.time()
     env = PianoMjEnv(cfg)
     m, d = env.model, env.data
     print(f"[1] scene compiled in {time.time() - t0:.1f}s: nq={m.nq} nv={m.nv} "
           f"nu={m.nu} nbody={m.nbody}")
-    assert m.nu == cfg.action_space, (m.nu, cfg.action_space)
+    n_act = cfg.action_space - (1 if cfg.sustain_pedal else 0)
+    assert m.nu == n_act, (m.nu, n_act)
 
     # --- [2] locked ready pose geometry ------------------------------------
     obs = env.reset()
@@ -92,6 +99,44 @@ def main():
     # --- [4] env API + a short random rollout -------------------------------
     obs = env.reset()
     assert obs.shape == (cfg.observation_space,), obs.shape
+    # obs layout: [hand(100) | tips(30) | angles(K) | vel(K) | sounding(K) | ...]
+    K = cfg.n_obs_keys(); kid = env.obs_key_ids
+    off = 4 * len(env.hand_qadr[0]) + (30 if cfg.obs_fingertip_pos else 0)
+    if cfg.obs_mode == "global":       # per-key chunk checks (ego layout differs)
+        assert np.allclose(obs[off:off + K], env.data.qpos[env.key_qadr[kid]]), \
+            "key-angle chunk != qpos[observed keys]"
+        off += K
+        if cfg.obs_key_vel:
+            assert np.allclose(obs[off:off + K], np.clip(env.data.qvel[env.key_dadr[kid]], -50, 50))
+            off += K
+        if cfg.obs_key_sounding:
+            assert np.array_equal(obs[off:off + K].astype(bool), env.key_sounding[kid]), \
+                "sounding chunk != latch"
+    else:
+        # ego layout: check the per-hand window is the K keys nearest each palm
+        Ke = cfg.ego_keys
+        D = len(env.hand_qadr[0])
+        o = 2 * D + (2 * D if cfg.ego_hand_vel else 0) + 2
+        if cfg.ego_all_keys:
+            assert np.allclose(obs[o:o + 88], env.data.qpos[env.key_qadr]), "88-key chunk != qpos"
+            o += 88
+        if cfg.ego_piano_roll:
+            L = cfg.goal_lookahead
+            roll = env.bank.goal[env.song_id, env.song_step:env.song_step + L].reshape(-1)
+            assert np.array_equal(obs[o:o + L * 88], roll), "piano-roll chunk != goal lookahead"
+            o += L * 88
+        for h in range(2):
+            blk = obs[o + h * Ke * 4: o + (h + 1) * Ke * 4].reshape(Ke, 4)
+            palm_y = env.data.xpos[env.palm_body[h], 1]
+            near = np.sort(np.abs(env.key_y - palm_y))[:Ke]
+            assert np.allclose(np.sort(np.abs(blk[:, 0])), near, atol=1e-5), "ego window != nearest keys"
+            assert np.all(np.diff(blk[:, 0]) > 0), "ego window not sorted left->right"
+    priv = env.critic_extras()
+    assert priv.shape == (cfg.critic_extra_dim(),), priv.shape
+    assert (priv >= 0).all() and (priv <= 1).all()
+    print(f"    obs {cfg.observation_space} dims (mode {cfg.obs_mode}), "
+          f"critic +{cfg.critic_extra_dim()} privileged; tip|F| max {priv[:10].max():.3f}"
+          if cfg.critic_obs_tip_forces else f"    obs {cfg.observation_space} dims")
     rng = np.random.default_rng(0)
     t0 = time.time()
     steps, done_seen = 0, False

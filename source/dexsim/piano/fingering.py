@@ -135,6 +135,8 @@ def plan_fingering(key_activation: np.ndarray, method: str = "heuristic",
     """
     if method == "ot":
         return plan_fingering_ot(key_activation, **ot_kwargs)
+    if method == "hand":
+        return plan_fingering_hand(key_activation, swap_hands=swap_hands, **ot_kwargs)
     if method != "heuristic":
         raise ValueError(f"unknown fingering method: {method!r}")
     T = key_activation.shape[0]
@@ -218,6 +220,86 @@ _RIGHT_FINGERS = (R_THUMB, R_INDEX, R_MIDDLE, R_RING, R_LITTLE)
 _THUMBS = (L_THUMB, R_THUMB)
 
 
+def window_home_keys(left_window: tuple[int, int],
+                     right_window: tuple[int, int]) -> np.ndarray:
+    """(10,) idle home keys spreading each hand's five fingers evenly over its
+    reachable key window (inclusive), little fingers outward, thumbs inward:
+    left [lf..th] low->high over left_window, right [th..lf] over right_window."""
+    home = np.zeros(NUM_FINGERS, dtype=np.int64)
+    l0, l1 = left_window
+    r0, r1 = right_window
+    for slot, key in zip(_LEFT_ORDER, np.linspace(l0, l1, FINGERS_PER_HAND).round().astype(int)):
+        home[slot] = key
+    for slot, key in zip(_RIGHT_ORDER, np.linspace(r0, r1, FINGERS_PER_HAND).round().astype(int)):
+        home[slot] = key
+    return home
+
+
+# default fingertip offsets from the palm along the keyboard (m), per finger
+# [L th,ff,mf,rf,lf, R th,ff,mf,rf,lf]; measured on the Menagerie hands at the
+# ready pose (thumb inward toward the keyboard middle, little finger outward).
+# The env passes the live measurement; this is the fallback.
+DEFAULT_FINGER_OFFSETS = np.array([+0.052, +0.022, 0.0, -0.022, -0.044,
+                                   -0.052, -0.022, 0.0, +0.022, +0.044])
+
+
+def plan_fingering_hand(key_activation: np.ndarray, *, finger_offsets=None,
+                        swap_hands: bool = False,
+                        black_thumb_weight: float = 0.03) -> FingeringPlan:
+    """Hand-relative assignment for a hand that MOVES (rail servo / free hand).
+
+    Absolute-key planners (heuristic, ot) assume fixed finger homes, so once
+    the song is not folded into a fixed window they hand a single chord to
+    fingers 30 cm apart. Here, per step and per hand: place the hand at the
+    centroid of that hand's notes, then match notes to fingers by the cost
+        |key_y[k] - (centroid + finger_offset[f])|
+    (linear-sum assignment), i.e. whichever finger naturally sits over the key
+    once the hand is centred. Consistent with the env's finger-offset rail
+    servo, which centres the hand so the ASSIGNED finger lands on its key.
+    Hands split at the keyboard middle with overflow rebalancing, as in the
+    heuristic planner. Idle homes are the finger offsets around each hand's
+    base position (used only for the hover targets).
+    """
+    if _lsa is None:  # pragma: no cover
+        raise RuntimeError("plan_fingering_hand needs scipy (linear_sum_assignment).")
+    off = (DEFAULT_FINGER_OFFSETS if finger_offsets is None
+           else np.asarray(finger_offsets, dtype=np.float64))
+    T = key_activation.shape[0]
+    key_y = geom.key_local_top_positions()[:, 1]                  # (88,)
+    is_black = geom.KEY_IS_BLACK
+    finger_key = np.full((T, NUM_FINGERS), -1, dtype=np.int64)
+    finger_active = np.zeros((T, NUM_FINGERS), dtype=bool)
+    home = _home_keys()
+    low_group, high_group = ((_RIGHT_FINGERS, _LEFT_FINGERS) if swap_hands
+                             else (_LEFT_FINGERS, _RIGHT_FINGERS))
+    for t in range(T):
+        active = np.sort(np.nonzero(key_activation[t])[0])
+        if active.size == 0:
+            continue
+        split = _balanced_split(active)
+        low = [int(k) for k in active if k < split]
+        high = [int(k) for k in active if k >= split]
+        low, high = _rebalance(low, high)
+        for keys, fingers in ((low, low_group), (high, high_group)):
+            if not keys:
+                continue
+            keys = np.array(keys)
+            if len(keys) > FINGERS_PER_HAND:            # >5 notes: keep 5 spanning the range
+                idx = np.linspace(0, len(keys) - 1, FINGERS_PER_HAND).round().astype(int)
+                keys = keys[idx]
+            fingers = np.array(list(fingers))
+            c = key_y[keys].mean()
+            cost = np.abs(key_y[keys][None, :] - (c + off[fingers])[:, None])   # (5, K)
+            thumb_rows = np.isin(fingers, list(_THUMBS))
+            cost[thumb_rows] += black_thumb_weight * is_black[keys][None, :]
+            rows, cols = _lsa(cost)
+            for r, cidx in zip(rows, cols):
+                f = int(fingers[r]); k = int(keys[cidx])
+                finger_key[t, f] = k
+                finger_active[t, f] = True
+    return FingeringPlan(finger_key=finger_key, finger_active=finger_active, home_key=home)
+
+
 def plan_fingering_ot(
     key_activation: np.ndarray,
     *,
@@ -225,8 +307,16 @@ def plan_fingering_ot(
     black_thumb_weight: float = 0.03,
     home_pull_weight: float = 0.15,
     smooth: bool = True,
+    home_keys: np.ndarray | None = None,
 ) -> FingeringPlan:
     """RP1M-style optimal-transport fingering.
+
+    ``home_keys`` (10,) overrides the idle home key per finger. The default
+    spreads the fingers over the whole keyboard (thumbs at the middle), which
+    for a song folded into two narrow hand windows leaves only ONE finger per
+    hand anywhere near the notes -- the matching then re-uses that finger for
+    every key. Pass windowed homes (see :func:`window_home_keys`) so all five
+    fingers of a hand start over its window and get distinct keys.
 
     At each control step the active keys are assigned to fingers by **minimum
     total movement cost** — a linear-sum (Jonker-Volgenant) assignment, exactly
@@ -251,7 +341,8 @@ def plan_fingering_ot(
     T = key_activation.shape[0]
     key_pos = geom.key_local_top_positions()                  # (88, 3)
     mid_y = float(key_pos[NUM_KEYS // 2, 1])                   # keyboard centre (local Y)
-    home = _home_keys()                                        # (10,) home key idx
+    home = (_home_keys() if home_keys is None
+            else np.asarray(home_keys, dtype=np.int64).copy())   # (10,) home key idx
     home_pos = key_pos[home]                                   # (10, 3)
     is_black = geom.KEY_IS_BLACK                               # (88,)
 

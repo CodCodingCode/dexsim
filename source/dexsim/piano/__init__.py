@@ -1,7 +1,7 @@
 """Piano playing task: MIDI parsing, keyboard model, and bimanual reward.
 
 Framework-agnostic pieces live here (MIDI -> note schedule). The sim-specific
-environment (Isaac Lab) is assembled in ``dexsim.tasks.piano``.
+environment (MuJoCo) is assembled in ``dexsim.tasks.piano_mj``.
 """
 
 from .midi import (

@@ -1,5 +1,9 @@
 # The MuJoCo stack — bimanual piano without Isaac
 
+> **2026-09-10:** the Isaac Lab implementation referenced in the port map
+> below was deleted from this branch (see git history / `master`). The
+> "Isaac stack" column is kept as a record of what each MuJoCo module replaced.
+
 This repo carries a full MuJoCo port of the bimanual piano task alongside the
 original Isaac Lab implementation. Same task recipe, same 🔒 locked ready
 pose, same reward composition, same MIDI goal pipeline — no Isaac Sim boot,
@@ -53,7 +57,7 @@ Two Shadow Hands, each with one world-Y prismatic `railJoint` (±0.12 m, the
 Isaac slider's travel), palm-down over the flipped piano, fingers toward the
 keys. 24 joints/hand; 20 position actuators/hand (the four `*J0` distal pairs
 are tendon-coupled, as on the real hand and in the Isaac USD) + 1 rail ⇒
-**42-dim action**. Observations (1216-dim, same composition as Isaac): both
+**42-dim action**. Observations (see `PianoMjEnvCfg.__post_init__` for the current layout; originally 1216-dim, same composition as Isaac): both
 hands' qpos+qvel, 88 key angles, 10×88 goal lookahead, 10 fingertip positions,
 10 fingering targets, 88-dim analytic goal SDF.
 

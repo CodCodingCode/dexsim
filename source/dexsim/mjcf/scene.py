@@ -29,7 +29,8 @@ DEFAULT_SCENE_XML = _ROOT / "assets" / "mj" / "piano_scene.xml"
 
 # 180° about Y: hand-frame fingers (+X) -> world -X, palm (+Z) -> world down.
 MOUNT_QUAT = (0.0, 0.0, 1.0, 0.0)
-# Isaac rail: build_shadow_hand_sliders.py RAIL_LIMIT_M / PIANO_SHADOW_HAND cfg
+# Isaac rail: build_shadow_hand_sliders.py RAIL_LIMIT_M / PIANO_SHADOW_HAND cfg.
+# Fallback only -- the live value is cfg.rail_limit (see _build_scene_spec).
 RAIL_LIMIT = 0.12
 RAIL_STIFFNESS = 1200.0
 RAIL_DAMPING = 120.0
@@ -118,6 +119,10 @@ def _build_scene_spec(cfg, tip_shift: float) -> mujoco.MjSpec:
               key_damping=getattr(cfg, "key_damping", 0.0))
 
     # --- two rail-mounted hands --------------------------------------------
+    rail_limit = float(getattr(cfg, "rail_limit", RAIL_LIMIT))
+    rail_kp = float(getattr(cfg, "rail_stiffness", RAIL_STIFFNESS))
+    rail_kd = float(getattr(cfg, "rail_damping", RAIL_DAMPING))
+    rail_f = float(getattr(cfg, "rail_force", RAIL_FORCE))
     for side, prefix, base in (("left", "L_", cfg.left_base_pos),
                                ("right", "R_", cfg.right_base_pos)):
         base = (base[0], base[1], cfg.hand_fixed_z)
@@ -130,7 +135,7 @@ def _build_scene_spec(cfg, tip_shift: float) -> mujoco.MjSpec:
         mount.add_joint(name=f"{prefix}railJoint",
                         type=mujoco.mjtJoint.mjJNT_SLIDE,
                         axis=[0.0, 1.0, 0.0],
-                        range=[-RAIL_LIMIT, RAIL_LIMIT],
+                        range=[-rail_limit, rail_limit],
                         damping=1.0, armature=0.01, limited=True)
 
         hand = load_hand_spec(side)
@@ -147,13 +152,13 @@ def _build_scene_spec(cfg, tip_shift: float) -> mujoco.MjSpec:
         act = spec.add_actuator(name=f"{prefix}A_rail",
                                 trntype=mujoco.mjtTrn.mjTRN_JOINT,
                                 target=f"{prefix}railJoint")
-        act.gainprm[0] = RAIL_STIFFNESS
-        act.biasprm[1] = -RAIL_STIFFNESS
-        act.biasprm[2] = -RAIL_DAMPING
+        act.gainprm[0] = rail_kp
+        act.biasprm[1] = -rail_kp
+        act.biasprm[2] = -rail_kd
         act.biastype = mujoco.mjtBias.mjBIAS_AFFINE
         act.gaintype = mujoco.mjtGain.mjGAIN_FIXED
-        act.ctrlrange = [-RAIL_LIMIT, RAIL_LIMIT]
-        act.forcerange = [-RAIL_FORCE, RAIL_FORCE]
+        act.ctrlrange = [-rail_limit, rail_limit]
+        act.forcerange = [-rail_f, rail_f]
         act.ctrllimited = True
 
     # --- cameras ------------------------------------------------------------

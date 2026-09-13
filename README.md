@@ -1,163 +1,99 @@
-# dexsim — bimanual Shadow-Hand piano (MuJoCo port)
+# dexsim — bimanual Shadow-Hand piano in MuJoCo
 
-This checkout is the **MuJoCo rewrite** of dexsim: the same bimanual piano
-task (two rail-mounted Shadow Hands over an 88-key spring piano, PPO on a
-MIDI-defined goal), rebuilt on plain MuJoCo — no Isaac Sim boot, no Vulkan
-driver staging, ~0.3 s scene compile, in-process rendering. The original
-Isaac Lab implementation is still here for reference; the shared task logic
-(`source/dexsim/piano/`: MIDI → goals, fingering, rewards, key geometry) is
-used unchanged by both stacks.
+Two rail-mounted Shadow Hands over an 88-key spring piano learn to play a
+MIDI song with PPO. Plain MuJoCo, no Isaac Sim. Success is measured by the
+**F1 of actual key presses** against the song, not by reward.
 
-### 🎹 MuJoCo quickstart (see [docs/MUJOCO.md](docs/MUJOCO.md))
+Results so far on `results/nettspend - we not like you (1).mid`:
+
+| | deterministic F1 | notes |
+|---|---|---|
+| folded into two 8-key windows (2026-09-10) | **0.84** | `results/nettspend_ot_a100/` -- the song transposed to fit; not the real track |
+| real song, full keyboard, v2 (2026-09-12) | **0.44** | `results/nettspend_fullkeyboard_v2/` -- limited by held bass notes needing a pedal |
+| real song + sustain pedal | in progress | run `nettspend_pedal_a100` |
+
+## Quickstart
+
 ```bash
-source env.sh          # activates the MuJoCo .venv
-python scripts/mj/smoke_piano_mj.py --render                       # sanity + PNG
-python scripts/mj/train_piano_mj.py --num_envs 64 --midi data/midi/<song>.mid
+bash scripts/mj/setup_venv.sh      # one-time: uv venv + mujoco, rsl_rl, torch, ...
+source env.sh                      # activates .venv, sets PYTHONPATH
+python scripts/mj/smoke_piano_mj.py --songs_npz data/multisong/repertoire40.npz
+
+# train (laptop: --device cpu --workers <cores-2>; GPU box: --device cuda)
+python scripts/mj/train_piano_mj.py \
+    --midi "results/nettspend - we not like you (1).mid" --episode_s 65 \
+    --num_envs 1024 --workers 28 --device cuda \
+    --max_iterations 3000 --anneal_false_press --tag my_run
+
+# roll out a checkpoint: per-key recall/precision, MIDI export, video with audio
+python scripts/mj/diag_rollout.py logs/piano_mj/<run>/model_final.pt "<song>.mid" hand
 python scripts/mj/play_piano_mj.py --checkpoint logs/piano_mj/<run>/model_final.pt \
-    --video results/mj_play.mp4 --export_midi results/played.mid
-```
-Stack: MuJoCo 3.11 (Menagerie Shadow Hand E3M5, right + true left) +
-rsl_rl ≥5.x PPO. Layout: `source/dexsim/mjcf/` (scene builders),
-`source/dexsim/tasks/piano_mj/` (env + vec env + PPO cfg), `scripts/mj/`.
-
----
-
-## Legacy: the Isaac Lab implementation
-
-### 🎹 Bimanual piano on Isaac (see [docs/PIANO.md](docs/PIANO.md))
-Two UR10e + Shadow arms (**60 action DoF**) over an 88-key piano, trained with
-PPO to play a specific MIDI song. Requires the Isaac venv (see the original
-`~/dexsim` checkout — this repo's `.venv` is MuJoCo-only):
-```bash
-python scripts/train/train_piano.py --headless --num_envs 2048 --midi data/midi/<song>.mid
-python scripts/train/play_piano.py  --num_envs 1 --video --export_midi logs/played.mid
+    --midi "<song>.mid" --episode_s 65 \
+    --video results/played.mp4 --export_midi results/played.mid
+python scripts/mj/midi_to_audio_video.py results/played.mid results/played.mp4 results/played_audio.mp4
 ```
 
-### Foundation — manipulation on the same embodiment
-- **RL in-hand reorientation** — turnkey via Isaac Lab's built-in Shadow env.
-- **Imitation from BODex-Tabletop** — the dataset *is* this exact embodiment
-  (UR10e + Shadow), so trajectories drop in; DexGraspNet adds object diversity.
+Always pass `--workers N` when training: the single-process env serializes on
+the GIL at ~400 steps/s regardless of env count; N worker processes scale
+almost linearly with cores (~5,500 steps/s on 30 cores).
 
-> ⚙️ This box is a **compute-only container** — Isaac Sim's Vulkan/GPU foundation
-> needed a one-time driver fix (staged locally, no sudo). `env.sh` wires it up;
-> the full story and the `setup_nvidia_gl.sh` recipe are in [docs/SETUP.md](docs/SETUP.md).
+Checkpoints trained before 2026-09-10 used short rails, a folded song, the
+per-key observation, policy-driven rails and no pedal; replay them with
+`--legacy_reach --fingering ot`.
 
 ## Layout
 
 ```
 dexsim/
-  env.sh                       # source this first (venv + EULA + PYTHONPATH)
+  env.sh                          # source first (venv + PYTHONPATH + MUJOCO_GL)
   source/dexsim/
-    assets/ur10e_shadow.py     # UR10e, Shadow Hand, and combined ArticulationCfgs
-    assets/piano.py            # 88-key piano ArticulationCfg
-    piano/                     # MIDI->goal parser + reward (framework-agnostic)
-    tasks/piano/               # Dexsim-Piano-Bimanual-v0 (DirectRLEnv) + PPO cfg
-    tasks/reorient/            # RL cube reorientation (Dexsim-Reorient-Cube-Shadow-v0)
-    tasks/grasp/               # tabletop scene + BODex trajectory loader
+    piano/                        # sim-agnostic: MIDI -> goals, fingering (hand / OT / heuristic),
+                                  #   key geometry, reward terms, goal encodings
+    mjcf/                         # MuJoCo scene: procedural piano + Menagerie hands on rails
+    tasks/piano_mj/               # PianoMjEnv, vec envs (threaded / process-sharded),
+                                  #   rsl_rl wrapper, PPO config, song bank
+    visualization/                # rollout npz -> Rerun .rrd
   scripts/
-    setup_nvidia_gl.sh         # stage NVIDIA Vulkan/GLX driver locally (the env fix)
-    train/                     # PPO train + playback + eval + run monitoring
-                               #   train_piano.py / play_piano.py, train_rl.py / play_rl.py,
-                               #   eval_reference.py, ...
-    build/                     # one-shot USD asset builders
-                               #   build_combined_usd.py, build_piano_usd.py,
-                               #   build_shadow_slider_usd.py, *_left_hand asset provenance
-    prep/                      # MIDI/corpus prep + dataset downloads
-                               #   make_test_midi.py, build_corpus.py,
-                               #   download_bodex.py, replay_bodex.py, ...
-    render/                    # rendering, video, and camera-rig tools
-                               #   render_scene.py, record_rollout.py / render_rollout.py, ...
-                               #   render_server.py + render.py  <- WARM cache (boot once, render in s)
-    smoke/                     # sanity / integration tests (no training)
-                               #   smoke_test.py, piano_env_smoke.py, smoke_slider.py, ...
-  assets/                      # composed USDs land here (gitignored)
-  data/                        # datasets (gitignored)
-  IsaacLab/                    # Isaac Lab v2.1.0 checkout (installed editable)
-  .venv/                       # Python 3.10 venv with Isaac Sim 4.5 + Isaac Lab
+    mj/                           # smoke test, train, play/export, diagnostics, audio mux,
+                                  #   scene XML build, venv setup
+    prep/                         # MIDI helpers (test songs, corpus manifest, midi -> wav)
+    render/view_rollout_rerun.py  # open a rollout in the Rerun viewer
+    train/snapshot_run.py         # parse a training log into a one-glance summary
+  data/multisong/repertoire40.npz # 40-song goal bundle
+  results/                        # saved checkpoints, played MIDIs, videos
+  docs/MUJOCO.md                  # stack notes and design decisions
+  docs/A100_TRAINING.md           # setting up and running on the GPU box
 ```
 
-## Quickstart
+## How it works
 
-```bash
-cd ~/dexsim
-source env.sh
+- **Embodiment.** Each hand is a MuJoCo Menagerie Shadow Hand E3M5 (right, and
+  a mirrored true left) on a 1-DoF prismatic rail along the keyboard
+  (`rail_limit` ±0.32 m: each hand covers its half). 21 actuators per hand
+  (rail + 20 hand actuators; the J0 finger pairs are tendon-coupled), plus a
+  sustain pedal action (43 total). The rail is driven by a scripted servo that
+  leaves for the next note early; the policy adds a ±5 cm residual.
+- **Goal.** A MIDI file becomes an (T, 88) key-activation grid at 20 Hz. A
+  fingering plan assigns each note to a finger: `hand` (default) centres the
+  hand on its notes and assigns by each finger's measured offset from the
+  palm; `ot` is the RP1M-style nearest-finger assignment; `heuristic` is the
+  pitch-order rule.
+- **Observation (policy).** Egocentric, 316 dims: hand joint pos+vel, rail
+  positions, the 12 keys nearest each palm (offset, angle, velocity, sounding
+  latch), per-finger target-minus-tip and press timing, each hand's next 3
+  notes, pedal state, previous action. The critic additionally sees fingertip
+  contact forces and a hand-collision flag (asymmetric actor-critic).
+- **Reward.** RoboPianist-style composite: goal-key press (per-key adaptive
+  weights favouring rare / not-yet-learned keys), false-press penalty
+  (annealed in once recall crosses a gate), fingertip-to-key shaping, onset
+  bonus, idle-finger hover, jerk and energy penalties.
+- **Metric.** Per-step key-state recall / precision / F1 against the goal
+  grid, exactly RoboPianist's. `diag_rollout.py` adds per-key, per-hand, and
+  onset-timing breakdowns.
 
-# 0. sanity: boot the sim and spawn the hand
-python scripts/smoke/smoke_test.py --headless
+## History
 
-# 1a. RL reorientation (no dataset needed) — just hit run
-python scripts/train/train_rl.py --headless --num_envs 8192
-python scripts/train/play_rl.py --num_envs 16 --video
-
-# 1b. imitation path — get the dataset, then replay it on the embodiment
-python scripts/prep/download_bodex.py --list          # inspect the repo first
-python scripts/prep/download_bodex.py --include "..."  # grab a subset
-python scripts/build/build_combined_usd.py --inspect    # verify mount frames
-python scripts/build/build_combined_usd.py              # build assets/ur10e_shadow_right.usd
-python scripts/prep/replay_bodex.py --traj data/bodex/<file>.npz --headless
-```
-
-### Fast iteration — the warm render server (cache the Isaac boot)
-
-Every cold render/diagnostic script (`render_scene.py`, `render_rollout.py`,
-`diag_*.py`, `verify_palm.py`) boots the **whole** Isaac Sim app (~30 s, longer
-under GPU contention) and rebuilds the scene from scratch on *every* run. The
-warm server pays that cost **once**, then serves jobs from a file-queue so each
-render/measurement takes seconds. (`render_scene.py` etc. still work standalone —
-the server is the fast path on top of the shared `dexsim.render.studio` builders.)
-
-```bash
-source env.sh
-# boot ONCE (~30 s), leave it running in the background:
-python scripts/render/render_server.py --headless > logs/render_server.log 2>&1 &
-#   ...wait for "READY" in logs/render_server.log (or logs/render_jobs/server.ready)
-
-# then iterate — each job is seconds, no reboot, no scene rebuild:
-python scripts/render/render.py scene   --eye 2.2,-1.5,1.8 --target 0.45,0,0.78 --spp 160 --out logs/x.png
-python scripts/render/render.py rollout --rollout logs/rollout.npz --out results/v.mp4 --spp 96
-python scripts/render/render.py query   --kind layout  --out logs/layout.json   # diag_layout
-python scripts/render/render.py query   --kind orient  --out logs/orient.json   # diag_hand_orient
-python scripts/render/render.py query   --kind palm --rollout logs/r.npz --out logs/palm.json  # verify_palm
-python scripts/render/render.py shutdown            # stop the server
-```
-
-For time-scrubbed debugging without another Isaac boot, convert any recorded
-rollout to a Rerun recording:
-
-```bash
-python scripts/render/record_rollout.py --headless --zero --rerun
-.venv-rerun/bin/rerun logs/rollout.rrd
-
-# or convert an existing rollout instantly:
-.venv-rerun/bin/python scripts/render/view_rollout_rerun.py logs/rollout.npz --open
-
-# export the full robot + piano meshes through the warm render server:
-python scripts/render/render.py rerun --rollout logs/rollout.npz --out results/rollout.rrd
-```
-
-Rerun includes palm/target motion, reach error, goal versus sounding keys, and
-all left/right joint traces. Keep this to one debug environment; full training
-runs should remain headless.
-
-Measured on this box (while a training swarm shared the GPU): boot 28 s; then a
-`layout` query 1.6 s, an `orient` query 1.7 s, a 64-spp still 10 s (pure
-path-tracing — drop `--spp` for faster previews). The RTX *shader* cache
-(`~/.cache/ov`) already persists across runs; the server adds the missing
-app-process + built-scene cache, which is what dominated cold iteration.
-
-The combined UR10e+Shadow articulation is built once by `build_combined_usd.py`
-(the genuinely fiddly part — two separate articulations bonded into one tree by
-a fixed joint at the tool flange). The reorientation path doesn't need it.
-
-## Stack
-
-| piece     | choice                                   |
-|-----------|------------------------------------------|
-| Arm       | UR10e (6-DOF, native USD)                |
-| Hand      | Shadow Hand (24-DOF, instanceable USD)   |
-| Sim       | Isaac Sim 4.5.0 (pip)                    |
-| Framework | Isaac Lab v2.1.0 (rsl_rl PPO, Mimic)     |
-| Dataset   | BODex-Tabletop (primary) + DexGraspNet   |
-
-See `docs/SETUP.md` for how the environment was installed (and the gotchas that
-were fixed) and `docs/DATASETS.md` for dataset sources.
+The task was first built on Isaac Lab (UR10e arms + Shadow Hands, later
+armless rail hands). That implementation was removed from this branch on
+2026-09-10; it lives in git history and on `master`. `docs/research_journal.md`
+keeps the research log from that period.

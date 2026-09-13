@@ -23,7 +23,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "source"))
-os.environ.setdefault("MUJOCO_GL", "egl")
+if sys.platform != "darwin":          # macOS: use the default CGL backend
+    os.environ.setdefault("MUJOCO_GL", "egl")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--checkpoint", default=None, help="model_*.pt from train_piano_mj")
@@ -38,6 +39,18 @@ parser.add_argument("--device", default="cpu")
 parser.add_argument("--freeze_arms", action="store_true")
 parser.add_argument("--rail_follow", action="store_true")
 parser.add_argument("--mute_right", action="store_true")
+parser.add_argument("--episode_s", type=float, default=None,
+                    help="episode length in seconds (default 0 = the whole song)")
+parser.add_argument("--sounding_gate", default=None, choices=["position", "hammer"],
+                    help="must match the checkpoint (the sounding latch is in the obs)")
+parser.add_argument("--legacy_reach", action="store_true",
+                    help="pre-2026-09-10 setup: rails +/-0.12 m and fold_to_reach on "
+                         "(needed to play checkpoints trained before then)")
+parser.add_argument("--fingering", default=None, choices=["heuristic", "ot", "hand"],
+                    help="must match the fingering the checkpoint was trained with")
+parser.add_argument("--legacy_ego", action="store_true",
+                    help="pre-2026-09-12 ego obs (314 dims: hand velocities on, no 88-key "
+                         "state, no goal piano roll); needed for checkpoints trained before then")
 parser.add_argument("--export_midi", default=None, help="write the SOUNDED keys as .mid")
 parser.add_argument("--rollout_npz", default=None, help="dump qpos trajectory + metrics")
 args = parser.parse_args()
@@ -53,7 +66,12 @@ def load_policy(env):
     from rsl_rl.runners import OnPolicyRunner
     from dexsim.tasks.piano_mj.ppo_cfg import piano_ppo_cfg  # same model shape
 
-    runner = OnPolicyRunner(env, piano_ppo_cfg(), log_dir=None, device=args.device)
+    # critic obs groups must match the checkpoint (asymmetric critic when the
+    # env emits the privileged "critic_priv" group)
+    priv = env.venv.num_priv_obs > 0
+    tcfg = piano_ppo_cfg(obs_groups={"actor": ["policy"],
+                                     "critic": ["policy", "critic_priv"] if priv else ["policy"]})
+    runner = OnPolicyRunner(env, tcfg, log_dir=None, device=args.device)
     runner.load(args.checkpoint, map_location=args.device)
     return runner.get_inference_policy(device=args.device)
 
@@ -68,8 +86,28 @@ def main():
     if args.songs_npz:
         cfg.songs_npz = args.songs_npz
     cfg.freeze_arms = args.freeze_arms
-    cfg.rail_follow = args.rail_follow
+    if args.rail_follow:
+        cfg.rail_follow = True
     cfg.mute_right_hand = args.mute_right
+    if args.legacy_reach:
+        cfg.rail_limit = 0.12
+        cfg.arm_action_scale = 0.12
+        cfg.fold_to_reach = True
+        cfg.obs_mode = "global"
+        cfg.rail_follow = False
+        cfg.sustain_pedal = False
+        cfg.rail_stiffness, cfg.rail_damping, cfg.rail_force = 1200.0, 120.0, 500.0
+    if args.fingering:
+        cfg.fingering_method = args.fingering
+    if args.legacy_ego:
+        cfg.ego_hand_vel = True
+        cfg.ego_all_keys = False
+        cfg.ego_piano_roll = False
+    if args.sounding_gate:
+        cfg.sounding_gate = args.sounding_gate
+    cfg.random_song_start = False          # playback always starts at the top
+    if args.episode_s:
+        cfg.episode_length_s = args.episode_s
     cfg.__post_init__()
 
     venv = PianoMjVecEnv(cfg, num_envs=1, threads=1)

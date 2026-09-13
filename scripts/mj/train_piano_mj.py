@@ -29,13 +29,35 @@ parser.add_argument("--max_iterations", type=int, default=2000)
 parser.add_argument("--save_interval", type=int, default=50)
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--device", default="cuda", help="policy device (sim is CPU)")
-parser.add_argument("--threads", type=int, default=None, help="sim worker threads")
+parser.add_argument("--threads", type=int, default=None, help="sim worker threads (single-process env)")
+parser.add_argument("--workers", type=int, default=1,
+                    help=">1: shard envs across this many PROCESSES (true parallelism; "
+                         "the threaded env serializes on the GIL at ~400 steps/s)")
 parser.add_argument("--freeze_arms", action="store_true", help="rails held; fingers only")
+parser.add_argument("--no_rail_follow", action="store_true",
+                    help="policy drives the rails from scratch (default cfg: servo + residual)")
+parser.add_argument("--rail_residual", type=float, default=None,
+                    help="m; policy residual around the rail servo target (default 0.05)")
 parser.add_argument("--rail_follow", action="store_true",
                     help="rails servoed analytically to the note centroid; policy drives fingers only")
 parser.add_argument("--no_mute", action="store_true", help="disable mute_right_hand")
 parser.add_argument("--mute_right", action="store_true", help="hold the right hand at ready")
 parser.add_argument("--no_fold", action="store_true", help="disable fold_to_reach")
+parser.add_argument("--obs_mode", default=None, choices=["ego", "global"],
+                    help="observation layout (default cfg: ego)")
+parser.add_argument("--ego_hand_vel", action="store_true",
+                    help="ego obs: include hand joint velocities (default off)")
+parser.add_argument("--no_ego_all_keys", action="store_true",
+                    help="ego obs: drop the 88 absolute key angles")
+parser.add_argument("--no_ego_piano_roll", action="store_true",
+                    help="ego obs: drop the goal piano roll (goal_lookahead x 88)")
+parser.add_argument("--legacy_ego", action="store_true",
+                    help="pre-2026-09-12 ego obs (314 dims) -- to resume older checkpoints")
+parser.add_argument("--legacy_reach", action="store_true",
+                    help="pre-2026-09-10 setup: rails +/-0.12 m and fold_to_reach on "
+                         "(needed to play checkpoints trained before then)")
+parser.add_argument("--fingering", default=None, choices=["heuristic", "ot", "hand"],
+                    help="fingering plan: 'ot' = nearest-finger (RP1M); default cfg = heuristic")
 parser.add_argument("--hand_action_scale", type=float, default=None)
 parser.add_argument("--key_press_weight", type=float, default=None)
 parser.add_argument("--false_press_weight", type=float, default=None)
@@ -52,12 +74,21 @@ parser.add_argument("--start_curl", type=float, default=None)
 parser.add_argument("--idle_finger_curl", type=float, default=None)
 parser.add_argument("--lookahead", type=int, default=None)
 parser.add_argument("--episode_s", type=float, default=None,
-                    help="episode length in seconds (default 30; raise so one episode covers the whole song)")
+                    help="episode length in seconds (default 0 = the whole song)")
+parser.add_argument("--no_random_start", action="store_true",
+                    help="reset every env at song step 0 (default: uniformly random step)")
+parser.add_argument("--sounding_gate", default=None, choices=["position", "hammer"],
+                    help="key sounds by depression only (default) or depression + strike speed")
+parser.add_argument("--no_fingering_online", action="store_true",
+                    help="fingering reward from the planned table instead of live matching")
 parser.add_argument("--lr", type=float, default=None)
 parser.add_argument("--entropy_coef", type=float, default=None)
 parser.add_argument("--init_noise", type=float, default=None)
 parser.add_argument("--desired_kl", type=float, default=None)
 parser.add_argument("--no_norm", action="store_true", help="disable obs normalization")
+parser.add_argument("--legacy_obs", action="store_true",
+                    help="A/B baseline: the pre-2026-09-09 obs (all 88 keys, no key vel/sounding, "
+                         "goal SDF on) with a symmetric critic")
 parser.add_argument("--num_steps_per_env", type=int, default=32)
 parser.add_argument("--resume_from", default=None, help="checkpoint .pt to load before training")
 parser.add_argument("--logger", default="tensorboard", choices=["tensorboard", "wandb"])
@@ -68,6 +99,7 @@ args = parser.parse_args()
 import torch  # noqa: E402
 
 from dexsim.tasks.piano_mj import PianoMjEnvCfg, PianoMjVecEnv, make_rsl_rl_env  # noqa: E402
+from dexsim.tasks.piano_mj.vec_env import PianoMjSubprocVecEnv  # noqa: E402
 
 
 def build_env_cfg() -> PianoMjEnvCfg:
@@ -82,12 +114,30 @@ def build_env_cfg() -> PianoMjEnvCfg:
         cfg.freeze_arms = True
     if args.rail_follow:
         cfg.rail_follow = True
+    if args.no_rail_follow:
+        cfg.rail_follow = False
+    if args.rail_residual is not None:
+        cfg.rail_residual = args.rail_residual
     if args.mute_right and not args.no_mute:
         cfg.mute_right_hand = True
     if args.no_fold:
         cfg.fold_to_reach = False
     if args.anneal_false_press:
         cfg.anneal_false_press = True
+    if args.ego_hand_vel:
+        cfg.ego_hand_vel = True
+    if args.no_ego_all_keys:
+        cfg.ego_all_keys = False
+    if args.no_ego_piano_roll:
+        cfg.ego_piano_roll = False
+    if args.legacy_ego:
+        cfg.ego_hand_vel, cfg.ego_all_keys, cfg.ego_piano_roll = True, False, False
+    if args.no_random_start:
+        cfg.random_song_start = False
+    if args.sounding_gate:
+        cfg.sounding_gate = args.sounding_gate
+    if args.no_fingering_online:
+        cfg.fingering_online = False
     for name, val in [
         ("hand_action_scale", args.hand_action_scale),
         ("key_press_weight", args.key_press_weight),
@@ -99,6 +149,8 @@ def build_env_cfg() -> PianoMjEnvCfg:
         ("start_finger_curl", args.start_curl),
         ("idle_finger_curl", args.idle_finger_curl),
         ("goal_lookahead", args.lookahead),
+        ("fingering_method", args.fingering),
+        ("obs_mode", args.obs_mode),
         ("episode_length_s", args.episode_s),
         ("false_press_start", args.false_press_start),
         ("anneal_recall_gate", args.anneal_recall_gate),
@@ -106,15 +158,34 @@ def build_env_cfg() -> PianoMjEnvCfg:
     ]:
         if val is not None:
             setattr(cfg, name, val)
+    if args.legacy_reach:
+        cfg.rail_limit = 0.12
+        cfg.arm_action_scale = 0.12
+        cfg.fold_to_reach = True
+        cfg.obs_mode = "global"
+        cfg.rail_follow = False
+        cfg.sustain_pedal = False
+        cfg.rail_stiffness, cfg.rail_damping, cfg.rail_force = 1200.0, 120.0, 500.0
+    if args.legacy_obs:
+        cfg.obs_mode = "global"
+        cfg.obs_reachable_keys_only = False
+        cfg.obs_key_vel = False
+        cfg.obs_key_sounding = False
+        cfg.obs_goal_sdf = True
+        cfg.critic_obs = False
     cfg.__post_init__()          # recompute obs size after overrides
     return cfg
 
 
-def build_train_cfg() -> dict:
+def build_train_cfg(env_cfg: PianoMjEnvCfg) -> dict:
     """rsl_rl >=5.x runner config; hyper-parameters == the Isaac PianoPPORunnerCfg."""
     from dexsim.tasks.piano_mj.ppo_cfg import piano_ppo_cfg
 
+    # asymmetric critic when the env emits the privileged "critic_priv" group
+    priv = env_cfg.critic_extra_dim() > 0
     return piano_ppo_cfg(
+        obs_groups={"actor": ["policy"],
+                    "critic": ["policy", "critic_priv"] if priv else ["policy"]},
         num_steps_per_env=args.num_steps_per_env,
         save_interval=args.save_interval,
         logger=args.logger,
@@ -136,19 +207,26 @@ def main():
         print(f"[train] CUDA unavailable -> policy on {device}")
 
     env_cfg = build_env_cfg()
-    venv = PianoMjVecEnv(env_cfg, num_envs=args.num_envs, threads=args.threads)
+    if args.workers > 1:
+        venv = PianoMjSubprocVecEnv(env_cfg, num_envs=args.num_envs, workers=args.workers)
+    else:
+        venv = PianoMjVecEnv(env_cfg, num_envs=args.num_envs, threads=args.threads)
     env = make_rsl_rl_env(venv, device=device)
 
     stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_name = f"{stamp}" + (f"_{args.tag}" if args.tag else "")
     log_dir = ROOT / "logs" / "piano_mj" / run_name
     log_dir.mkdir(parents=True, exist_ok=True)
-    print(f"[train] {args.num_envs} envs, policy on {device}, logs -> {log_dir}")
+    print(f"[train] {args.num_envs} envs ({'%d worker processes' % args.workers if args.workers > 1 else 'threaded'}), "
+          f"policy on {device}, logs -> {log_dir}")
+    print(f"[train] obs: actor {env_cfg.observation_space} dims "
+          f"(mode {env_cfg.obs_mode}), critic "
+          f"{env_cfg.state_space} dims (+{env_cfg.critic_extra_dim()} privileged)")
 
     from rsl_rl.runners import OnPolicyRunner
 
     try:
-        runner = OnPolicyRunner(env, build_train_cfg(), log_dir=str(log_dir),
+        runner = OnPolicyRunner(env, build_train_cfg(env_cfg), log_dir=str(log_dir),
                                 device=device)
     except RuntimeError as e:
         if "out of memory" not in str(e) or device == "cpu":
@@ -158,7 +236,7 @@ def main():
         device = "cpu"
         env.device = device
         env.episode_length_buf = env.episode_length_buf.cpu()
-        runner = OnPolicyRunner(env, build_train_cfg(), log_dir=str(log_dir),
+        runner = OnPolicyRunner(env, build_train_cfg(env_cfg), log_dir=str(log_dir),
                                 device=device)
     if args.resume_from:
         print(f"[train] resuming from {args.resume_from}")

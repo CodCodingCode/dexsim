@@ -38,7 +38,8 @@ _BASE: dict = {
         "value_loss_coef": 1.0,
         "use_clipped_value_loss": True,
         "clip_param": 0.2,
-        "entropy_coef": 0.006,
+        "entropy_coef": 0.001,      # was 0.006: on 3000-iter runs the std drifted
+        #                             0.5 -> 1.47 and F1 sat flat from iter 800
         "num_learning_epochs": 5,
         "num_mini_batches": 4,
         "learning_rate": 3.0e-4,
