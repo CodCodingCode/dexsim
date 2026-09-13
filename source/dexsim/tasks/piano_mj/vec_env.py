@@ -95,13 +95,17 @@ class PianoMjVecEnv:
 def _reduce_logs(per_env: list[dict]) -> dict:
     """Mean logs over envs; play/* accuracy metrics only over envs that had a
     goal this step (mirrors the Isaac env's has_goal masking)."""
-    keys = per_env[0].keys()
+    # union of keys: some diagnostics (finger/online_*) exist only on steps
+    # where an env had goal keys, so average each key over the envs that
+    # reported it
+    keys = list(dict.fromkeys(k for r in per_env for k in r))
     hg = np.array([r.get("play/has_goal", 1.0) for r in per_env])
     logs = {}
     for k in keys:
-        v = np.array([r[k] for r in per_env], dtype=np.float64)
-        if k.startswith("play/") and k != "play/has_goal" and hg.sum() > 0:
-            logs[k] = float(v[hg > 0].mean())
+        have = np.array([k in r for r in per_env])
+        v = np.array([r[k] for r in per_env if k in r], dtype=np.float64)
+        if k.startswith("play/") and k != "play/has_goal" and hg[have].sum() > 0:
+            logs[k] = float(v[hg[have] > 0].mean())
         else:
             logs[k] = float(v.mean())
     logs.pop("play/has_goal", None)
