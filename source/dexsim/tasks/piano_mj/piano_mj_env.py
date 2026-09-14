@@ -496,7 +496,10 @@ class PianoMjEnv:
         to the keys that are goals NOW, cost = euclidean tip->key-top distance.
         Returns (surface (10,3), active (10,) bool, matched_key (10,) int, -1 idle).
         With no goal keys nothing is active (fingering reward 0, as before)."""
-        keys = np.nonzero(goal > 0.5)[0]
+        need = goal > 0.5
+        if getattr(self.cfg, "fingering_demand_unsounded", False):
+            need = need & ~self.key_sounding          # ringing keys need no finger
+        keys = np.nonzero(need)[0]
         surface = key_top[self.bank.finger_home].copy()
         active = np.zeros(NUM_FINGERS, dtype=bool)
         matched = np.full(NUM_FINGERS, -1, dtype=np.int64)
@@ -572,14 +575,15 @@ class PianoMjEnv:
                 i = int(np.searchsorted(ev_t, t0))
                 nxt[h] = (self.key_y[ev_k[i]] - palm_y[h]) if i < len(ev_t) else 0.0
         parts.append(nxt)
-        # per finger: target - tip, press-now
-        tips = self._fingertips_world()
-        _, press, active = self._finger_targets_world(self._key_top_world())
-        parts.append((press - tips).reshape(-1))
-        parts.append(active.astype(np.float32))
-        # per finger: steps to next onset, steps to release (clipped, /cap)
-        parts.append(np.clip(self.bank.finger_next_onset[sid, t0], 0, cap) / cap)
-        parts.append(np.clip(self.bank.finger_release[sid, t0], 0, cap) / cap)
+        if getattr(cfg, "ego_finger_obs", True):
+            # per finger: target - tip, press-now
+            tips = self._fingertips_world()
+            _, press, active = self._finger_targets_world(self._key_top_world())
+            parts.append((press - tips).reshape(-1))
+            parts.append(active.astype(np.float32))
+            # per finger: steps to next onset, steps to release (clipped, /cap)
+            parts.append(np.clip(self.bank.finger_next_onset[sid, t0], 0, cap) / cap)
+            parts.append(np.clip(self.bank.finger_release[sid, t0], 0, cap) / cap)
         # per hand: next U upcoming notes (strictly after now): dy, steps
         for h in range(2):
             ev_t, ev_k = self._hand_ev_t[sid][h], self._hand_ev_k[sid][h]
@@ -723,7 +727,9 @@ class PianoMjEnv:
             raw = np.clip(self.data.qpos[self.key_qadr] / KEY_SOUND_ANGLE, 0.0, 2.0)
             raw = np.nan_to_num(raw, nan=0.0, posinf=2.0, neginf=0.0).astype(np.float32)
             raw = np.maximum(raw, pressed)            # sustained goal keys count as down
-            reward_pressed = np.where(goal > 0.5, raw, pressed)
+            # max with the latch: a goal key sustained by the pedal (physically
+            # up, still ringing) earns full credit -- the finger may leave
+            reward_pressed = np.where(goal > 0.5, np.maximum(raw, pressed), pressed)
         else:
             reward_pressed = pressed
         goal_w = self._goal_weight_now(goal, pressed)
@@ -732,6 +738,10 @@ class PianoMjEnv:
 
         key_top = self._key_top_world()
         surface, _press_tgt, active = self._finger_targets_world(key_top)
+        if getattr(cfg, "fingering_demand_unsounded", False):
+            # table path: an assigned finger whose key already rings is idle
+            fk_now = self.bank.finger_key[self.song_id, self.song_step]
+            active = active & ~self.key_sounding[np.where(active, fk_now, 0)]
         tips = self._fingertips_world()
         online_logs = {}
         if getattr(cfg, "fingering_online", False):

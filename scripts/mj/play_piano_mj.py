@@ -43,6 +43,8 @@ parser.add_argument("--episode_s", type=float, default=None,
                     help="episode length in seconds (default 0 = the whole song)")
 parser.add_argument("--sounding_gate", default=None, choices=["position", "hammer"],
                     help="must match the checkpoint (the sounding latch is in the obs)")
+parser.add_argument("--ego_finger_obs", action="store_true",
+                    help="checkpoints trained 2026-09-13 (nettspend_rp1m_a100, 1234 dims)")
 parser.add_argument("--legacy_reach", action="store_true",
                     help="pre-2026-09-10 setup: rails +/-0.12 m and fold_to_reach on "
                          "(needed to play checkpoints trained before then)")
@@ -105,6 +107,8 @@ def main():
         cfg.ego_piano_roll = False
     if args.sounding_gate:
         cfg.sounding_gate = args.sounding_gate
+    if args.ego_finger_obs:
+        cfg.ego_finger_obs = True
     cfg.random_song_start = False          # playback always starts at the top
     if args.episode_s:
         cfg.episode_length_s = args.episode_s

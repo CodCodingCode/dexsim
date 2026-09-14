@@ -72,6 +72,7 @@ class PianoMjEnvCfg:
     #               per hand, ego_keys nearest keys:
     #                 dy to palm, angle, vel, sounding   2 x K x 4  (K=12 -> 96)
     #               per hand, dy palm -> next assigned note  2
+    #               [ego_finger_obs, default OFF:]
     #               per finger: target xyz - tip xyz     30
     #               per finger: press-now flag           10
     #               per finger: steps to next onset,
@@ -92,6 +93,11 @@ class PianoMjEnvCfg:
     ego_hand_vel: bool = False    # hand joint velocities (was always on)
     ego_all_keys: bool = True     # all 88 key angles, absolute key order
     ego_piano_roll: bool = True   # goal[t : t+goal_lookahead] x 88, binary
+    # 2026-09-14: the per-finger block (target - tip, press-now, steps to
+    # onset / release) is planned from the fingering table, which knows
+    # nothing about the pedal: it tells a finger to STAY on a held key. Off ->
+    # the policy sees the piano roll + key state only (RP1M-style).
+    ego_finger_obs: bool = False
 
     # --- observation features ("global" mode; assembled in PianoMjEnv._get_obs) ---
     # Layout (2026-09-09 slim-down; was 1216 dims, 880 of them the goal
@@ -237,6 +243,12 @@ class PianoMjEnvCfg:
     # reward THAT matching's distances, instead of pulling each finger to its
     # pre-planned table entry. The table still drives the obs and rail servo.
     fingering_online: bool = True
+    # 2026-09-14: a key that is ALREADY SOUNDING (held by a finger or by the
+    # sustain pedal) needs no finger, so it is dropped from the matching's
+    # demand set. Nothing pulls a finger back onto a held note: press, pedal,
+    # leave. Applies to the table path too (an assigned finger whose key is
+    # ringing counts as idle -> hover reward).
+    fingering_demand_unsounded: bool = True
     # --- fingering / press tweaks ---
     remap_thumb_to_middle: bool = False
     idle_finger_curl: float = 0.0     # rad: curl NON-assigned fingers up (rail_follow)
@@ -391,10 +403,11 @@ class PianoMjEnvCfg:
              + (self.goal_lookahead * NUM_KEYS if self.ego_piano_roll else 0)
              + 2 * K * 4                    # window keys: dy, angle, vel, sounding
              + 2                            # dy palm -> next assigned note
-             + NUM_FINGERS * 3              # target - tip
-             + NUM_FINGERS                  # press now
-             + NUM_FINGERS * 2              # steps to onset, steps to release
              + 2 * U * 2)                   # upcoming notes: dy, steps
+        if self.ego_finger_obs:
+            n += (NUM_FINGERS * 3          # target - tip
+                  + NUM_FINGERS            # press now
+                  + NUM_FINGERS * 2)       # steps to onset, steps to release
         if self.sustain_pedal:
             n += 1                          # pedal state
         if self.obs_prev_action:

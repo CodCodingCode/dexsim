@@ -53,6 +53,11 @@ parser.add_argument("--no_ego_piano_roll", action="store_true",
                     help="ego obs: drop the goal piano roll (goal_lookahead x 88)")
 parser.add_argument("--legacy_ego", action="store_true",
                     help="pre-2026-09-12 ego obs (314 dims) -- to resume older checkpoints")
+parser.add_argument("--ego_finger_obs", action="store_true",
+                    help="re-enable the per-finger obs block (target-tip, press-now, countdowns; "
+                         "the 2026-09-13 nettspend_rp1m_a100 layout, 1234 dims)")
+parser.add_argument("--no_demand_unsounded", action="store_true",
+                    help="fingering reward keeps demanding a finger on keys that already ring")
 parser.add_argument("--legacy_reach", action="store_true",
                     help="pre-2026-09-10 setup: rails +/-0.12 m and fold_to_reach on "
                          "(needed to play checkpoints trained before then)")
@@ -138,6 +143,10 @@ def build_env_cfg() -> PianoMjEnvCfg:
         cfg.sounding_gate = args.sounding_gate
     if args.no_fingering_online:
         cfg.fingering_online = False
+    if args.ego_finger_obs:
+        cfg.ego_finger_obs = True
+    if args.no_demand_unsounded:
+        cfg.fingering_demand_unsounded = False
     for name, val in [
         ("hand_action_scale", args.hand_action_scale),
         ("key_press_weight", args.key_press_weight),
