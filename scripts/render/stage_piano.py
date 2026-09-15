@@ -72,7 +72,7 @@ def main():
     print(f"  right arm DOFs  : {le.right_robot.num_joints}")
     print(f"  piano key joints: {le.piano.num_joints}")
     print(f"  ACTION space    : {cfg.action_space}  (60 = 2 arms x 30 joint targets)")
-    print(f"  OBS space       : {cfg.observation_space}  (arms pos+vel + key angles + goal lookahead)")
+    print(f"  OBS space       : {cfg.observation_space}  (hands pos+vel + tips + key angle/vel/sounding + goal lookahead + targets)")
     print(f"  REWARD          : + sound goal keys, - wrong keys, - energy")
     print("================================================\n")
     env.close()

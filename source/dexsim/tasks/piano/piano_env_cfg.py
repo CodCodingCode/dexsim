@@ -44,9 +44,52 @@ class PianoEnvCfg(DirectRLEnvCfg):
     state_space = 0
 
     # --- observation features (assembled in PianoEnv._get_observations) ---
-    obs_fingertip_pos: bool = True    # 10x3 fingertip world pos (rel. to piano)
+    # Layout (2026-09-09 slim-down, was 1216 dims of which 880 were the goal
+    # lookahead over all 88 keys -- 72 of every 88 always zero once the song is
+    # folded into the two hand windows):
+    #   hand joint pos+vel (100) | fingertip xyz (30) | key angles (K) |
+    #   key vel (K) | key sounding (K) | goal lookahead (L*K) |
+    #   target fingertip xyz (30) | [goal SDF (K)]
+    # where K = the number of OBSERVED keys (see obs_reachable_keys_only).
+    obs_fingertip_pos: bool = True    # 10x3 fingertip world pos (rel. to env origin)
     obs_finger_targets: bool = True   # 10x3 reference fingertip targets
-    obs_goal_sdf: bool = True         # 88 analytic SDF of the current goal
+    # Every per-key chunk (key angles/vel/sounding, goal lookahead, SDF) is sliced
+    # to the union of left_key_window + right_key_window (16 keys) instead of all
+    # 88. Only meaningful with fold_to_reach (every goal note lives in a window);
+    # falls back to all 88 keys when fold_to_reach is off. See obs_key_indices().
+    obs_reachable_keys_only: bool = True
+    # (K) key joint velocities. The hammer gate rings a key only when it is past
+    # the strike angle AND moving down faster than key_strike_vel, so without
+    # velocities the policy cannot tell a slow silent press from a strike.
+    obs_key_vel: bool = True
+    # (K) hammer-gated SOUNDING mask (the latch in _key_pressed_fraction) -- the
+    # exact quantity the press reward and F1 score. The latch has hysteresis
+    # (rings until the key springs back above key_release_frac), so it is NOT
+    # derivable from the instantaneous angle+vel. A real digital piano reports
+    # this as MIDI note-on/off, so the actor may see it (not privileged).
+    obs_key_sounding: bool = True
+    # (K) analytic SDF of the current goal. Off: derivable from the goal
+    # lookahead + target fingertip xyz already in the obs.
+    obs_goal_sdf: bool = False
+
+    # --- critic-only (privileged) observations: asymmetric actor-critic ---
+    # The env emits a second obs group, "critic" = the full policy obs followed
+    # by sim ground truth the policy never sees. The critic only exists during
+    # training, so it may read anything PhysX knows; a sharper value estimate
+    # means lower-variance PPO advantages. Sizes feed `state_space` below.
+    critic_obs: bool = True
+    # (K) sounding mask as a CRITIC-ONLY extra. Off by default now that
+    # obs_key_sounding puts it in the shared policy obs; turn on only when
+    # obs_key_sounding is off and you still want the critic to see it.
+    critic_obs_sounding: bool = False
+    # (10) net contact force magnitude on each fingertip body, in FINGERTIP_BODIES
+    # order [L th,ff,mf,rf,lf, R th,ff,mf,rf,lf], via one ContactSensor per
+    # hand. Reported as |F| / critic_tip_force_clip, clamped to [0, 1].
+    critic_obs_tip_forces: bool = True
+    critic_tip_force_clip: float = 20.0   # N; a key press is ~1-3 N, a jam is far more
+    # (1) hand-vs-hand collision flag exactly as r_Collision sees it (PhysX
+    # contact sensors when rp1m_collision_contacts is on, else the proximity check).
+    critic_obs_collision: bool = True
 
     # PhysX GPU buffers bumped: defaults overflow with many finger/key contacts
     # across thousands of envs ("Patch buffer overflow").
@@ -354,21 +397,65 @@ class PianoEnvCfg(DirectRLEnvCfg):
         "robot0_THJ0": -0.3000,
     }
 
-    def __post_init__(self):
+    def obs_key_indices(self) -> list[int]:
+        """Key indices (0..87) every per-key observation chunk is sliced to.
+
+        With obs_reachable_keys_only AND fold_to_reach: the union of the two
+        (inclusive) hand windows, ascending. Otherwise all 88 keys.
+        """
+        if self.obs_reachable_keys_only and self.fold_to_reach:
+            l0, l1 = self.left_key_window
+            r0, r1 = self.right_key_window
+            return sorted(set(range(l0, l1 + 1)) | set(range(r0, r1 + 1)))
+        return list(range(NUM_KEYS))
+
+    def n_obs_keys(self) -> int:
+        """K: number of observed keys (16 with the default windows, else 88)."""
+        return len(self.obs_key_indices())
+
+    def critic_extra_dim(self) -> int:
+        """Number of privileged features appended after the policy obs."""
+        n = 0
+        if self.critic_obs_sounding:
+            n += self.n_obs_keys()
+        if self.critic_obs_tip_forces:
+            n += NUM_FINGERS
+        if self.critic_obs_collision:
+            n += 1
+        return n
+
+    def refresh_spaces(self) -> None:
+        """Recompute observation_space / state_space from the current flags.
+
+        __post_init__ calls this once, but scripts mutate goal_lookahead,
+        fold_to_reach and the obs_* flags AFTER construction (train_piano's
+        --lookahead / --no_fold, eval_ladder), so PianoEnv.__init__ calls it
+        again right before the spaces are declared.
+        """
         per_arm = PER_HAND_DOF
-        # observation size from the feature flags (single source of truth)
-        obs = (
-            2 * per_arm * 2                        # both arms pos+vel
-            + NUM_KEYS                              # current key angles
-            + self.goal_lookahead * NUM_KEYS        # upcoming note goals
-        )
+        K = self.n_obs_keys()
+        # observation size from the feature flags (single source of truth); the
+        # order here mirrors PianoEnv._get_observations.
+        obs = 2 * per_arm * 2                       # both hands pos+vel
         if self.obs_fingertip_pos:
             obs += NUM_FINGERS * 3
+        obs += K                                    # current key angles
+        if self.obs_key_vel:
+            obs += K
+        if self.obs_key_sounding:
+            obs += K
+        obs += self.goal_lookahead * K              # upcoming note goals
         if self.obs_finger_targets:
             obs += NUM_FINGERS * 3
         if self.obs_goal_sdf:
-            obs += NUM_KEYS
+            obs += K
         self.observation_space = obs
+        # critic ("state") size: the policy obs plus the privileged extras. 0 keeps
+        # DirectRLEnv from declaring a "critic" space at all (symmetric critic).
+        self.state_space = obs + self.critic_extra_dim() if self.critic_obs else 0
+
+    def __post_init__(self):
+        self.refresh_spaces()
 
         # bake world poses into each articulation's initial state
         self.piano_cfg.init_state.pos = self.piano_pos

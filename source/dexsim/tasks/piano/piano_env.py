@@ -50,6 +50,9 @@ class PianoEnv(DirectRLEnv):
     cfg: PianoEnvCfg
 
     def __init__(self, cfg: PianoEnvCfg, render_mode: str | None = None, **kwargs):
+        # scripts mutate goal_lookahead / fold_to_reach / obs_* after the cfg was
+        # built; re-derive the obs + critic sizes before DirectRLEnv declares them.
+        cfg.refresh_spaces()
         super().__init__(cfg, render_mode, **kwargs)
 
         self.per_arm_dof = self.left_robot.num_joints
@@ -213,6 +216,14 @@ class PianoEnv(DirectRLEnv):
         _kidx = torch.arange(NUM_KEYS, device=self.device)
         self.left_key_mask = (_kidx <= _split).float()    # (88,) 1.0 for left-hand keys
         self.right_key_mask = (_kidx > _split).float()     # (88,) 1.0 for right-hand keys
+        # keys every per-key OBSERVATION chunk is sliced to (16 reachable keys by
+        # default, all 88 otherwise). Reward/F1 still run over all 88 keys.
+        self.obs_key_ids = torch.tensor(self.cfg.obs_key_indices(),
+                                        device=self.device, dtype=torch.long)
+        print(f"[PianoEnv] obs keys: {len(self.obs_key_ids)}/{NUM_KEYS} "
+              f"(reachable_only={self.cfg.obs_reachable_keys_only}, "
+              f"fold={self.cfg.fold_to_reach}); obs dim {self.cfg.observation_space}, "
+              f"critic dim {self.cfg.state_space}")
 
         # --- body indices: piano keys (ordered 0..87) and fingertips per hand ---
         key_ids, _ = self.piano.find_bodies([f"key_{i}" for i in range(NUM_KEYS)],
@@ -427,6 +438,32 @@ class PianoEnv(DirectRLEnv):
             print(f"[PianoEnv] CONTACT SENSORS: {len(self.hand_contacts)} left-hand bodies x "
                   f"{len(filters)} right-hand filters {list(self.cfg.contact_bodies)}")
 
+        # --- fingertip net-force sensors for the critic's privileged obs ------
+        # Unfiltered, so `net_forces_w` is the total contact load on each tip
+        # (keys + the other hand + anything else). One sensor per hand matching
+        # all five distal bodies; the sensor's own body order is re-mapped to
+        # FINGERTIP_BODIES order lazily in _critic_extras (see _tip_force_perm).
+        self.tip_contacts = []
+        self._tip_force_perm = None
+        if self._wants_tip_sensors():
+            from isaaclab.sensors import ContactSensor, ContactSensorCfg
+            tip_expr = "robot0_(" + "|".join(b[len("robot0_"):] for b in FINGERTIP_BODIES) + ")"
+            for robot in ("LeftRobot", "RightRobot"):
+                sensor = ContactSensor(ContactSensorCfg(
+                    prim_path=f"/World/envs/env_.*/{robot}/{tip_expr}",
+                    update_period=0.0,
+                    history_length=0,
+                    track_air_time=False,
+                ))
+                self.scene.sensors[f"tipforce_{robot}"] = sensor
+                self.tip_contacts.append(sensor)
+            print(f"[PianoEnv] TIP FORCE SENSORS: 2 hands x {NUM_FINGERS // 2} fingertips "
+                  f"-> critic obs (clip {self.cfg.critic_tip_force_clip} N)")
+
+    def _wants_tip_sensors(self) -> bool:
+        return (bool(getattr(self.cfg, "critic_obs", False))
+                and bool(getattr(self.cfg, "critic_obs_tip_forces", False)))
+
     def _wants_contact_sensors(self) -> bool:
         return (getattr(self.cfg, "reward_mode", "dexsim") == "rp1m"
                 and getattr(self.cfg, "rp1m_collision_contacts", False)
@@ -640,27 +677,97 @@ class PianoEnv(DirectRLEnv):
         return self.onset_padded[self.song_id, self.song_step]  # (E, 88)
 
     def _get_observations(self) -> dict:
+        """Policy obs, in the order PianoEnvCfg.__post_init__ sizes it:
+          hand joint pos+vel (100) | fingertip xyz (30) | key angles (K) |
+          key vel (K) | key sounding (K) | goal lookahead (L*K) |
+          target fingertip xyz (30) | [goal SDF (K)]
+        K = len(self.obs_key_ids): every per-key chunk is sliced to the observed
+        keys (the 16 reachable ones by default; reward/F1 still use all 88)."""
         origin = self.scene.env_origins.unsqueeze(1)     # (E,1,3) for rel. positions
+        kid = self.obs_key_ids
         parts = [
             self.left_robot.data.joint_pos,
             self.left_robot.data.joint_vel,
             self.right_robot.data.joint_pos,
             self.right_robot.data.joint_vel,
-            self.piano.data.joint_pos,                   # (E,88) key angles
-            self._goal_lookahead().reshape(self.num_envs, -1),
         ]
         if self.cfg.obs_fingertip_pos:
             tips = self._fingertips_world() - origin
             parts.append(tips.reshape(self.num_envs, -1))
+        parts.append(self.piano.data.joint_pos[:, kid])              # (E,K) key angles
+        if self.cfg.obs_key_vel:
+            parts.append(self.piano.data.joint_vel[:, kid])          # (E,K) <0 = pressing
+        if self.cfg.obs_key_sounding:
+            # the hammer-gate latch after this step's reward call (DirectRLEnv runs
+            # _get_rewards before _get_observations; _reset_idx clears the latch)
+            parts.append(self.key_sounding[:, kid].float())          # (E,K)
+        parts.append(self._goal_lookahead()[:, :, kid].reshape(self.num_envs, -1))  # (E,L*K)
         if self.cfg.obs_finger_targets:
             _, press, _ = self._finger_targets_world(self._key_top_world())
             parts.append((press - origin).reshape(self.num_envs, -1))
         if self.cfg.obs_goal_sdf:
-            parts.append(nearest_active_distance(self._goal_now()))
+            parts.append(nearest_active_distance(self._goal_now())[:, kid])
         # guard: replace any NaN/inf (from a transient physics blow-up) and clamp,
         # so the policy never sees garbage -> no "std>=0" PPO crash.
         obs = torch.nan_to_num(torch.cat(parts, dim=-1), nan=0.0, posinf=50.0, neginf=-50.0)
-        return {"policy": obs.clamp(-50.0, 50.0)}
+        obs = obs.clamp(-50.0, 50.0)
+        out = {"policy": obs}
+        if self.cfg.critic_obs:
+            # asymmetric critic: full policy obs + privileged sim state. Emitted as
+            # the COMPLETE critic input (not just the extras) so both rsl-rl stacks
+            # consume it unchanged: 2.x reads the "critic" key verbatim, 3.x is
+            # pointed at it via obs_groups = {"critic": ["critic"]}.
+            out["critic"] = torch.cat([obs, self._critic_extras()], dim=-1)
+        return out
+
+    def _critic_extras(self) -> torch.Tensor:
+        """(E, cfg.critic_extra_dim()) privileged features for the critic only.
+
+        * sounding mask (K, observed keys): the hammer-gate latch after this
+          step's reward call. Off by default -- it now lives in the policy obs
+          (cfg.obs_key_sounding); this is only for the critic-only variant;
+        * fingertip |F| (10): net contact force per tip / critic_tip_force_clip,
+          clamped to [0, 1]. Zeros until the sensors have initialized (first reset);
+        * collided (1): the same hand-vs-hand test r_Collision uses.
+        """
+        parts = []
+        if self.cfg.critic_obs_sounding:
+            parts.append(self.key_sounding[:, self.obs_key_ids].float())
+        if self.cfg.critic_obs_tip_forces:
+            parts.append(self._tip_forces())
+        if self.cfg.critic_obs_collision:
+            parts.append(self._hands_collided(self._fingertips_world()).float().unsqueeze(-1))
+        if not parts:
+            return torch.zeros((self.num_envs, 0), device=self.device)
+        x = torch.cat(parts, dim=-1)
+        return torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=0.0)
+
+    def _tip_forces(self) -> torch.Tensor:
+        """(E, 10) normalized fingertip contact force magnitudes in FINGERTIP_BODIES
+        order (left hand first). The sensors match bodies by regex, so their internal
+        order is whatever the USD traversal gave; the permutation is resolved once
+        from `sensor.body_names` and cached."""
+        clip = max(float(self.cfg.critic_tip_force_clip), 1e-6)
+        n_tip = NUM_FINGERS // 2
+        cols = []
+        for i, sensor in enumerate(self.tip_contacts):
+            # same lazy-read pattern as _hands_collided: the buffer is None until
+            # the sim has played once (sensors init on the first sim.reset()).
+            f = sensor.data.net_forces_w if getattr(sensor, "is_initialized", True) else None
+            if f is None:
+                cols.append(torch.zeros((self.num_envs, n_tip), device=self.device))
+                continue
+            if self._tip_force_perm is None:
+                self._tip_force_perm = [None, None]
+            if self._tip_force_perm[i] is None:
+                names = list(sensor.body_names)
+                perm = [names.index(b) for b in FINGERTIP_BODIES]
+                self._tip_force_perm[i] = torch.tensor(perm, device=self.device)
+            mag = torch.nan_to_num(f, nan=0.0).norm(dim=-1)                # (E, B)
+            cols.append((mag[:, self._tip_force_perm[i]] / clip).clamp(0.0, 1.0))
+        if not cols:
+            return torch.zeros((self.num_envs, NUM_FINGERS), device=self.device)
+        return torch.cat(cols, dim=-1)
 
     def _arm_limit_margin(self) -> torch.Tensor:
         """(E,) normalized distance of the WORST base joint to its nearest limit.

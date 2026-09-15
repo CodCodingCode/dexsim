@@ -76,7 +76,7 @@ parser.add_argument("--lr", type=float, default=None, help="override PPO learnin
 parser.add_argument("--hand_tilt", type=float, default=None, help="tilt the hand toward pianist posture (rad, X axis)")
 parser.add_argument("--start_curl", type=float, default=None, help="curl ALL fingers this many rad in the reset+base pose (start RL curled-up off the keys; anti-mash)")
 parser.add_argument("--idle_finger_curl", type=float, default=None, help="curl NON-assigned fingers up in the base pose (rad; lift idle fingers off neighbor keys)")
-parser.add_argument("--lookahead", type=int, default=None, help="goal_lookahead steps (10*88=880 obs dims; cut to shrink obs so the critic can fit)")
+parser.add_argument("--lookahead", type=int, default=None, help="goal_lookahead steps (10 steps x 16 observed keys = 160 obs dims by default; 10x88 with --no_fold)")
 parser.add_argument("--struck_frac", type=float, default=None, help="key sounds at this fraction of full press depth (lower=easier/more reliable registration)")
 parser.add_argument("--no_norm", action="store_true", help="disable empirical_normalization (sparse-reward PPO degrades with it on)")
 parser.add_argument("--solo_arm_dip", action="store_true", help="solo mode: also allow shoulder_lift (press by arm dip, no finger flex-arc)")

@@ -67,9 +67,9 @@ source env.sh && python scripts/tools/export_hand_urdf.py   # ~1 s, no Isaac boo
 writes `assets/urdf/shadow_hand_{left,right}/` (27 links, 25 DoF = rail + 24).
 Two traps this hits, both already handled — do not "fix" them back:
 
-* the USDs declare `metersPerUnit = 0.01` but are authored in **meters**
+- the USDs declare `metersPerUnit = 0.01` but are authored in **meters**
   (forearm = 0.256 m), so the export runs at `--scale 1.0`;
-* USD gives a joint frame in both bodies; URDF wants the child frame to BE the
+- USD gives a joint frame in both bodies; URDF wants the child frame to BE the
   joint frame. The exporter keeps the USD child frame (so meshes need no
   rebaking) via `origin = (localPos0, localRot0 · conj(localRot1))` and
   `axis_child = R(localRot1) · axis_joint`.
@@ -130,21 +130,37 @@ must track within ~0.03 rad; driveless joints blast to their limits in <50 ms).
 
 The `fk` query's `keys_down`/`key_travel_max` (with a real `--settle`, e.g. 240)
 remains the press ground truth. Two more geometry facts measured 2026-08-17:
-* **Key indexing runs low-pitch = low world Y** (key 0 at y≈−0.60, key 87 at
+
+- **Key indexing runs low-pitch = low world Y** (key 0 at y≈−0.60, key 87 at
   +0.60; `piano.data.joint_pos` IS in key order). Key 33 sits at y=−0.14 —
   the **RIGHT** hand's lane (right FF tip y=−0.13). The left hand's rail reach
   is roughly keys 37–64. `solo_left_middle` + `one_key.mid` (key 33) was a
   wrong-hand pairing; the scripted ceiling now picks hand+finger by geometry.
-* **`key_strike_vel <= 0` selects RoboPianist/RP1M sounding** (key active while
+- **`key_strike_vel <= 0` selects RoboPianist/RP1M sounding** (key active while
   depressed past `key_struck_frac`, hysteresis release). The default hammer gate
   samples at 20 Hz and provably misses crisp strikes that bottom out and rebound
   within one 50 ms step — use `--strike_vel 0` for anything RP1M-shaped.
 
+## Asymmetric critic: privileged `critic` obs group (added 2026-09-09)
+
+`PianoEnv._get_observations` emits two groups. `"policy"` is what the actor
+sees. `"critic"` (on by default, `critic_obs=True`) is the policy obs followed by
+sim ground truth the actor never gets: the 88-key hammer-gate **sounding mask**
+(`key_sounding`, the quantity r_Press/F1 actually score), 10 **fingertip contact
+force** magnitudes (`|F| / critic_tip_force_clip`, from two unfiltered
+`ContactSensor`s over the distal bodies), and the 1-bit **hand-vs-hand collision**
+flag from the same `_hands_collided` test r_Collision uses. `cfg.state_space` is
+sized from `critic_extra_dim()`; `rsl_rl_ppo_cfg` points the critic at
+`obs_groups={"critic": ["critic"]}` on the 2.3 stack (NOT `["policy","critic"]`,
+which would duplicate the policy obs), and the 2.1 wrapper reads the key as
+`num_privileged_obs` on its own. Sizes in `piano_env_smoke.py` are asserted;
+`--force_collision` additionally proves the critic's flag and tip forces fire.
+
 ## Reward: two selectable recipes (`reward_mode`)
 
-* `"dexsim"` (default) — the composite grown in this repo: key press + fingering
+- `"dexsim"` (default) — the composite grown in this repo: key press + fingering
   (from the **precomputed** plan) + onset + idle-hover + arm/jerk penalties.
-* `"rp1m"` — a port of RP1M (Zhao et al., CoRL 2024):
+- `"rp1m"` — a port of RP1M (Zhao et al., CoRL 2024):
   `r_OT + r_Press + 0.5·r_Collision − 5e-3·r_Energy`. Its defining feature is
   that fingering is **not** read from the precomputed plan — it is re-solved
   every step by optimal transport from the live fingertip positions
@@ -153,15 +169,15 @@ remains the press ground truth. Two more geometry facts measured 2026-08-17:
   decided (2026-08-13) they don't want one. Do NOT add a pedal DoF or the
   sustain term unless explicitly asked — the omission is intentional, not a gap.
 
-`fingering_method` (`"heuristic"` | `"ot"`) separately selects how the *offline*
+`fingering_method` (`"heuristic"` | `"ot"`) separately selects how the _offline_
 plan (observation targets, dexsim reward) is built.
 
 `r_Collision` reads **real PhysX contacts** (`rp1m_collision_contacts=True`): one
 `ContactSensor` per left-hand body in `cfg.contact_bodies`, each filtered against
 the matching right-hand bodies. Both sides of a filtered contact pair must
 resolve to exactly ONE prim per env — a sensor `prim_path` matching several
-bodies, or a filter pattern like `RightRobot/.*`, makes PhysX log *"did not match
-the correct number of entries"* and silently collapse to one junk channel. The
+bodies, or a filter pattern like `RightRobot/.*`, makes PhysX log _"did not match
+the correct number of entries"_ and silently collapse to one junk channel. The
 "many" in Isaac Lab's one-to-many filtering is the **length of the pattern list**,
 not the breadth of one pattern. Set the flag False to fall back to a sensor-free
 proximity check.
@@ -214,18 +230,18 @@ a cold-boot script.
 
 ## Two Isaac stacks side-by-side (migration 2026-08-15)
 
-* **OLD (default)**: `source env.sh` → `.venv` (py3.10, Isaac Sim 4.5, Isaac Lab
+- **OLD (default)**: `source env.sh` → `.venv` (py3.10, Isaac Sim 4.5, Isaac Lab
   v2.1 in `IsaacLab/`). The render server + all existing tooling run here.
-* **NEW**: `source env51.sh` → `.venv-isaac51` (py3.11, Isaac Sim 5.1.0, Isaac
+- **NEW**: `source env51.sh` → `.venv-isaac51` (py3.11, Isaac Sim 5.1.0, Isaac
   Lab v2.3.2 in `IsaacLab51/`, rsl-rl-lib 3.1.2). `piano_env_smoke.py` passes
   UNCHANGED on it; `PianoPPORunnerCfg.__post_init__` version-gates the 2.3-only
   fields (obs_groups, per-net obs normalization) so ONE cfg drives both stacks.
   Source exactly ONE env file per shell.
-* Livestream semantics differ: 4.5: `--livestream 2`=WebRTC; 5.1: `1`=WebRTC
+- Livestream semantics differ: 4.5: `--livestream 2`=WebRTC; 5.1: `1`=WebRTC
   public (advertises `$PUBLIC_IP`), `2`=private/LAN. `live_scene.py` picks by
   isaaclab version. 5.1 media rides FIXED UDP 47998 (+TCP 49100 signaling);
   matching Mac client: **WebRTC Streaming Client 1.1.5** (arm64 dmg exists).
-* Gotchas hit during install: `flatdict==4.0.1` needs `setuptools<81` +
+- Gotchas hit during install: `flatdict==4.0.1` needs `setuptools<81` +
   `--no-build-isolation`; keep isaacsim pins `packaging==23.0`,
   `psutil==5.9.8`, `typing_extensions==4.12.2` when adding packages.
 

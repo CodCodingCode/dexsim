@@ -77,6 +77,16 @@ def main():
     obs, _ = env.reset()
     print("[piano_smoke] reset OK")
     print(f"  obs['policy'] shape: {tuple(obs['policy'].shape)}")
+    if cfg.critic_obs:
+        # asymmetric critic: "critic" = policy obs + privileged extras, sized by
+        # cfg.state_space; the policy prefix must be bit-identical.
+        assert "critic" in obs, "critic_obs=True but env emitted no 'critic' group"
+        c = obs["critic"]
+        print(f"  obs['critic'] shape: {tuple(c.shape)} (state_space={cfg.state_space}, "
+              f"extras={cfg.critic_extra_dim()})")
+        assert c.shape[1] == cfg.state_space, (c.shape, cfg.state_space)
+        assert c.shape[1] == obs["policy"].shape[1] + cfg.critic_extra_dim()
+        assert torch.equal(c[:, :obs["policy"].shape[1]], obs["policy"]), "critic prefix != policy obs"
 
     le = env.unwrapped
     print(f"  left_robot DOFs : {le.left_robot.num_joints}")
@@ -104,9 +114,46 @@ def main():
             print(f"  step0: rew shape {tuple(rew.shape)}, "
                   f"term {tuple(term.shape)}, trunc {tuple(trunc.shape)}")
         assert torch.isfinite(rew).all(), f"non-finite reward at step {i}"
+        # policy-obs per-key chunks: [.. hand(100) | tips(30) | angles(K) | vel(K) | sounding(K) | ..]
+        # must be the observed-key slice of the live sim state.
+        K = cfg.n_obs_keys(); kid = le.obs_key_ids
+        pol = obs["policy"]
+        poff = 4 * le.per_arm_dof + (30 if cfg.obs_fingertip_pos else 0)
+        assert torch.allclose(pol[:, poff:poff + K], le.piano.data.joint_pos[:, kid].clamp(-50, 50)), \
+            "policy key-angle chunk != piano joint_pos[obs_key_ids]"
+        poff += K
+        if cfg.obs_key_vel:
+            poff += K
+        if cfg.obs_key_sounding:
+            assert torch.equal(pol[:, poff:poff + K].bool(), le.key_sounding[:, kid]), \
+                "policy sounding chunk != key_sounding latch"
+        if cfg.critic_obs:
+            c = obs["critic"]; n_pol = obs["policy"].shape[1]
+            assert torch.isfinite(c).all(), f"non-finite critic obs at step {i}"
+            ex = c[:, n_pol:]
+            # extras layout: [sounding(K) | tip |F|/clip (10) | collided (1)]
+            K = cfg.n_obs_keys()
+            off = 0
+            if cfg.critic_obs_sounding:
+                snd = ex[:, off:off + K]; off += K
+                assert torch.equal(snd.bool(), le.key_sounding[:, le.obs_key_ids]), \
+                    "critic sounding mask != key_sounding latch"
+            if cfg.critic_obs_tip_forces:
+                tf = ex[:, off:off + 10]; off += 10
+                assert (tf >= 0).all() and (tf <= 1).all(), "tip forces not in [0,1]"
+            if cfg.critic_obs_collision:
+                col = ex[:, off:off + 1]; off += 1
+                assert ((col == 0) | (col == 1)).all(), "collision flag not binary"
+            assert off == ex.shape[1]
         if i % 10 == 0:
             # left hand only; `tau` is the giveaway if a lock is losing an effort
             # fight rather than holding (see PianoEnv's wrist-lock comment).
+            if cfg.critic_obs and cfg.critic_obs_tip_forces:
+                n_pol = obs["policy"].shape[1]
+                tf = obs["critic"][:, n_pol + (cfg.n_obs_keys() if cfg.critic_obs_sounding else 0):][:, :10]
+                print(f"  step{i}: tip |F| (x{cfg.critic_tip_force_clip:.0f} N) "
+                      f"max {float(tf.max()):.3f} mean {float(tf.mean()):.3f} "
+                      f"tips_in_contact {float((tf > 0).float().sum(-1).mean()):.1f}/10")
             lr = le.left_robot
             fmt = lambda t: "[" + ", ".join(f"{v:+.4f}" for v in t.tolist()) + "]"
             print(f"   step{i:3d} wrist: cmd={fmt(le._left_target[0, wj])} "
@@ -165,6 +212,20 @@ def main():
                     "the hands were parked on top of each other but the contact sensors "
                     "reported nothing -- r_Collision would be dead weight")
                 print("  -> CONTACT SENSORS FIRE ON A REAL COLLISION")
+                if cfg.critic_obs and cfg.critic_obs_collision:
+                    # the critic's flag must be the SAME test r_Collision ran
+                    n_pol = obs["policy"].shape[1]
+                    col = obs["critic"][:, -1].bool()
+                    ref = le._hands_collided(le._fingertips_world())
+                    assert torch.equal(col, ref), "critic collision flag != r_Collision's"
+                    assert col.any(), "hands jammed together but critic collision flag never set"
+                    print(f"  -> CRITIC COLLISION FLAG LIVE ({float(col.float().mean()):.2f} of envs)")
+                if cfg.critic_obs and cfg.critic_obs_tip_forces:
+                    n_pol = obs["policy"].shape[1]
+                    off = n_pol + (cfg.n_obs_keys() if cfg.critic_obs_sounding else 0)
+                    tf = obs["critic"][:, off:off + 10]
+                    assert (tf > 0).any(), "hands jammed together but every fingertip force reads 0"
+                    print(f"  -> CRITIC TIP FORCES LIVE (max {float(tf.max()):.3f} x clip)")
 
     print(f"[piano_smoke] stepped {args.steps} steps. mean return = {rew_sum.mean().item():.3f}")
     print("===== PIANO ENV SMOKE OK =====")
