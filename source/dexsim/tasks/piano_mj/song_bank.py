@@ -94,6 +94,7 @@ class SongBank:
         self.finger_active = np.stack(factives, 0)  # (N, Tmax+L, 10) bool
         self.finger_home = finger_home             # (10,) i64
         self._build_ego_tables()                   # per-finger timing + per-hand events
+        self.pedal_goal = self._build_pedal_goal(cfg)  # (N, Tmax+L) f32
 
         # time-dilated onset window for the onset-timing metric (+/-W steps)
         W = int(getattr(cfg, "onset_tol_steps", 3))
@@ -239,3 +240,24 @@ class SongBank:
                 for st, e in notes:
                     self.finger_release[n, st:e + 1, f] = e - np.arange(st, e + 1)
             self.hand_events.append([sorted(ev) for ev in events])
+
+    def _build_pedal_goal(self, cfg) -> np.ndarray:
+        """(N, T) 1.0 where the sustain pedal is needed: some hand's active goal
+        keys at t span more than cfg.pedal_goal_span (one hand cannot hold
+        them all), so at least one must ring via the pedal."""
+        N, T, _ = self.goal.shape
+        key_y = geometry.key_local_top_positions()[:, 1]
+        span = float(getattr(cfg, "pedal_goal_span", 0.14))
+        out = np.zeros((N, T), dtype=np.float32)
+        mid = NUM_KEYS // 2
+        for n in range(N):
+            g = self.goal[n] > 0.5
+            for t in range(T):
+                k = np.nonzero(g[t])[0]
+                if k.size < 2:
+                    continue
+                for hand_keys in (k[k < mid], k[k >= mid]):
+                    if hand_keys.size >= 2 and key_y[hand_keys].max() - key_y[hand_keys].min() > span:
+                        out[n, t] = 1.0
+                        break
+        return out

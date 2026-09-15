@@ -4,7 +4,7 @@ import sys, re, numpy as np, torch
 sys.path.insert(0, "source")
 from dexsim.tasks.piano_mj import PianoMjEnvCfg, PianoMjVecEnv, make_rsl_rl_env
 ckpt, midi = sys.argv[1], sys.argv[2]; fing = sys.argv[3] if len(sys.argv) > 3 else "heuristic"
-cfg = PianoMjEnvCfg(); cfg.midi_path = midi; cfg.episode_length_s = 65.0; cfg.fingering_method = fing
+cfg = PianoMjEnvCfg(); cfg.midi_path = midi; cfg.episode_length_s = 65.0; cfg.fingering_method = fing; cfg.random_song_start = False   # diagnose the WHOLE song from step 0
 if len(sys.argv) > 4 and sys.argv[4] == "legacy_reach": cfg.rail_limit = 0.12; cfg.arm_action_scale = 0.12; cfg.fold_to_reach = True; cfg.obs_mode = "global"; cfg.rail_follow = False; cfg.sustain_pedal = False; cfg.rail_stiffness, cfg.rail_damping, cfg.rail_force = 1200.0, 120.0, 500.0
 if len(sys.argv) > 4 and sys.argv[4] == "global": cfg.obs_mode = "global"
 cfg.__post_init__()

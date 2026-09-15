@@ -56,6 +56,20 @@ class PianoMjEnvCfg:
     # penalty). Without it, held bass notes that overlap far-away notes of the
     # same hand (nettspend keys 13/28/44 = 35% of goal steps) are unplayable.
     sustain_pedal: bool = True
+    # Pedal engages only when the action exceeds this. At 0.0 the Gaussian
+    # exploration noise (std ~0.5 around a mean near 0) flipped it every
+    # other step: random sustain kept wrong keys ringing, the false-press
+    # penalty rose, and the policy learned to press LESS (run
+    # nettspend_pedal_a100: pedal down 51% of steps, 61% of onsets missed).
+    pedal_threshold: float = 0.5
+    # PEDAL GOAL (stand-in for a MIDI CC64 track, which this song lacks):
+    # pedal_goal[t] = 1 when some goal note active at t cannot be held by a
+    # finger -- its hand's active keys span more than pedal_goal_span metres
+    # (a hand spans ~0.135 m thumb tip to little tip). Rewarded with
+    # pedal_goal_weight * [pedal_down == pedal_goal] and shown in the obs, so
+    # the policy gets a direct signal for WHEN to pedal.
+    pedal_goal_span: float = 0.14
+    pedal_goal_weight: float = 0.3
     observation_space: int = 0                           # computed in __post_init__
     seed: int = 0
 
@@ -409,7 +423,7 @@ class PianoMjEnvCfg:
                   + NUM_FINGERS            # press now
                   + NUM_FINGERS * 2)       # steps to onset, steps to release
         if self.sustain_pedal:
-            n += 1                          # pedal state
+            n += 2                          # pedal state, pedal goal (now)
         if self.obs_prev_action:
             n += self.action_space
         return n

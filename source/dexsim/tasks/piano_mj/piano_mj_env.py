@@ -297,7 +297,7 @@ class PianoMjEnv:
         self._action_jerk = float(np.abs(a - self.prev_actions).mean())
         self.prev_actions = a.copy()
         if getattr(cfg, "sustain_pedal", False):
-            self.pedal_down = bool(a[-1] > 0.0)
+            self.pedal_down = bool(a[-1] > float(getattr(cfg, "pedal_threshold", 0.0)))
             a = a[:-1]                                # actuators only from here
 
         if getattr(cfg, "mute_right_hand", False):
@@ -343,6 +343,8 @@ class PianoMjEnv:
         logs["debug/blown"] = float(blown)
         if getattr(cfg, "sustain_pedal", False):
             logs["play/pedal_down"] = float(self.pedal_down)
+            logs["reward/pedal"] = float(getattr(self, "_last_r_pedal", 0.0))
+            logs["play/pedal_goal"] = float(self.bank.pedal_goal[self.song_id, min(self.song_step, song_len - 1)])
         if getattr(cfg, "key_weight_mode", "none") == "adaptive":
             used = self.bank.goal[self.song_id, :int(song_len)].max(0) > 0.5
             logs["keyw/min_recall_ema"] = float(self._key_recall_ema[used].min()) if used.any() else 0.0
@@ -597,7 +599,8 @@ class PianoMjEnv:
                     up[j] = (0.0, 1.0)
             parts.append(up.reshape(-1))
         if getattr(cfg, "sustain_pedal", False):
-            parts.append(np.array([1.0 if self.pedal_down else 0.0]))
+            parts.append(np.array([1.0 if self.pedal_down else 0.0,
+                                   float(self.bank.pedal_goal[sid, t0])]))
         if getattr(cfg, "obs_prev_action", False):
             parts.append(self.prev_actions)
         obs = np.concatenate([np.asarray(p, dtype=np.float32).reshape(-1) for p in parts])
@@ -771,6 +774,11 @@ class PianoMjEnv:
             r_hover = 0.0
 
         r_jerk = -float(getattr(cfg, "jerk_weight", 0.0)) * self._action_jerk
+        r_pedal = 0.0
+        if getattr(cfg, "sustain_pedal", False):
+            pg = float(self.bank.pedal_goal[self.song_id, self.song_step])
+            r_pedal = float(getattr(cfg, "pedal_goal_weight", 0.0)) * (
+                1.0 if (self.pedal_down == (pg > 0.5)) else 0.0)
 
         # metrics
         recall, precision = press_accuracy(pressed, goal)
@@ -799,7 +807,8 @@ class PianoMjEnv:
         on_timing = float((played_on * near).sum() / n_played) if n_played > 0 else 0.0
 
         g = lambda x: float(np.clip(np.nan_to_num(x), -10.0, 10.0))
-        reward = g(r_key) + g(r_finger) + g(r_onset) + g(r_hover) + g(r_jerk)
+        reward = g(r_key) + g(r_finger) + g(r_onset) + g(r_hover) + g(r_jerk) + g(r_pedal)
+        self._last_r_pedal = float(r_pedal)
         reward = float(np.clip(reward, -10.0, 10.0))
 
         logs = {
