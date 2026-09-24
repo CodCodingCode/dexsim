@@ -12,10 +12,15 @@ mount calibration — each documented with its reason; don't "fix" them).
 
 `left_ready_pose` / `right_ready_pose` in
 `source/dexsim/tasks/piano_mj/piano_mj_env_cfg.py` are the constant ready
-pose: `railJoint = 0`, wrist tilt `robot0_WRJ0 = 0.45` / `robot0_WRJ1 = 0.13`,
-all fingers at 0. Palms ride at the configured base positions (z = 0.88),
-fingertips hover a few cm above the keys, pointing down. Do NOT edit these
-unless the user explicitly asks in a new request.
+pose — **"pose G"**, user-approved 2026-09-23: `railJoint = 0`, wrist
+`robot0_WRJ0 = -0.20` / `robot0_WRJ1 = 0.13`, long fingers curled 30° at
+MCP+PIP (`(FF|MF|RF|LF)J[12] = 0.5236`), thumb turned down (`THJ4 = 1.05`,
+`THJ3 = 1.22`), palm at `hand_fixed_z = 0.83`, `tip_shift_extra = 0.065`.
+Every fingertip (thumb included) hovers ~4 cm above the keys and can reach
+every white press point; the long fingers reach every black one. The
+previous straight-finger pose (WRJ0 0.45, z 0.88) could not put the thumb on
+any key or the little finger on a black key — see `docs/MUJOCO.md`. Do NOT
+edit these unless the user explicitly asks in a new request.
 
 ## Task setup that matters
 

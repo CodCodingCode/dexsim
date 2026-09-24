@@ -151,6 +151,34 @@ class PianoMjEnvCfg:
     critic_obs_collision: bool = True
     state_space: int = 0                  # policy obs + critic extras; computed
 
+    # --- hand self-collision: contact stiffness, fingertip shape, penalty ---
+    # Self-collision is always ON (every Menagerie collision geom is 1/1, only
+    # wrist-forearm and thumb proximal-middle are excluded). Measured
+    # 2026-09-23: two adjacent fingers abducted into each other stall at
+    # ~6 N with 0.1-0.5 mm penetration -- the sim holds them apart; the
+    # rendered overlap is the visual meshes (9-10 mm half-width on a 22 mm
+    # knuckle pitch) touching, plus whatever the policy chooses to do.
+    # Hand contact stiffness override (per collision geom on both hands):
+    # Menagerie ships solimp d0 = 0.5 / solref 0.005 (refsafe already clamps
+    # that to 2*dt = 0.01). Setting MuJoCo's defaults (0.01, 1) / (0.9, 0.99,
+    # 0.001) or even (0.95, 0.9995, 0.0005) measured NO change in penetration
+    # percentiles, so these stay None (= Menagerie) by default. Note hand-key
+    # pairs average the two geoms' params, so this also touches key contacts.
+    hand_contact_solref: tuple[float, float] | None = None
+    hand_contact_solimp: tuple[float, float, float] | None = None
+    # fingertip (distal) collision as a capsule fitted to the mesh instead of
+    # the Menagerie mesh (mesh-mesh = one contact point per pair). Also
+    # measured no penetration benefit, and it changes the fingertip-key
+    # contact shape the press calibration was done with -> off by default.
+    distal_capsule_collision: bool = False
+    # reward: -same_hand_contact_weight per pair of DIFFERENT fingers of the
+    # same hand (thumb included, palm/wrist excluded) pressed together with
+    # more than same_hand_contact_force newtons (summed over their contacts).
+    # Brushing a neighbour while playing adjacent keys (<1 N) is free; driving
+    # fingers into each other (abduction stall ~6 N) is not. 0 disables.
+    same_hand_contact_weight: float = 0.05
+    same_hand_contact_force: float = 2.0
+
     # --- task / songs ---
     midi_path: str = "data/midi/song.mid"
     control_dt: float = CONTROL_DT
@@ -193,7 +221,17 @@ class PianoMjEnvCfg:
     # convention) so the fingering guardrail reports swap_hands=False.
     piano_pos: tuple = (0.61, -0.598, 0.746)    # keyboard centered at (0.61, 0, 0.756)
     piano_rot: tuple = (1.0, 0.0, 0.0, 0.0)     # identity (wxyz)
-    hand_fixed_z: float = 0.88
+    hand_fixed_z: float = 0.83        # pose G (2026-09-23); was 0.88 with straight fingers
+    # Extra world-X push toward the piano applied AFTER the mount's press-line
+    # self-calibration (see mjcf/scene.py build_scene_spec). Pressing by finger
+    # flexion alone sweeps a tip ~6.6 cm toward the player, so 0.065 makes a
+    # plain press from the pose-G hover land exactly on the white press line,
+    # and (measured) every finger incl. the thumb reaches every white press
+    # point and the long fingers every black one with zero error. History:
+    # 0.03 on the straight-finger pose (v8_shift3) took keys 28/54 from ~0 to
+    # ~0.4 recall; 0 before that. The X component of left/right_base_pos is a
+    # dead knob -- calibration cancels it.
+    tip_shift_extra: float = 0.065
     left_base_pos: tuple = (0.82, -0.30, 0.88)
     right_base_pos: tuple = (0.82, 0.30, 0.88)
 
@@ -365,22 +403,35 @@ class PianoMjEnvCfg:
 
     # ===================== 🔒 LOCKED STATIC POSE — DO NOT EDIT =====================
     # left_ready_pose / right_ready_pose are the constant ready pose for both
-    # hands: rail centered, robot0_WRJ0 = 0.45 / robot0_WRJ1 = 0.13 wrist tilt,
-    # all fingers straight. Fingertips hover a few cm above the keys, pointing
-    # down. User-declared final baseline -- do NOT change without an explicit
-    # request. See CLAUDE.md. (Keys are regex patterns over per-hand joint
-    # names, exactly like the Isaac cfg.)
+    # hands. "Pose G" (user-approved 2026-09-23, replacing the straight-finger
+    # pose): palm at hand_fixed_z = 0.83 (5 cm lower), wrist flattened to
+    # robot0_WRJ0 = -0.20 (was 0.45), long fingers curled 30 deg at MCP (J2)
+    # and PIP (J1), thumb turned down (THJ4 +60 deg, THJ3 70 deg). Measured:
+    # every fingertip incl. the thumb hovers 3.8-4.1 cm above the white key
+    # tops, and with tip_shift_extra = 0.065 all five fingers reach every white
+    # press point with zero error and the four long fingers every black one
+    # (thumb 1.3 cm off black centres). The old pose could not put the thumb on
+    # any key (bottomed out 0.4 cm above white tops) nor the little finger on
+    # a black key. Do NOT change without an explicit request. See CLAUDE.md
+    # and docs/MUJOCO.md. (Keys are regex patterns over per-hand joint names,
+    # first match wins -- keep the catch-all LAST.)
     # ===============================================================================
     left_ready_pose: dict = field(default_factory=lambda: {
         "railJoint": 0.0,
-        "robot0_WRJ0": 0.45,   # wrist tilt, range [-0.70, 0.49]
+        "robot0_WRJ0": -0.20,  # wrist tilt, range [-0.70, 0.49]
         "robot0_WRJ1": 0.13,   # range [-0.49, 0.14]
+        "robot0_THJ4": 1.05,   # thumb turned down (+60 deg)
+        "robot0_THJ3": 1.22,   # (70 deg)
+        "robot0_(FF|MF|RF|LF)J[12]": 0.5236,   # 30 deg claw at MCP + PIP
         "robot0_(?!WRJ).*": 0.0,
     })
     right_ready_pose: dict = field(default_factory=lambda: {
         "railJoint": 0.0,
-        "robot0_WRJ0": 0.45,
+        "robot0_WRJ0": -0.20,
         "robot0_WRJ1": 0.13,
+        "robot0_THJ4": 1.05,
+        "robot0_THJ3": 1.22,
+        "robot0_(FF|MF|RF|LF)J[12]": 0.5236,
         "robot0_(?!WRJ).*": 0.0,
     })
 

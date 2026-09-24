@@ -209,6 +209,19 @@ class PianoMjEnv:
         self.tip_bodies = np.concatenate([m.site_bodyid[sites]
                                           for sites in self.tip_sites])
         self.hand_root = [int(m.body_rootid[self.palm_body[h]]) for h in range(2)]
+        # same-hand contact penalty: body -> finger id (hand*5 + [th,ff,mf,rf,lf])
+        # for every finger-segment body (knuckle..distal, lf metacarpal); -1
+        # for palm/wrist/forearm/keys/world.
+        self.body_finger = np.full(m.nbody, -1, dtype=int)
+        fingers = ("th", "ff", "mf", "rf", "lf")
+        for b in range(m.nbody):
+            name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) or ""
+            for h, p in enumerate(_HAND_PREFIXES):
+                if name.startswith(p + "robot0_"):
+                    seg = name[len(p) + len("robot0_"):]
+                    for fi, f in enumerate(fingers):
+                        if seg.startswith(f):
+                            self.body_finger[b] = h * 5 + fi
         # keys every per-key OBSERVATION chunk is sliced to (reward/F1 use all 88)
         self.obs_key_ids = np.array(self.cfg.obs_key_indices(), dtype=int)
         # egocentric obs: world Y of every key (fixed; keys only travel in Z)
@@ -677,6 +690,27 @@ class PianoMjEnv:
         return np.nan_to_num(x, nan=0.0, posinf=1.0, neginf=0.0)
 
     # ---------------------------------------------------------------- reward
+    def _same_hand_finger_contacts(self) -> int:
+        """Number of distinct (finger, finger) pairs of the SAME hand pressed
+        together with more than cfg.same_hand_contact_force N (contact force
+        magnitude summed over the pair's contacts), from the current MjData.
+        Segments of one finger (proximal vs distal when curled) and
+        finger-vs-palm never count."""
+        thresh = float(getattr(self.cfg, "same_hand_contact_force", 2.0))
+        m, d = self.model, self.data
+        force = {}
+        f6 = np.zeros(6)
+        for i in range(d.ncon):
+            c = d.contact[i]
+            f1 = self.body_finger[m.geom_bodyid[c.geom1]]
+            f2 = self.body_finger[m.geom_bodyid[c.geom2]]
+            if f1 < 0 or f2 < 0 or f1 == f2 or (f1 // 5) != (f2 // 5):
+                continue
+            mujoco.mj_contactForce(m, d, i, f6)
+            key = (min(f1, f2), max(f1, f2))
+            force[key] = force.get(key, 0.0) + float(np.linalg.norm(f6[:3]))
+        return sum(1 for v in force.values() if v > thresh)
+
     def _hand_f1(self, pressed, goal, key_mask) -> float:
         rec, prec = press_accuracy(pressed * key_mask, goal * key_mask)
         if (goal * key_mask).sum() <= 0:
@@ -774,6 +808,8 @@ class PianoMjEnv:
             r_hover = 0.0
 
         r_jerk = -float(getattr(cfg, "jerk_weight", 0.0)) * self._action_jerk
+        n_fc = self._same_hand_finger_contacts()
+        r_fc = -float(getattr(cfg, "same_hand_contact_weight", 0.0)) * n_fc
         r_pedal = 0.0
         if getattr(cfg, "sustain_pedal", False):
             pg = float(self.bank.pedal_goal[self.song_id, self.song_step])
@@ -807,7 +843,8 @@ class PianoMjEnv:
         on_timing = float((played_on * near).sum() / n_played) if n_played > 0 else 0.0
 
         g = lambda x: float(np.clip(np.nan_to_num(x), -10.0, 10.0))
-        reward = g(r_key) + g(r_finger) + g(r_onset) + g(r_hover) + g(r_jerk) + g(r_pedal)
+        reward = (g(r_key) + g(r_finger) + g(r_onset) + g(r_hover) + g(r_jerk)
+                  + g(r_pedal) + g(r_fc))
         self._last_r_pedal = float(r_pedal)
         reward = float(np.clip(reward, -10.0, 10.0))
 
@@ -826,6 +863,8 @@ class PianoMjEnv:
             "reward/onset": g(r_onset),
             "reward/idle_hover": g(r_hover),
             "reward/jerk_pen": g(r_jerk),
+            "reward/finger_contact_pen": g(r_fc),
+            "play/finger_contacts": float(n_fc),
             "reward/total": reward,
         }
         logs.update(online_logs)

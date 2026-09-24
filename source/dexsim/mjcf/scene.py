@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import re
+
 import mujoco
 import numpy as np
 
@@ -58,9 +60,18 @@ def build_scene_spec(cfg) -> mujoco.MjSpec:
     playable surface, ~50% leverage on the hinge. Without this the Menagerie
     hand (whose palm->tip reach differs from the Isaac USD) presses too close
     to the hinge and can never rotate a key past the sound angle.
+
+    ``cfg.tip_shift_extra`` then pushes the hands that much deeper (toward the
+    piano). The calibration is taken at the straight-finger hover pose, but a
+    finger curling down to press retracts its tip ~2-3 cm toward the player,
+    and black keys sit 2.75 cm deeper than white ones -- so with 0 extra the
+    long fingers only catch the front lip of a black key and the little finger
+    / thumb cannot reach one at all (measured 2026-09-23). NOTE: this is the
+    only X knob that works; ``left/right_base_pos[0]`` are cancelled by the
+    calibration.
     """
     spec = _build_scene_spec(cfg, tip_shift=0.0)
-    shift = _measure_tip_shift(spec, cfg)
+    shift = _measure_tip_shift(spec, cfg) + float(getattr(cfg, "tip_shift_extra", 0.0))
     if abs(shift) > 1e-4:
         spec = _build_scene_spec(cfg, tip_shift=shift)
     return spec
@@ -72,12 +83,26 @@ def _measure_tip_shift(spec: mujoco.MjSpec, cfg) -> float:
     the returned value is subtracted from the attach frame X."""
     model = spec.copy().compile()
     data = mujoco.MjData(model)
+    # Measure at the cfg's ACTUAL ready pose (wrist AND fingers), so a curled
+    # ("claw") ready pose is calibrated where its tips really hover. Same
+    # first-matching-regex rule as PianoMjEnv._build_ready_state; falls back to
+    # the historical wrist-only values if the cfg has no pose dicts.
+    poses = {"L_": getattr(cfg, "left_ready_pose", None),
+             "R_": getattr(cfg, "right_ready_pose", None)}
     for j in range(model.njnt):
         name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, j) or ""
-        if name.endswith("robot0_WRJ0"):
-            data.qpos[model.jnt_qposadr[j]] = 0.45     # locked ready tilt
-        elif name.endswith("robot0_WRJ1"):
-            data.qpos[model.jnt_qposadr[j]] = 0.13
+        pose = poses.get(name[:2])
+        if pose is None:
+            if name.endswith("robot0_WRJ0"):
+                data.qpos[model.jnt_qposadr[j]] = 0.45     # locked ready tilt
+            elif name.endswith("robot0_WRJ1"):
+                data.qpos[model.jnt_qposadr[j]] = 0.13
+            continue
+        suffix = name[2:]
+        for pattern, value in pose.items():
+            if re.fullmatch(pattern, suffix):
+                data.qpos[model.jnt_qposadr[j]] = float(value)
+                break
     mujoco.mj_forward(model, data)
     tips_x = []
     for p in ("L_", "R_"):
@@ -138,7 +163,11 @@ def _build_scene_spec(cfg, tip_shift: float) -> mujoco.MjSpec:
                         range=[-rail_limit, rail_limit],
                         damping=1.0, armature=0.01, limited=True)
 
-        hand = load_hand_spec(side)
+        hand = load_hand_spec(
+            side,
+            distal_capsule=bool(getattr(cfg, "distal_capsule_collision", True)),
+            contact_solref=getattr(cfg, "hand_contact_solref", None),
+            contact_solimp=getattr(cfg, "hand_contact_solimp", None))
         off = _palm_offset(hand)
         # attach so the palm body sits at the mount origin (minus the measured
         # fingertip->press-line calibration shift along world X):

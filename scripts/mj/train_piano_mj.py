@@ -77,6 +77,13 @@ parser.add_argument("--anneal_recall_gate", type=float, default=None)
 parser.add_argument("--anneal_steps", type=int, default=None)
 parser.add_argument("--start_curl", type=float, default=None)
 parser.add_argument("--idle_finger_curl", type=float, default=None)
+parser.add_argument("--same_hand_contact_weight", type=float, default=None,
+                    help="penalty per pair of same-hand fingers pressed into each other (cfg default 0.05)")
+parser.add_argument("--same_hand_contact_force", type=float, default=None,
+                    help="newtons between two fingers before the pair counts (cfg default 2.0)")
+parser.add_argument("--stiff_hand_contacts", action="store_true",
+                    help="MuJoCo-default contact stiffness on the hands + capsule fingertips "
+                         "(measured no penetration benefit; kept as an experiment knob)")
 parser.add_argument("--lookahead", type=int, default=None)
 parser.add_argument("--episode_s", type=float, default=None,
                     help="episode length in seconds (default 0 = the whole song)")
@@ -157,6 +164,8 @@ def build_env_cfg() -> PianoMjEnvCfg:
         ("key_strike_vel", args.strike_vel),
         ("start_finger_curl", args.start_curl),
         ("idle_finger_curl", args.idle_finger_curl),
+        ("same_hand_contact_weight", args.same_hand_contact_weight),
+        ("same_hand_contact_force", args.same_hand_contact_force),
         ("goal_lookahead", args.lookahead),
         ("fingering_method", args.fingering),
         ("obs_mode", args.obs_mode),
@@ -167,6 +176,10 @@ def build_env_cfg() -> PianoMjEnvCfg:
     ]:
         if val is not None:
             setattr(cfg, name, val)
+    if args.stiff_hand_contacts:
+        cfg.hand_contact_solref = (0.01, 1.0)
+        cfg.hand_contact_solimp = (0.9, 0.99, 0.001)
+        cfg.distal_capsule_collision = True
     if args.legacy_reach:
         cfg.rail_limit = 0.12
         cfg.arm_action_scale = 0.12

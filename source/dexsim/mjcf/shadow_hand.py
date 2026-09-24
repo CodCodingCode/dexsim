@@ -116,17 +116,75 @@ def ensure_menagerie() -> Path:
     return MENAGERIE_DIR
 
 
-def load_hand_spec(side: str) -> mujoco.MjSpec:
+# distal-body -> capsule (radius, half-length, z-center) in the body frame,
+# fitted to the Menagerie ``*_distal_pst`` collision mesh vertices: fingers
+# span z 4.7..32 mm and are ~15 mm wide / ~17 mm thick (tapering to the
+# tip); the thumb spans z 3.3..35 mm at ~17 x 21 mm. Replaces the mesh-mesh
+# fingertip contacts (one jumpy point per pair) with capsule-capsule ones.
+_DISTAL_CAPSULES = {
+    "robot0_thdistal": (0.0090, 0.00685, 0.01915),
+    "robot0_ffdistal": (0.0075, 0.00615, 0.01835),
+    "robot0_mfdistal": (0.0075, 0.00615, 0.01835),
+    "robot0_rfdistal": (0.0075, 0.00615, 0.01835),
+    "robot0_lfdistal": (0.0075, 0.00615, 0.01835),
+}
+_COLLISION_CLASS = "plastic_collision"
+
+
+def load_hand_spec(side: str, distal_capsule: bool = True,
+                   contact_solref=None, contact_solimp=None) -> mujoco.MjSpec:
     """Load the Menagerie hand for ``side`` ("left"/"right"), renamed to the
     dexsim ``robot0_*`` convention, with fingertip sites added. Returns an
     un-compiled ``MjSpec`` ready to be attached into a scene (the attach step
-    adds the per-hand ``L_``/``R_`` prefix so both hands can coexist)."""
+    adds the per-hand ``L_``/``R_`` prefix so both hands can coexist).
+
+    ``distal_capsule``: swap each fingertip's mesh collision geom for the
+    fitted capsule in ``_DISTAL_CAPSULES`` (visual mesh untouched).
+    ``contact_solref`` / ``contact_solimp``: if given, override the
+    ``plastic_collision`` default class (every collision geom on the hand).
+    """
     if side not in ("left", "right"):
         raise ValueError(f"side must be 'left' or 'right', got {side!r}")
     src = ensure_menagerie() / f"{side}_hand.xml"
     xml = rename_xml(src.read_text(), side)
     spec = mujoco.MjSpec.from_string(xml)
     spec.meshdir = str(MENAGERIE_DIR / "assets")
+
+    if contact_solref is not None or contact_solimp is not None:
+        # set per geom: editing the default class via find_default() does not
+        # reach geoms that were parsed with that class (verified, MuJoCo 3.13)
+        n_set = 0
+        for g in spec.geoms:
+            if g.classname is None or g.classname.name != _COLLISION_CLASS:
+                continue
+            if contact_solref is not None:
+                g.solref = list(map(float, contact_solref))
+            if contact_solimp is not None:
+                si = list(g.solimp)
+                si[:len(contact_solimp)] = list(map(float, contact_solimp))
+                g.solimp = si
+            n_set += 1
+        if n_set == 0:
+            raise RuntimeError(f"hand XML has no '{_COLLISION_CLASS}' geoms")
+
+    if distal_capsule:
+        n_swapped = 0
+        for g in spec.geoms:
+            body = g.parent.name if g.parent is not None else ""
+            if (body in _DISTAL_CAPSULES
+                    and g.type == mujoco.mjtGeom.mjGEOM_MESH
+                    and g.classname is not None
+                    and g.classname.name == _COLLISION_CLASS):
+                r, hl, zc = _DISTAL_CAPSULES[body]
+                g.type = mujoco.mjtGeom.mjGEOM_CAPSULE
+                g.meshname = ""
+                g.size = [r, hl, 0.0]
+                g.pos = [0.0, 0.0, zc]
+                g.quat = [1.0, 0.0, 0.0, 0.0]
+                n_swapped += 1
+        if n_swapped != len(_DISTAL_CAPSULES):
+            raise RuntimeError(f"expected {len(_DISTAL_CAPSULES)} distal mesh "
+                               f"collision geoms, swapped {n_swapped}")
 
     # fingertip sites at the pressing point of each distal segment
     for b in spec.bodies:

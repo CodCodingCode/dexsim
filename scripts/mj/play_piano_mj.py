@@ -53,6 +53,10 @@ parser.add_argument("--fingering", default=None, choices=["heuristic", "ot", "ha
 parser.add_argument("--legacy_ego", action="store_true",
                     help="pre-2026-09-12 ego obs (314 dims: hand velocities on, no 88-key "
                          "state, no goal piano roll); needed for checkpoints trained before then")
+parser.add_argument("--stiff_hand_contacts", action="store_true",
+                    help="MuJoCo-default contact stiffness on the hands + capsule fingertips "
+                         "(A/B knob; checkpoints do not depend on it)")
+parser.add_argument("--same_hand_contact_weight", type=float, default=None)
 parser.add_argument("--export_midi", default=None, help="write the SOUNDED keys as .mid")
 parser.add_argument("--rollout_npz", default=None, help="dump qpos trajectory + metrics")
 args = parser.parse_args()
@@ -107,6 +111,12 @@ def main():
         cfg.ego_piano_roll = False
     if args.sounding_gate:
         cfg.sounding_gate = args.sounding_gate
+    if args.stiff_hand_contacts:
+        cfg.hand_contact_solref = (0.01, 1.0)
+        cfg.hand_contact_solimp = (0.9, 0.99, 0.001)
+        cfg.distal_capsule_collision = True
+    if args.same_hand_contact_weight is not None:
+        cfg.same_hand_contact_weight = args.same_hand_contact_weight
     if args.ego_finger_obs:
         cfg.ego_finger_obs = True
     cfg.random_song_start = False          # playback always starts at the top
@@ -161,7 +171,9 @@ def main():
     print(f"[play] {len(goal_hist)} steps | F1 {f1:.3f}  recall {rec:.3f}  "
           f"precision {prec:.3f}  (goal steps: {int(has.sum())})")
     print(f"[play] mean step logs: reward/total {mean('reward/total'):.3f}  "
-          f"play/F1 {mean('play/F1'):.3f}  keys_sounding {mean('play/keys_sounding'):.2f}")
+          f"play/F1 {mean('play/F1'):.3f}  keys_sounding {mean('play/keys_sounding'):.2f}  "
+          f"finger_contacts {mean('play/finger_contacts'):.3f}  "
+          f"finger_contact_pen {mean('reward/finger_contact_pen'):.4f}")
 
     if args.video:
         import imageio.v2 as imageio
