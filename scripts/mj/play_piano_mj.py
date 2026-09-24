@@ -1,7 +1,6 @@
 """Roll out a trained (or zero-action) piano policy in MuJoCo and record it.
 
-MuJoCo twin of scripts/train/play_piano.py -- no Isaac boot, no warm render
-server needed: MuJoCo renders offscreen in-process at interactive speed.
+MuJoCo renders offscreen in-process at interactive speed.
 
   # zero-action baseline (ready pose + rail servo only):
   .venv/bin/python scripts/mj/play_piano_mj.py --zero --video results/mj_zero.mp4

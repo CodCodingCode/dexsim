@@ -1,7 +1,7 @@
 # dexsim — bimanual Shadow-Hand piano in MuJoCo
 
 Two rail-mounted Shadow Hands over an 88-key spring piano learn to play a
-MIDI song with PPO. Plain MuJoCo, no Isaac Sim. Success is measured by the
+MIDI song with PPO, from scratch. Success is measured by the
 **F1 of actual key presses** against the song, not by reward.
 
 Results so far on `results/nettspend - we not like you (1).mid`:
@@ -93,7 +93,6 @@ dexsim/
 
 ## History
 
-The task was first built on Isaac Lab (UR10e arms + Shadow Hands, later
-armless rail hands). That implementation was removed from this branch on
-2026-09-10; it lives in git history and on `master`. `docs/research_journal.md`
-keeps the research log from that period.
+An earlier implementation on a different simulator (arm-mounted hands, later
+rail hands) is archived on the `isaac-legacy` branch. Nothing in this tree
+depends on it.

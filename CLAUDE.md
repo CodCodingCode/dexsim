@@ -2,11 +2,11 @@
 
 **This repo is MuJoCo only.** The stack is `source/dexsim/mjcf/` +
 `source/dexsim/tasks/piano_mj/` + `scripts/mj/`, running in the plain `.venv`
-(mujoco + rsl-rl ≥5.x + torch). The earlier Isaac Lab implementation was
-removed on 2026-09-10; it exists only in git history and on `master`. Do not
-reintroduce Isaac Sim, Isaac Lab, USD assets, or UR10e arm code here. See
-`docs/MUJOCO.md` for the physics decisions (key damping, fingertip sites,
-mount calibration — each documented with its reason; don't "fix" them).
+(mujoco + rsl-rl ≥5.x + torch). An earlier implementation on a different
+simulator is archived on the `isaac-legacy` branch; do not reintroduce any of
+it (no USD assets, no arm code). See `docs/MUJOCO.md` for the physics
+decisions (key damping, fingertip sites, mount calibration — each documented
+with its reason; don't "fix" them).
 
 ## 🔒 LOCKED: the constant static hand pose — DO NOT EDIT
 

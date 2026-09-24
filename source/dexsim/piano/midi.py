@@ -10,7 +10,7 @@ Turns a ``.mid`` file into the things an RL piano task needs:
 
 Everything is sampled on a fixed control grid of ``control_dt`` seconds so it
 lines up with the simulator's control rate. This module has no sim dependency,
-so it's reusable by an Isaac Lab env, a MuJoCo env, or plain analysis.
+so it's reusable by the MuJoCo env or plain analysis.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
-"""MJCF scene builders for the MuJoCo port of the piano task.
+"""MJCF scene builders for the piano task.
 
-The single source of truth for keyboard geometry stays ``dexsim.piano.geometry``
-(shared with the Isaac stack); these modules turn it into a MuJoCo model:
+The single source of truth for keyboard geometry is ``dexsim.piano.geometry``;
+these modules turn it into a MuJoCo model:
 
   * :mod:`dexsim.mjcf.shadow_hand` -- adapt the MuJoCo Menagerie Shadow Hand
     (right + true left) to the repo's ``robot0_*`` naming convention.
@@ -13,8 +13,6 @@ The single source of truth for keyboard geometry stays ``dexsim.piano.geometry``
   * :mod:`dexsim.mjcf.keyboard_scene` -- the keyboard twin of ``scene``:
     laptop + two gantry-mounted hands over the home row
     (``scripts/mj/keyboard_demo.py`` types on it).
-
-None of this imports Isaac; the MuJoCo stack runs in the plain ``.venv``.
 """
 
 from .piano import (

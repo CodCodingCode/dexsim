@@ -1,7 +1,6 @@
-"""MuJoCo port of the bimanual piano task (Isaac-free).
+"""Bimanual piano task (MuJoCo).
 
-Import this package directly (``from dexsim.tasks.piano_mj import ...``); it
-is not auto-imported by ``dexsim.tasks`` so the Isaac venv never needs mujoco.
+Import this package directly (``from dexsim.tasks.piano_mj import ...``).
 """
 
 from .piano_mj_env_cfg import PianoMjEnvCfg

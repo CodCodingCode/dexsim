@@ -1,9 +1,7 @@
-"""rsl_rl (>=5.x) PPO config for the MuJoCo piano task.
+"""rsl_rl (>=5.x) PPO config for the piano task.
 
-Hyper-parameters mirror the Isaac ``PianoPPORunnerCfg``
-(source/dexsim/tasks/piano/agents/rsl_rl_ppo_cfg.py): same network sizes,
-same PPO constants, same init noise. Expressed in the rsl_rl 5.x dict format
-(obs_groups / actor / critic / algorithm with class_name resolution).
+Expressed in the rsl_rl 5.x dict format (obs_groups / actor / critic /
+algorithm with class_name resolution).
 """
 
 from __future__ import annotations
@@ -21,10 +19,10 @@ _BASE: dict = {
         "class_name": "MLPModel",
         "hidden_dims": [512, 256, 128],
         "activation": "elu",
-        "obs_normalization": True,     # == Isaac empirical_normalization
+        "obs_normalization": True,     # running mean/std on the inputs
         "distribution_cfg": {
             "class_name": "GaussianDistribution",
-            "init_std": 0.5,           # 1.0 flailed the 60-DoF residual (Isaac note)
+            "init_std": 0.5,           # 1.0 flailed the residual policy
         },
     },
     "critic": {

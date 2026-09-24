@@ -1,4 +1,4 @@
-"""Lightweight visualization helpers that do not require Isaac Sim."""
+"""Lightweight visualization helpers (no simulator dependency)."""
 
 from .rerun_rollout import rollout_npz_to_rrd
 

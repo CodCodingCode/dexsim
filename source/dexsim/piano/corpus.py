@@ -5,7 +5,7 @@ it to ~2k pieces by adding a subset of the openly-downloadable **GiantMIDI-Piano
 dataset and dropping the human fingering (it auto-fingers — see
 ``dexsim.piano.fingering.plan_fingering(method="ot")``). The MIDI itself is pure
 goal data: which keys sound at which time. It is *sim-agnostic*, so we can ingest
-exactly the same corpus into our Isaac stack and turn each piece into a
+exactly the same corpus into our stack and turn each piece into a
 :class:`~dexsim.piano.midi.PianoSong` goal — no human labels required.
 
 This module is the front door for that:
@@ -20,8 +20,8 @@ This module is the front door for that:
   * act as a **goal generator**: iterate, sample, or curriculum-order the songs
     for training.
 
-It has no sim dependency, so it is reusable from an Isaac env, a MuJoCo env, or
-plain analysis. Run it via ``scripts/build_corpus.py``.
+It has no sim dependency, so it is reusable from the MuJoCo env or plain
+analysis. Run it via ``scripts/build_corpus.py``.
 """
 
 from __future__ import annotations

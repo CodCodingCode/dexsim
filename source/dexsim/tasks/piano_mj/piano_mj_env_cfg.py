@@ -1,15 +1,13 @@
-"""Config for the MuJoCo port of the bimanual piano task.
+"""Config for the bimanual piano task.
 
-Mirror of ``dexsim.tasks.piano.piano_env_cfg.PianoEnvCfg`` (the Isaac version)
-with the Isaac-only machinery removed: no PhysX buffers, no ArticulationCfgs,
-no UR10e-arm IK modes (this embodiment has no arm joints -- each hand rides a
-1-DoF Y rail exactly like the Isaac slider USDs). Everything task-level is
-kept identical: layout constants, reachable key windows, reward weights, the
-velocity-gated key sounding, and the 🔒 locked static ready pose.
+This embodiment has no arm joints -- each hand rides a 1-DoF Y rail. The
+config holds everything task-level: layout constants, reachable key windows,
+reward weights, the velocity-gated key sounding, and the 🔒 locked static
+ready pose.
 
-Timing: MuJoCo runs its own physics rate (0.005 s, the RoboPianist-standard
-step for finger/key contact) but the CONTROL rate is the same 20 Hz
-(control_dt 0.05) the MIDI goal grid and the Isaac env use.
+Timing: MuJoCo runs its physics at 0.005 s (the RoboPianist-standard step for
+finger/key contact) but the CONTROL rate is 20 Hz (control_dt 0.05), the same
+grid the MIDI goals are sampled on.
 """
 
 from __future__ import annotations
@@ -28,7 +26,7 @@ NUM_KEYS = _NUM_KEYS              # 88
 PER_HAND_DOF = 25                 # one Y rail + Shadow Hand(24 joints)
 PER_HAND_ACT = 21                 # one Y rail + 20 hand actuators (J0 pairs
 #                                   are tendon-coupled -> one actuator each,
-#                                   same coupling the Isaac USD had)
+#                                   as on the real hand)
 NUM_FINGERS = 10                  # 5 per hand
 
 
@@ -188,14 +186,14 @@ class PianoMjEnvCfg:
     song_offset: int = 0              # held-out eval split support
 
     # --- reach: how far each hand's rail can slide (m, +/- from its base) ---
-    # 0.12 (the Isaac-era default, kept as --legacy_reach) covers ~10 keys per
+    # 0.12 (the original default, kept as --legacy_reach) covers ~10 keys per
     # hand and leaves the middle of the keyboard unreachable, which is why
     # fold_to_reach existed. 0.32 lets each hand cover its whole half of the
     # 1.22 m keyboard (bases sit at y = +/-0.30). arm_action_scale maps the
     # policy's [-1, 1] rail action onto the same range.
     rail_limit: float = 0.32
     # rail servo gains (position actuator on the 4.3 kg hand+carriage). The
-    # Isaac-era 1200/120/500 settled a 30 cm step in ~250 ms -- as long as the
+    # original 1200/120/500 settled a 30 cm step in ~250 ms -- as long as the
     # song's short notes. 6000 N/m critically damped (2*sqrt(k*m) ~ 320) with a
     # 2 kN force limit settles in ~100 ms; a real linear rail does this easily.
     rail_stiffness: float = 6000.0
@@ -213,7 +211,7 @@ class PianoMjEnvCfg:
     right_key_window: tuple[int, int] = (63, 70)
 
     # --- layout: level, non-overlapping one-axis hand rails ---
-    # BOARD FLIPPED 180° vs the Isaac cfg (user request 2026-08-17): identity
+    # BOARD FLIPPED 180° vs the first layout (user request 2026-08-17): identity
     # rotation + mirrored Y offset keep the keyboard centered at (0.61, 0,
     # 0.756) but turn the KEY FRONTS toward the hands at x=0.82, so the robots
     # play from the player's side instead of reaching over the back rail.
@@ -238,9 +236,9 @@ class PianoMjEnvCfg:
     # --- action scaling: target = ready + scale * action (action in [-1,1]) ---
     arm_action_scale: float = 0.32    # rail travel scale (m); == rail_limit so
     #                                   action +/-1 reaches the end of the rail
-    hand_action_scale: float = 0.8    # NOT the Isaac 0.35! That value was tuned
-    #   for Isaac's stiffness-45/effort-40 actuators. The Menagerie hand uses
-    #   the real Shadow's weak position servos (kp 0.5-1, forcerange ~1 N), so
+    hand_action_scale: float = 0.8    # NOT 0.35: that value was tuned for a
+    #   stiffness-45/effort-40 actuator model. The Menagerie hand uses the real
+    #   Shadow's weak position servos (kp 0.5-1, forcerange ~1 N), so
     #   the achievable press force scales with the target offset -- and at 0.35
     #   the MAXIMUM action bottoms out at -0.0103 rad, short of the -0.012
     #   sound angle: the policy was physically unable to sound a key (measured
@@ -250,7 +248,7 @@ class PianoMjEnvCfg:
     freeze_arms: bool = False         # rails held at 0; fingers-only policy
     mute_right_hand: bool = False     # hold the right hand at ready (left-only songs)
     # RAIL-FOLLOW: the rail is servoed analytically to the upcoming-note centroid
-    # (the 1-DoF twin of the Isaac arm_ik_follow); the policy drives fingers only.
+    # the policy drives fingers only.
     # ON by default (2026-09-10): with the policy driving the rail from scratch
     # on the full keyboard, both hands parked where they started and learned
     # only the keys under them (61% of onsets never attempted at iter 700;
@@ -306,7 +304,7 @@ class PianoMjEnvCfg:
     idle_finger_curl: float = 0.0     # rad: curl NON-assigned fingers up (rail_follow)
     start_finger_curl: float = 0.0    # rad: curl ALL flex joints in the ready pose
 
-    # --- reward weights (PianoMime/RoboPianist composite; == Isaac cfg) ---
+    # --- reward weights (PianoMime/RoboPianist composite) ---
     key_press_weight: float = 2.0
     false_press_weight: float = 1.0
     energy_weight: float = 0.0005
@@ -345,7 +343,7 @@ class PianoMjEnvCfg:
     # gate the full weighting is on and pulls the policy toward the rare keys.
     key_weight_ramp: bool = True
 
-    # --- recall-gated annealing (press-discovery curriculum; == Isaac cfg) ---
+    # --- recall-gated annealing (press-discovery curriculum) ---
     # Hold the false-press penalty low (and energy at 0) so pressing gets
     # discovered, then ramp both to their cfg values over anneal_steps once the
     # per-env recall EMA crosses the gate. Monotonic; pauses if recall dips.
@@ -367,7 +365,7 @@ class PianoMjEnvCfg:
 
     key_damping: float = 0.0          # >0 overrides piano key return-spring damping
 
-    # velocity-gated ("hammer") sounding. NOT the Isaac 0.35 strike gate: a
+    # velocity-gated ("hammer") sounding. NOT the original 0.35 strike gate: a
     # position-servo press decelerates as it approaches its target, so by the
     # time the key crosses the sound angle it moves slower than 0.25 rad/s --
     # measured: at 0.25 a deliberate max-action press NEVER sounds (0/30
@@ -390,13 +388,13 @@ class PianoMjEnvCfg:
     # as the key travels down) instead of the velocity-latched sounding, which
     # is zero until the key fully rings -- no learning signal on the way down.
     # The latch still governs the false-press term and every metric
-    # (recall/F1 = keys that actually SOUNDED). False = exact Isaac semantics.
+    # (recall/F1 = keys that actually SOUNDED). False = latched only.
     dense_goal_press: bool = True
     # evaluate the strike gate every PHYSICS substep instead of once per 50ms
     # control step. The velocity spike of a real strike lasts ~30ms, so the
     # control-rate snapshot misses most genuine presses (measured 5x
     # undercount: 104 substep strikes vs 20 control-rate on identical
-    # trajectories). MuJoCo-stack improvement; False = exact Isaac semantics.
+    # trajectories). False = control-rate gate only.
     substep_strike_detect: bool = True
 
     hand_base_body: str = "robot0_palm"

@@ -1,0 +1,63 @@
+[PianoMjEnv] hand-side guardrail: low-pitch keys mean worldY=-0.30, left_robot Y=-0.30, right_robot Y=+0.30 -> swap_hands=False
+[PianoMjEnv] key weights (adaptive) 'nettspend - we not like you (1)': 13:0.56, 25:8.69, 26:1.37, 28:0.36, 30:1.73, 32:3.00, 33:0.79, 35:0.53, 37:1.54, 40:1.26, 44:0.47, 45:1.95, 47:3.18, 49:1.54, 54:0.61, 56:0.46, 72:8.69
+[PianoMjEnv] 1 song(s) [nettspend - we not like you (1)]: longest 1281 steps @ 20Hz
+--------------------------------------------------------------------------------
+Resolved observation sets: 
+	 actor :  ['policy']
+	 critic :  ['policy', 'critic_priv']
+--------------------------------------------------------------------------------
+Actor Model: MLPModel(
+  (obs_normalizer): EmpiricalNormalization()
+  (distribution): GaussianDistribution()
+  (mlp): MLP(
+    (0): Linear(in_features=1235, out_features=512, bias=True)
+    (1): ELU(alpha=1.0)
+    (2): Linear(in_features=512, out_features=256, bias=True)
+    (3): ELU(alpha=1.0)
+    (4): Linear(in_features=256, out_features=128, bias=True)
+    (5): ELU(alpha=1.0)
+    (6): Linear(in_features=128, out_features=43, bias=True)
+  )
+)
+Critic Model: MLPModel(
+  (obs_normalizer): EmpiricalNormalization()
+  (mlp): MLP(
+    (0): Linear(in_features=1246, out_features=512, bias=True)
+    (1): ELU(alpha=1.0)
+    (2): Linear(in_features=512, out_features=256, bias=True)
+    (3): ELU(alpha=1.0)
+    (4): Linear(in_features=256, out_features=128, bias=True)
+    (5): ELU(alpha=1.0)
+    (6): Linear(in_features=128, out_features=1, bias=True)
+  )
+)
+
+=== model_1400.pt  deterministic rollout, 1281 steps ===
+overall  F1 0.605  recall 0.487  precision 0.799   goal key-steps 3830  sounded key-steps 2338
+
+per key (goal keys only):
+ key  hand  finger   goal   hit  recall  false  note: false = sounded when NOT goal
+  13     L      mf    320   255    0.80     10
+  25     L      mf     40    40    1.00      0
+  26     L      mf    140    40    0.29      5
+  28     L      lf    470     7    0.01      0
+  30     L      mf    120    68    0.57     10
+  32     L      mf    120    69    0.57     50
+  33     L      rf    300   173    0.58     16
+  35     L      ff    330   156    0.47     42
+  37     L      ff    160   117    0.73     13
+  40     L      th    150    48    0.32     23
+  44     R      rf    565   307    0.54     44
+  45     R      rf    185   137    0.74     29
+  47     R      ff     80    63    0.79      0
+  49     R      rf    160    64    0.40      5
+  54     R      lf    240    20    0.08      2
+  56     R      rf    445   303    0.68      4
+  72     R      rf      5     0    0.00      0
+LEFT : recall 0.471  precision 0.813  goal 2715  sounded 1574
+RIGHT: recall 0.526  precision 0.768  goal 1115  sounded 764
+
+note onsets: 327  hit 275  missed entirely 52  (16%)
+latency of hits (steps @50ms): median 0  mean 1.2  >=3 late: 10%
+note length (steps): hit median 5, missed median 15
+chord size when goal present: mean 3.04, max 5;  steps with goal: 1260/1281

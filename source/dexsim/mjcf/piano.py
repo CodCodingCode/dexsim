@@ -1,12 +1,9 @@
 """Procedural 88-key spring-loaded piano (MuJoCo port).
 
-Same instrument as the Isaac articulation in ``dexsim/assets/piano.py`` /
-``scripts/build/build_piano_usd.py``, generated straight from the shared
-``dexsim.piano.geometry`` layout so every consumer (fingering planner, reward,
-env, and now MuJoCo) agrees on where each key is.
+Generated straight from the shared ``dexsim.piano.geometry`` layout so every
+consumer (fingering planner, reward, env, scene) agrees on where each key is.
 
-Physics matches the Isaac tuning (see dexsim/assets/piano.py for the full
-history of why these numbers):
+Physics (history of these numbers in docs/MUJOCO.md):
 
   * keys are PASSIVE hinges -- never actuated, held up by a joint spring
     (stiffness 3, damping 4) with the rest angle at 0;
@@ -14,13 +11,12 @@ history of why these numbers):
     (atan(0.01/0.15) ~ RoboPianist's white-key travel);
   * a key *sounds* below ``KEY_SOUND_ANGLE`` -- the env adds the velocity
     gate on top (a statically-resting hand rings nothing);
-  * ``gravcomp=1`` on every key body == Isaac's ``disable_gravity=True``
-    (real keys are balanced; without this the key mass sags past the sound
+  * ``gravcomp=1`` on every key body (real keys are balanced; without this the key mass sags past the sound
     angle at rest and everything reads as a false press).
 
 Naming: body ``key_{i}``, joint ``joint_{i}``, press-point site ``key_site_{i}``
 (the site sits at the key-top press target, so the env reads measured world
-positions exactly like Isaac's ``body_pos_w`` + half-height did).
+positions instead of recomputing them from the layout).
 """
 
 from __future__ import annotations
@@ -30,19 +26,17 @@ import mujoco
 from dexsim.piano import geometry as geom
 from dexsim.piano.midi import NUM_KEYS
 
-# --- mirror of dexsim/assets/piano.py (that module imports Isaac; keep the
-# --- MuJoCo stack import-clean). Values must stay in sync.
+# --- key physics constants ---
 KEY_MAX_TRAVEL_ANGLE = 0.0666        # rad; hinge stops here (physical max)
 KEY_SOUND_ANGLE = -0.012             # ~18% travel -> sensitive (good recall)
 KEY_SPRING_STIFFNESS = 3.0           # gentle: pressable by the weak fingers
-KEY_SPRING_DAMPING = 0.1             # NOT the Isaac 4.0! That value was a
-#   PhysX-specific slam absorber ("kills the low-hover contact explosion"), a
-#   failure mode MuJoCo doesn't have. On a passive MuJoCo hinge, damping 4
-#   over spring 3 is a tau=1.3s sponge: a finger STRIKE can only depress the
+KEY_SPRING_DAMPING = 0.1             # NOT 4.0 (the first implementation's
+#   PhysX-specific slam absorber, a failure mode MuJoCo doesn't have). On a
+#   passive MuJoCo hinge, damping 4 over spring 3 is a tau=1.3s sponge: a finger STRIKE can only depress the
 #   key ~15% before the contact ends (measured stall at -0.006 rad vs the
 #   -0.012 sound angle) and the velocity gate alone would need >1.4 Nm. 0.1
-#   matches the RoboPianist piano (their damping 0.05, the value the Isaac
-#   file itself cites as the reference) with a little extra return damping.
+#   matches the RoboPianist piano (their damping 0.05) with a little extra
+#   return damping.
 
 # hinge line: the back edge shared by white and black keys (piano-local X)
 _HINGE_X = -geom.WHITE_L / 2.0
@@ -97,7 +91,7 @@ def add_piano(spec: mujoco.MjSpec, pos, quat_wxyz,
             name=f"joint_{k.index}",
             type=mujoco.mjtJoint.mjJNT_HINGE,
             # axis -Y so pressing the front DOWN gives a NEGATIVE angle
-            # (matching the Isaac/RoboPianist sign convention).
+            # (matching the RoboPianist sign convention).
             axis=[0.0, -1.0, 0.0],
             range=[-KEY_MAX_TRAVEL_ANGLE, 0.0],
             stiffness=KEY_SPRING_STIFFNESS,
@@ -118,8 +112,7 @@ def add_piano(spec: mujoco.MjSpec, pos, quat_wxyz,
             # 1/1 geoms) but never with EACH OTHER -- the black-key boxes
             # overlap their white neighbours by design (real keys interlock),
             # and without this mask the blacks rest on the whites with ~20 N,
-            # pre-pressing every white key at rest. == Isaac's
-            # enabled_self_collisions=False on the piano articulation.
+            # pre-pressing every white key at rest.
             contype=2,
             conaffinity=1,
         )

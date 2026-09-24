@@ -3,7 +3,7 @@
 One compiled ``MjModel`` and one :class:`SongBank` are shared read-only across
 ``num_envs`` :class:`PianoMjEnv` instances (each owns its ``MjData``); steps
 fan out over a thread pool (``mj_step`` releases the GIL). Multi-song bundles
-assign songs round-robin, matching the Isaac env.
+assign songs round-robin.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ class PianoMjVecEnv:
         if self.num_priv_obs:
             self._priv = np.stack([r[5] for r in results]).astype(np.float32)
         # mean logs over envs; play/* accuracy metrics only over envs that had
-        # a goal this step (mirrors the Isaac env's has_goal masking)
+        # a goal this step (has_goal masking)
         keys = results[0][4].keys()
         logs = {}
         hg = np.array([r[4].get("play/has_goal", 1.0) for r in results])
@@ -94,7 +94,7 @@ class PianoMjVecEnv:
 
 def _reduce_logs(per_env: list[dict]) -> dict:
     """Mean logs over envs; play/* accuracy metrics only over envs that had a
-    goal this step (mirrors the Isaac env's has_goal masking)."""
+    goal this step (has_goal masking)."""
     # union of keys: some diagnostics (finger/online_*) exist only on steps
     # where an env had goal keys, so average each key over the envs that
     # reported it

@@ -8,7 +8,7 @@ Given, at one control step:
 it returns a per-env scalar reward following the RoboPianist recipe: reward
 hitting the keys that should sound, penalize keys that shouldn't, and (optionally)
 add control/energy shaping. Pure NumPy/torch-agnostic via duck-typed ops, so the
-same function serves the Isaac Lab env and offline analysis/tests.
+same function serves the env and offline analysis/tests.
 """
 
 from __future__ import annotations

@@ -25,6 +25,6 @@ fraction of steps; the frequent keys are at 0.9-0.99. Next lever is reward
 balance (per-note rather than per-step press reward, higher false-press
 start) so rare/short notes are worth chasing.
 
-Comparison: previous best documented result was F1 0.40 (Isaac, June 2026,
-3-key one-hand song). The heuristic-fingering run on this same song was
+Comparison: previous best documented result was F1 0.40 (June 2026, first
+implementation, 3-key one-hand song). The heuristic-fingering run on this same song was
 stopped at iter 1073 with training F1 0.63 (deterministic 0.69 at iter 900).

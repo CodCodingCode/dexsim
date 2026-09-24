@@ -1,19 +1,14 @@
-# The MuJoCo stack — bimanual piano without Isaac
+# The MuJoCo stack — bimanual piano
 
-> **2026-09-10:** the Isaac Lab implementation referenced in the port map
-> below was deleted from this branch (see git history / `master`). The
-> "Isaac stack" column is kept as a record of what each MuJoCo module replaced.
-
-This repo carries a full MuJoCo port of the bimanual piano task alongside the
-original Isaac Lab implementation. Same task recipe, same 🔒 locked ready
-pose, same reward composition, same MIDI goal pipeline — no Isaac Sim boot,
-no Vulkan driver staging, no warm render server (MuJoCo compiles the scene in
-~0.3 s and renders offscreen in-process).
+The bimanual piano task on plain MuJoCo: 🔒 locked ready pose, composite
+reward, MIDI goal pipeline. No simulator boot, no driver staging, no render
+server (MuJoCo compiles the scene in ~0.3 s and renders offscreen
+in-process).
 
 ## Quickstart
 
 ```bash
-source env.sh          # activates .venv (plain python + mujoco, no Isaac)
+source env.sh          # activates .venv (plain python + mujoco)
 
 # sanity: compile the scene, check the locked pose, sound a key, random-step
 python scripts/mj/smoke_piano_mj.py --render        # -> logs/mj_smoke.png
@@ -31,35 +26,30 @@ python scripts/mj/build_scene.py
 python -m mujoco.viewer --mjcf=assets/mj/piano_scene.xml
 ```
 
-## What maps to what
+## Where things live
 
-| Isaac stack                               | MuJoCo stack                                   |
-| ----------------------------------------- | ---------------------------------------------- |
-| `tasks/piano/piano_env_cfg.py`            | `tasks/piano_mj/piano_mj_env_cfg.py`           |
-| `tasks/piano/piano_env.py` (DirectRLEnv)  | `tasks/piano_mj/piano_mj_env.py` (+ `vec_env`) |
-| `assets/piano.py` + piano USD             | `dexsim/mjcf/piano.py` (procedural MJCF)       |
-| slider USDs (`build_shadow_hand_sliders`) | rail mounts built in `dexsim/mjcf/scene.py`    |
-| NVIDIA Shadow Hand USD (right-only)       | Menagerie E3M5 right + **true left** hand      |
-| `agents/rsl_rl_ppo_cfg.py`                | `tasks/piano_mj/ppo_cfg.py` (rsl_rl ≥5.x dict) |
-| `train/train_piano.py`                    | `scripts/mj/train_piano_mj.py`                 |
-| `train/play_piano.py`                     | `scripts/mj/play_piano_mj.py`                  |
-| warm render server                        | not needed (in-process `mujoco.Renderer`)      |
+| piece                         | file                                           |
+| ----------------------------- | ---------------------------------------------- |
+| task config (obs, reward, layout) | `tasks/piano_mj/piano_mj_env_cfg.py`       |
+| env (step, reward, obs)       | `tasks/piano_mj/piano_mj_env.py` (+ `vec_env`) |
+| procedural 88-key piano       | `dexsim/mjcf/piano.py`                         |
+| rail mounts + full scene      | `dexsim/mjcf/scene.py`                         |
+| Shadow hands (Menagerie E3M5 right + true left) | `dexsim/mjcf/shadow_hand.py` |
+| PPO config (rsl_rl ≥5.x dict) | `tasks/piano_mj/ppo_cfg.py`                    |
+| train / play                  | `scripts/mj/train_piano_mj.py`, `play_piano_mj.py` |
 
-Shared, unchanged: **everything in `dexsim/piano/`** (MIDI → goal schedule,
+Sim-independent: **everything in `dexsim/piano/`** (MIDI → goal schedule,
 fold-to-reach, fingering planner incl. the OT variant, reward functions, key
-geometry, SDF goal encoding). The reward functions were already
-backend-agnostic; the MuJoCo env calls them with numpy, the Isaac env with
-torch.
+geometry, SDF goal encoding). The env calls the reward functions with numpy.
 
 ## The embodiment
 
-Two Shadow Hands, each with one world-Y prismatic `railJoint` (±0.12 m, the
-Isaac slider's travel), palm-down over the flipped piano, fingers toward the
-keys. 24 joints/hand; 20 position actuators/hand (the four `*J0` distal pairs
-are tendon-coupled, as on the real hand and in the Isaac USD) + 1 rail ⇒
-**42-dim action**. Observations (see `PianoMjEnvCfg.__post_init__` for the current layout; originally 1216-dim, same composition as Isaac): both
-hands' qpos+qvel, 88 key angles, 10×88 goal lookahead, 10 fingertip positions,
-10 fingering targets, 88-dim analytic goal SDF.
+Two Shadow Hands, each with one world-Y prismatic `railJoint` (±0.32 m,
+`rail_limit`), palm-down over the flipped piano, fingers toward the keys.
+24 joints/hand; 20 position actuators/hand (the four `*J0` distal pairs are
+tendon-coupled, as on the real hand) + 1 rail ⇒ 42 actuators, plus the
+sustain pedal ⇒ **43-dim action**. Observations: see `PianoMjEnvCfg.ego_obs_dim`
+for the current egocentric layout (1175 dims by default).
 
 Naming: Menagerie's real Shadow names are renamed to the repo convention
 (`rh_FFJ4→robot0_FFJ3`, `rh_WRJ1→robot0_WRJ0`, …, see
@@ -67,14 +57,14 @@ Naming: Menagerie's real Shadow names are renamed to the repo convention
 time. The 🔒 locked ready pose (`railJoint=0`, `robot0_WRJ0=0.45`,
 `robot0_WRJ1=0.13`, fingers 0) applies verbatim.
 
-## Deliberate deviations from the Isaac implementation
+## Physics decisions (and why)
 
-- **Key damping 0.1, not 4.0.** Isaac's 4.0 was a PhysX contact-explosion
-  absorber; on a passive MuJoCo hinge it makes the key a τ=1.3 s sponge that a
-  strike can't depress past the sound angle (measured). 0.1 matches the
-  RoboPianist reference values the Isaac file itself cites. Everything else
-  about key physics is identical (stiffness 3, travel 0.0666 rad, sound angle
-  −0.012, gravity-compensated keys, velocity-gated hammer sounding).
+- **Key damping 0.1, not 4.0.** 4.0 was a PhysX contact-explosion absorber
+  from the first implementation; on a passive MuJoCo hinge it makes the key a
+  τ=1.3 s sponge that a strike can't depress past the sound angle (measured).
+  0.1 matches the RoboPianist reference. Everything else about key physics:
+  stiffness 3, travel 0.0666 rad, sound angle −0.012, gravity-compensated
+  keys, velocity-gated hammer sounding.
 - **Physics at 200 Hz (dt 0.005), not 120 Hz.** The standard MuJoCo step for
   finger/key contact (RoboPianist uses it too). The control rate is the same
   20 Hz / `control_dt=0.05` the MIDI grid uses.
@@ -111,8 +101,7 @@ time. The 🔒 locked ready pose (`railJoint=0`, `robot0_WRJ0=0.45`,
   keys; the flat wrist is what lifts them back. Under zero action the weak
   finger servos let the claw sag to a ~2.5 cm hover (no key sounds).
 - **Key–key collisions masked** (`contype 2 / conaffinity 1`): black-key boxes
-  interlock with white ones by design; Isaac had
-  `enabled_self_collisions=False` for the same reason.
+  interlock with white ones by design.
 - **`hand_action_scale` 0.8, not 0.35.** The Menagerie hand uses the real
   Shadow's weak position servos (kp 0.5–1, ~1 N forcerange), so press force
   scales with target offset — at 0.35 the _maximum_ action bottoms out at
@@ -158,9 +147,9 @@ time. The 🔒 locked ready pose (`railJoint=0`, `robot0_WRJ0=0.45`,
 
 ## Environment
 
-The `.venv` here is MuJoCo-only (no Isaac): `mujoco`, `gymnasium`,
-`pretty_midi`, `imageio[-ffmpeg]`, `rsl-rl-lib` (≥5.x — note its config
-format differs from the 2.x Isaac Lab bundles), numpy 1.26 (pinned: the
+The `.venv`: `mujoco`, `gymnasium`, `pretty_midi`, `imageio[-ffmpeg]`,
+`rsl-rl-lib` (≥5.x — note its config format differs from 2.x), numpy 1.26
+(pinned: the
 system torch 2.7 predates numpy 2), system-site torch with CUDA. The
 Menagerie `shadow_hand` model is auto-vendored (sparse clone) into
 `assets/mujoco_menagerie/` on first use.

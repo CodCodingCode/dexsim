@@ -16,7 +16,6 @@ def rollout_npz_to_rrd(npz_path: str | Path, rrd_path: str | Path) -> Path:
 
     The resulting timeline contains the two palm and target positions, reach
     errors, requested/sounding piano keys, and all recorded arm/hand joints.
-    This function deliberately has no Isaac imports, so conversion is instant.
     """
     import rerun as rr
 

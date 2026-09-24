@@ -3,12 +3,12 @@
 The MuJoCo Menagerie ships tuned right/left Shadow Hand E3M5 models with the
 *real* Shadow joint names (``rh_FFJ4`` = knuckle abduction, ``rh_FFJ1`` =
 distal). The rest of this repo -- the fingering planner, the 🔒 locked ready
-pose, CLAUDE.md -- uses the Isaac/OpenAI 0-based convention
+pose, CLAUDE.md -- uses the OpenAI-gym 0-based convention
 (``robot0_FFJ3`` = abduction, ``robot0_FFJ0`` = distal). This module loads the
 Menagerie XML, renames every joint/body/actuator/tendon so both stacks speak
 the same names, and returns it as an ``MjSpec``:
 
-    real Shadow            ->  dexsim (Isaac/OpenAI 0-based)
+    real Shadow            ->  dexsim (OpenAI 0-based)
     rh_WRJ2 (deviation)    ->  robot0_WRJ1
     rh_WRJ1 (flexion)      ->  robot0_WRJ0
     rh_FFJ4..FFJ1          ->  robot0_FFJ3..FFJ0   (same MF/RF)
@@ -24,10 +24,9 @@ text: every source name starts with ``rh_``/``lh_`` and every target with
 (tendon->joint, actuator->tendon) stay consistent.
 
 The four ``*J0`` distal pairs are tendon-coupled and driven by one position
-actuator each (``robot0_A_FFJ0`` over tendon ``robot0_T_FFJ0``), matching the
-Isaac setup where the J0 joints "are driven through the J1 tendon" -- so each
-hand has 24 joints and 20 actuators, and the true LEFT hand (which Isaac never
-had natively) comes straight from ``left_hand.xml``.
+actuator each (``robot0_A_FFJ0`` over tendon ``robot0_T_FFJ0``), as on the
+real hand -- so each hand has 24 joints and 20 actuators. The true LEFT hand
+comes straight from ``left_hand.xml``.
 
 A fingertip site (``robot0_fftip`` etc.) is added at the tip of each distal
 body; the env uses these for the fingering reward (the distal *body* origin
@@ -70,7 +69,7 @@ def _rename_map(p: str) -> dict[str, str]:
         # non-joint names (bodies/sites that would otherwise hit no rule get
         # the generic prefix swap in rename_xml below)
     }
-    # finger joints: real J(n) -> isaac J(n-1)
+    # finger joints: real J(n) -> dexsim J(n-1)
     for f in ("FF", "MF", "RF"):
         for n in range(1, 5):
             m[f"{p}{f}J{n}"] = f"robot0_{f}J{n - 1}"

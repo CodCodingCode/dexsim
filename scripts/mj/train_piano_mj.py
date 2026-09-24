@@ -1,8 +1,6 @@
 """Train the bimanual piano policy in MuJoCo (rsl_rl PPO, CPU-vectorized sim).
 
-MuJoCo twin of scripts/train/train_piano.py -- same task recipe, same PPO
-hyper-parameters (from the Isaac PianoPPORunnerCfg), no Isaac boot. The sim
-runs CPU-threaded (30-core box: ~64-128 envs is the sweet spot); the policy
+The sim runs CPU-threaded (30-core box: ~64-128 envs is the sweet spot); the policy
 trains on the GPU.
 
   .venv/bin/python scripts/mj/train_piano_mj.py --num_envs 64 --midi data/midi/song.mid
@@ -200,7 +198,7 @@ def build_env_cfg() -> PianoMjEnvCfg:
 
 
 def build_train_cfg(env_cfg: PianoMjEnvCfg) -> dict:
-    """rsl_rl >=5.x runner config; hyper-parameters == the Isaac PianoPPORunnerCfg."""
+    """rsl_rl >=5.x runner config."""
     from dexsim.tasks.piano_mj.ppo_cfg import piano_ppo_cfg
 
     # asymmetric critic when the env emits the privileged "critic_priv" group

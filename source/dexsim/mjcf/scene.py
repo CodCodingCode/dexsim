@@ -1,9 +1,8 @@
 """Compose the full bimanual piano scene (MuJoCo port).
 
-Layout is identical to the Isaac env (``PianoMjEnvCfg`` carries the same
-constants): the piano at ``piano_pos`` rotated 180° about Z, and two Shadow
-Hands, each riding a world-Y prismatic rail (``railJoint``) -- the same
-embodiment the Isaac slider USDs implement. The rail carriage sits at the
+Layout (constants in ``PianoMjEnvCfg``): the piano at ``piano_pos`` rotated
+180° about Z, and two Shadow Hands, each riding a world-Y prismatic rail
+(``railJoint``). The rail carriage sits at the
 cfg base position and the hand is attached so that its PALM body lands
 exactly on that point, palm-down with the fingers reaching toward the keys
 (-X); the 🔒 locked ready pose (WRJ0=0.45 wrist tilt) then drops the
@@ -31,7 +30,6 @@ DEFAULT_SCENE_XML = _ROOT / "assets" / "mj" / "piano_scene.xml"
 
 # 180° about Y: hand-frame fingers (+X) -> world -X, palm (+Z) -> world down.
 MOUNT_QUAT = (0.0, 0.0, 1.0, 0.0)
-# Isaac rail: build_shadow_hand_sliders.py RAIL_LIMIT_M / PIANO_SHADOW_HAND cfg.
 # Fallback only -- the live value is cfg.rail_limit (see _build_scene_spec).
 RAIL_LIMIT = 0.12
 RAIL_STIFFNESS = 1200.0
@@ -57,9 +55,9 @@ def build_scene_spec(cfg) -> mujoco.MjSpec:
     Two-pass, self-calibrating mount: after a probe build, the hands are
     shifted along world X so that (at the 🔒 locked ready pose) the long
     fingertips land over the KEY PRESS LINE -- the center of the white keys'
-    playable surface, ~50% leverage on the hinge. Without this the Menagerie
-    hand (whose palm->tip reach differs from the Isaac USD) presses too close
-    to the hinge and can never rotate a key past the sound angle.
+    playable surface, ~50% leverage on the hinge. Without this the hand
+    presses too close to the hinge and can never rotate a key past the sound
+    angle.
 
     ``cfg.tip_shift_extra`` then pushes the hands that much deeper (toward the
     piano). The calibration is taken at the straight-finger hover pose, but a
@@ -134,7 +132,7 @@ def _build_scene_spec(cfg, tip_shift: float) -> mujoco.MjSpec:
                              diffuse=[0.35, 0.35, 0.4], castshadow=False)
     spec.worldbody.add_geom(name="floor", type=mujoco.mjtGeom.mjGEOM_PLANE,
                             size=[5.0, 5.0, 0.1], rgba=[0.28, 0.29, 0.31, 1.0])
-    # table under the piano (top ~0.712, the "table top ~0.72" of the Isaac rig)
+    # table under the piano (top ~0.712)
     spec.worldbody.add_geom(name="table", type=mujoco.mjtGeom.mjGEOM_BOX,
                             pos=[0.7, 0.0, 0.356], size=[0.4, 0.8, 0.356],
                             rgba=[0.35, 0.27, 0.22, 1.0])
@@ -177,7 +175,7 @@ def _build_scene_spec(cfg, tip_shift: float) -> mujoco.MjSpec:
                                 quat=list(MOUNT_QUAT))
         spec.attach(hand, prefix=prefix, frame=frame)
 
-        # rail position servo (matches the Isaac slider actuator gains)
+        # rail position servo
         act = spec.add_actuator(name=f"{prefix}A_rail",
                                 trntype=mujoco.mjtTrn.mjTRN_JOINT,
                                 target=f"{prefix}railJoint")

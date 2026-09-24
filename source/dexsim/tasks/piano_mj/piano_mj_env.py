@@ -1,6 +1,6 @@
 """MuJoCo env for two Shadow Hands sliding along independent Y rails.
 
-Direct port of the Isaac ``PianoEnv`` recipe onto plain MuJoCo (CPU):
+The task recipe, on plain MuJoCo (CPU):
 
   * **Residual action** over the 🔒 locked ready pose: zero action holds the
     ready hover; the policy learns pressing as a residual on the 42 position
@@ -80,7 +80,7 @@ class PianoMjEnv:
         self._cache_indices()
         self._build_ready_state()
 
-        # per-actuator residual scale: gentle rail, generous hand (== Isaac)
+        # per-actuator residual scale: gentle rail, generous hand
         scale = np.empty(m.nu, dtype=np.float64)
         for i in range(m.nu):
             name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
@@ -111,7 +111,7 @@ class PianoMjEnv:
             idle_hover_z_only=cfg.idle_hover_z_only,
         )
 
-        # RECALL-GATED ANNEALING (press-discovery curriculum, == Isaac PianoEnv):
+        # RECALL-GATED ANNEALING (press-discovery curriculum):
         # hold false-press at false_press_start (energy at 0) until this env's
         # recall EMA >= the gate, then ramp both to their cfg finals.
         self._anneal = bool(getattr(cfg, "anneal_false_press", False))
@@ -343,7 +343,7 @@ class PianoMjEnv:
         reward, logs = self._compute_reward_and_logs(a)
         obs = self._get_obs()
 
-        # dones (== Isaac: song end / timeout -> truncation; blow-up -> termination)
+        # dones: song end / timeout -> truncation; blow-up -> termination
         self.episode_step += 1
         song_len = int(self.bank.song_lens[self.song_id])
         song_done = self.song_step >= song_len - 1
@@ -421,7 +421,7 @@ class PianoMjEnv:
             ctrl[i_act] = np.clip(self._rail_ema[h] + ctrl[i_act], self.ctrl_lo[i_act], self.ctrl_hi[i_act])
 
     def _apply_rail_centroid(self, ctrl):
-        """Analytic 1-DoF twin of the Isaac WristPoseIK arm servo: slide each
+        """Analytic 1-DoF rail servo: slide each
         rail so the hand centers on the world-Y centroid of the keys it must
         play over the next ``arm_lookahead`` steps (EMA-smoothed, lane-clamped)."""
         cfg = self.cfg
@@ -479,8 +479,8 @@ class PianoMjEnv:
     def _key_pressed_fraction(self) -> np.ndarray:
         """(88,) velocity-gated sounding fraction at the control boundary.
         With substep_strike_detect the latch has already been advanced inside
-        the decimation loop; otherwise this applies the Isaac control-rate
-        semantics. Also computes the rising-edge onset diagnostic."""
+        the decimation loop; otherwise the gate is evaluated once per control
+        step here. Also computes the rising-edge onset diagnostic."""
         if not getattr(self.cfg, "substep_strike_detect", True):
             self._update_strike_latch()
         angle = self.data.qpos[self.key_qadr]

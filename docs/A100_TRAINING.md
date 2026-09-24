@@ -1,7 +1,7 @@
 # Training the MuJoCo piano task on the GPU box
 
 The MuJoCo stack (`scripts/mj/`, `source/dexsim/tasks/piano_mj/`) needs no
-Isaac Sim, no Vulkan, no EGL. On a many-core Linux box it runs the physics in
+Vulkan and no EGL. On a many-core Linux box it runs the physics in
 CPU worker processes and the PPO update on the GPU. Measured 2026-09-09 on a
 30-core / A100-40GB machine: ~5,500 env steps/s at 1024 envs (vs ~850 on an
 M3 Max laptop).
@@ -65,8 +65,8 @@ unset MUJOCO_GL        # env.sh sets egl; this box has no EGL library and
                        # training never renders
 ```
 
-Do NOT `source env.sh` on this box (it sets `MUJOCO_GL=egl` and expects the
-Isaac Vulkan staging).
+Do NOT `source env.sh` on this box (it sets `MUJOCO_GL=egl`, which this box
+cannot provide).
 
 ## 4. Smoke test
 
