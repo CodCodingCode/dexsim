@@ -1,9 +1,6 @@
 # --- large / regenerable: never commit ---
 .venv/
 .venv-rerun/
-IsaacLab/
-# 769MB staged NVIDIA driver (regenerate via scripts/setup_nvidia_gl.sh)
-.nvidia-gl/
 logs/
 
 # datasets + user media (re-download / regenerate; song.mid may be copyrighted)
@@ -15,10 +12,6 @@ data/reference/
 #   git clone https://github.com/google-research/robopianist data/robopianist_ref
 data/robopianist_ref/
 !data/**/.gitkeep
-
-# generated USDs (rebuild via scripts/build_*.py)
-assets/*.usd
-assets/*.usda
 
 # MuJoCo: vendored Menagerie checkout (auto-cloned by dexsim.mjcf.shadow_hand)
 # and generated scene XML (rebuild via scripts/mj/build_scene.py)
