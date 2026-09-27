@@ -1,6 +1,7 @@
 """Roll out a trained (or zero-action) piano policy in MuJoCo and record it.
 
-MuJoCo renders offscreen in-process at interactive speed.
+MuJoCo twin of scripts/train/play_piano.py -- no Isaac boot, no warm render
+server needed: MuJoCo renders offscreen in-process at interactive speed.
 
   # zero-action baseline (ready pose + rail servo only):
   .venv/bin/python scripts/mj/play_piano_mj.py --zero --video results/mj_zero.mp4
@@ -38,24 +39,28 @@ parser.add_argument("--device", default="cpu")
 parser.add_argument("--freeze_arms", action="store_true")
 parser.add_argument("--rail_follow", action="store_true")
 parser.add_argument("--mute_right", action="store_true")
+parser.add_argument("--song_speed", type=float, default=None,
+                    help="playback tempo of --midi (must match training): 1.0 as written, 0.5 half speed")
 parser.add_argument("--episode_s", type=float, default=None,
                     help="episode length in seconds (default 0 = the whole song)")
 parser.add_argument("--sounding_gate", default=None, choices=["position", "hammer"],
                     help="must match the checkpoint (the sounding latch is in the obs)")
+parser.add_argument("--hand_split_key", type=int, default=None,
+                    help="hand boundary for the hand/seq planners (cfg default 40); -1 = free split, needed to replay v13/v14 seq checkpoints")
+parser.add_argument("--seq_keep_held", type=int, default=None,
+                    help="seq planner: keep a hand's held notes when an onset group has nothing for it (1, v15 default); 0 replays v13/v14 plans")
+parser.add_argument("--no_ego_finger_obs", action="store_true", help="60-dim per-finger obs block OFF")
+parser.add_argument("--no_ego_rail_obs", action="store_true", help="duplicate 2-dim rail block OFF (1173-dim local layout)")
 parser.add_argument("--ego_finger_obs", action="store_true",
                     help="checkpoints trained 2026-09-13 (nettspend_rp1m_a100, 1234 dims)")
 parser.add_argument("--legacy_reach", action="store_true",
                     help="pre-2026-09-10 setup: rails +/-0.12 m and fold_to_reach on "
                          "(needed to play checkpoints trained before then)")
-parser.add_argument("--fingering", default=None, choices=["heuristic", "ot", "hand"],
+parser.add_argument("--fingering", default=None, choices=["heuristic", "ot", "hand", "traj", "seq"],
                     help="must match the fingering the checkpoint was trained with")
 parser.add_argument("--legacy_ego", action="store_true",
                     help="pre-2026-09-12 ego obs (314 dims: hand velocities on, no 88-key "
                          "state, no goal piano roll); needed for checkpoints trained before then")
-parser.add_argument("--stiff_hand_contacts", action="store_true",
-                    help="MuJoCo-default contact stiffness on the hands + capsule fingertips "
-                         "(A/B knob; checkpoints do not depend on it)")
-parser.add_argument("--same_hand_contact_weight", type=float, default=None)
 parser.add_argument("--export_midi", default=None, help="write the SOUNDED keys as .mid")
 parser.add_argument("--rollout_npz", default=None, help="dump qpos trajectory + metrics")
 args = parser.parse_args()
@@ -110,17 +115,21 @@ def main():
         cfg.ego_piano_roll = False
     if args.sounding_gate:
         cfg.sounding_gate = args.sounding_gate
-    if args.stiff_hand_contacts:
-        cfg.hand_contact_solref = (0.01, 1.0)
-        cfg.hand_contact_solimp = (0.9, 0.99, 0.001)
-        cfg.distal_capsule_collision = True
-    if args.same_hand_contact_weight is not None:
-        cfg.same_hand_contact_weight = args.same_hand_contact_weight
     if args.ego_finger_obs:
         cfg.ego_finger_obs = True
+    if args.no_ego_finger_obs:
+        cfg.ego_finger_obs = False
+    if args.no_ego_rail_obs:
+        cfg.ego_rail_obs = False
+    if args.hand_split_key is not None:
+        cfg.hand_split_key = None if args.hand_split_key < 0 else int(args.hand_split_key)
+    if args.seq_keep_held is not None:
+        cfg.seq_keep_held = bool(args.seq_keep_held)
     cfg.random_song_start = False          # playback always starts at the top
     if args.episode_s:
         cfg.episode_length_s = args.episode_s
+    if args.song_speed is not None:
+        cfg.song_speed = args.song_speed
     cfg.__post_init__()
 
     venv = PianoMjVecEnv(cfg, num_envs=1, threads=1)
@@ -170,9 +179,7 @@ def main():
     print(f"[play] {len(goal_hist)} steps | F1 {f1:.3f}  recall {rec:.3f}  "
           f"precision {prec:.3f}  (goal steps: {int(has.sum())})")
     print(f"[play] mean step logs: reward/total {mean('reward/total'):.3f}  "
-          f"play/F1 {mean('play/F1'):.3f}  keys_sounding {mean('play/keys_sounding'):.2f}  "
-          f"finger_contacts {mean('play/finger_contacts'):.3f}  "
-          f"finger_contact_pen {mean('reward/finger_contact_pen'):.4f}")
+          f"play/F1 {mean('play/F1'):.3f}  keys_sounding {mean('play/keys_sounding'):.2f}")
 
     if args.video:
         import imageio.v2 as imageio

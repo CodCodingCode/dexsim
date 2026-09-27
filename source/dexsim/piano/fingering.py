@@ -137,6 +137,11 @@ def plan_fingering(key_activation: np.ndarray, method: str = "heuristic",
         return plan_fingering_ot(key_activation, **ot_kwargs)
     if method == "hand":
         return plan_fingering_hand(key_activation, swap_hands=swap_hands, **ot_kwargs)
+    if method == "traj":
+        return plan_fingering_traj(key_activation, swap_hands=swap_hands, **ot_kwargs)
+    if method == "seq":
+        from .fingering_seq import plan_fingering_seq
+        return plan_fingering_seq(key_activation, swap_hands=swap_hands, **ot_kwargs)
     if method != "heuristic":
         raise ValueError(f"unknown fingering method: {method!r}")
     T = key_activation.shape[0]
@@ -243,9 +248,52 @@ DEFAULT_FINGER_OFFSETS = np.array([+0.052, +0.022, 0.0, -0.022, -0.044,
                                    -0.052, -0.022, 0.0, +0.022, +0.044])
 
 
+def _fit_hand(keys, fingers, off, key_y, is_black, black_thumb_weight,
+              balance_weight, usage, sticky_weight=0.0, key_owner=None):
+    """Best (worst-finger error, total error, hand centre, assignment) for one
+    chord. The hand centre is free: search it over +/-6 cm around the chord
+    midpoint and keep the assignment with the smallest worst-finger error. A
+    fixed midpoint picked ff+lf for a 10 cm chord (1.7 cm off each) when th+rf
+    fits it to 0.65 cm."""
+    c0 = key_y[keys].mean()
+    best = None
+    thumb_rows = np.isin(fingers, list(_THUMBS))
+    for dc in np.arange(-0.06, 0.0601, 0.005):
+        c = c0 + dc
+        cost = np.abs(key_y[keys][None, :] - (c + off[fingers])[:, None])   # (5, K)
+        cost = cost + (black_thumb_weight * is_black[keys][None, :]) * thumb_rows[:, None]
+        if balance_weight > 0.0:
+            share = usage[fingers] / max(usage.sum(), 1.0)
+            cost = cost + balance_weight * share[:, None]
+        if sticky_weight > 0.0 and key_owner is not None:
+            # Charge a finger for taking a key that another finger already plays.
+            # Measured on the 0.673 policy: 6 of 16 goal keys were handed to two
+            # different fingers, and the split was not benign -- key 28 sounded
+            # on 2 of 4 middle-finger notes and 0 of 18 little-finger notes, key
+            # 40 on 5 of 6 middle-finger notes and 0 of 4 thumb notes. Those two
+            # keys alone are 22 of the song's 55 missed notes. One key wants one
+            # motor pattern; splitting it starves the finger that sees it less.
+            owners = np.array([key_owner.get(int(k), -1) for k in keys])
+            mine = (owners[None, :] == fingers[:, None])
+            cost = cost + sticky_weight * (~mine & (owners[None, :] >= 0))
+        r_, c_ = _lsa(cost)
+        worst = float(cost[r_, c_].max()); total = float(cost[r_, c_].sum())
+        if best is None or (worst, total) < (best[0], best[1]):
+            best = (worst, total, c, r_, c_)
+    return best
+
+
 def plan_fingering_hand(key_activation: np.ndarray, *, finger_offsets=None,
                         swap_hands: bool = False,
-                        black_thumb_weight: float = 0.03) -> FingeringPlan:
+                        black_thumb_weight: float = 0.03,
+                        pedal_release: bool = True,
+                        hand_span: float = 0.15,
+                        stagger_steps: int = 2,
+                        exclude_fingers=(),
+                        balance_weight: float = 0.0,
+                        hand_tol: float = 0.0,
+                        sticky_weight: float = 0.0,
+                        split_key: int | None = None) -> FingeringPlan:
     """Hand-relative assignment for a hand that MOVES (rail servo / free hand).
 
     Absolute-key planners (heuristic, ot) assume fixed finger homes, so once
@@ -265,38 +313,101 @@ def plan_fingering_hand(key_activation: np.ndarray, *, finger_offsets=None,
     off = (DEFAULT_FINGER_OFFSETS if finger_offsets is None
            else np.asarray(finger_offsets, dtype=np.float64))
     T = key_activation.shape[0]
-    key_y = geom.key_local_top_positions()[:, 1]                  # (88,)
     is_black = geom.KEY_IS_BLACK
     finger_key = np.full((T, NUM_FINGERS), -1, dtype=np.int64)
     finger_active = np.zeros((T, NUM_FINGERS), dtype=bool)
     home = _home_keys()
     low_group, high_group = ((_RIGHT_FINGERS, _LEFT_FINGERS) if swap_hands
                              else (_LEFT_FINGERS, _RIGHT_FINGERS))
+    act = key_activation.astype(bool)
+    onset = act & ~np.concatenate([np.zeros((1, act.shape[1]), bool), act[:-1]])
+    # PEDAL-AWARE: each hand's fingers serve only its NEWEST onset group; older
+    # notes still sounding are carried by the sustain pedal (finger_active
+    # False for them, so the servo / targets / shaping all follow the new
+    # note). ARPEGGIATE: an onset group wider than hand_span is split in
+    # time -- the half nearer the hand's previous position plays at t, the
+    # other half `stagger_steps` later (the onset reward window absorbs it).
+    key_y = geom.key_local_top_positions()[:, 1]
+    # Running share of notes each finger has taken. With balance_weight > 0 an
+    # over-used finger costs more, so work spreads instead of collapsing onto
+    # the two centre fingers (measured: middle+ring took 62% of this song).
+    # The term is in metres so it trades directly against finger-to-key error:
+    # balance_weight is the extra "distance" a finger pays at 100% usage share.
+    usage = np.zeros(NUM_FINGERS, dtype=np.float64)
+    key_owner: dict[int, int] = {}    # key -> the finger that has played it
+    cur_group = [None, None]          # per hand: np.array of keys the fingers hold
+    hand_y = [None, None]             # per hand: last centre y
+    pending = [[], []]                # per hand: (t_due, keys) staggered halves
     for t in range(T):
-        active = np.sort(np.nonzero(key_activation[t])[0])
-        if active.size == 0:
-            continue
-        split = _balanced_split(active)
+        active = np.sort(np.nonzero(act[t])[0])
+        # hand split boundary: keys >= split go to the right hand. cfg.hand_split_key
+        # (default 44 = keyboard middle). 40 on nettspend: key 40 is assigned to
+        # the left thumb (cannot reach it) but is in fact hit by the RIGHT index
+        # finger 11/12 times in the 0.750 model -- give it to the hand that plays it.
+        split = int(split_key) if split_key is not None else (_balanced_split(active) if active.size else NUM_KEYS // 2)
         low = [int(k) for k in active if k < split]
         high = [int(k) for k in active if k >= split]
         low, high = _rebalance(low, high)
-        for keys, fingers in ((low, low_group), (high, high_group)):
-            if not keys:
+        for hi, (keys_all, fingers) in enumerate(((low, low_group), (high, high_group))):
+            keys_all = np.array(keys_all, dtype=int)
+            fingers = np.array([f for f in fingers
+                                if int(f) not in {int(x) for x in exclude_fingers}]
+                               or list(fingers))
+            if pedal_release:
+                new = np.array([k for k in keys_all if onset[t, k]], dtype=int)
+                # staggered halves that are now due
+                due = [k for (td, ks) in pending[hi] if td <= t for k in ks]
+                pending[hi] = [(td, ks) for (td, ks) in pending[hi] if td > t]
+                if new.size:
+                    too_wide = (new.size >= 2
+                                and key_y[new].max() - key_y[new].min() > hand_span)
+                    # A chord can be far narrower than hand_span and still be
+                    # unplayable in one position: the fingers' natural spacing
+                    # has to match the chord's. Measured on nettspend, every
+                    # left-little-finger note is in a 2-note chord, and the ones
+                    # it misses need a palm spread of 2.7-6.3 cm that no single
+                    # position satisfies -- the servo splits the difference and
+                    # BOTH fingers land half of it off their key. Stagger those
+                    # too, so each note gets the hand to itself.
+                    if not too_wide and hand_tol > 0.0 and new.size >= 2:
+                        fit = _fit_hand(new, fingers, off, key_y, is_black,
+                                        black_thumb_weight, balance_weight, usage)
+                        too_wide = fit[0] > hand_tol
+                    if too_wide:
+                        mid = 0.5 * (key_y[new].max() + key_y[new].min())
+                        lo_half = new[key_y[new] <= mid]; hi_half = new[key_y[new] > mid]
+                        ref = hand_y[hi] if hand_y[hi] is not None else key_y[new].mean()
+                        first, later = ((lo_half, hi_half) if abs(key_y[lo_half].mean() - ref)
+                                        <= abs(key_y[hi_half].mean() - ref) else (hi_half, lo_half))
+                        pending[hi].append((t + stagger_steps, [int(k) for k in later]))
+                        new = first
+                    group = np.array(sorted(set(new.tolist()) | set(due)), dtype=int)
+                elif due:
+                    group = np.array(sorted(due), dtype=int)
+                else:
+                    group = cur_group[hi]
+                # keep only keys still active
+                group = (np.array([k for k in group if act[t, k]], dtype=int)
+                         if group is not None else np.array([], dtype=int))
+                cur_group[hi] = group if group.size else None
+                keys = group
+            else:
+                keys = keys_all
+            if keys.size == 0:
                 continue
-            keys = np.array(keys)
             if len(keys) > FINGERS_PER_HAND:            # >5 notes: keep 5 spanning the range
                 idx = np.linspace(0, len(keys) - 1, FINGERS_PER_HAND).round().astype(int)
                 keys = keys[idx]
-            fingers = np.array(list(fingers))
-            c = key_y[keys].mean()
-            cost = np.abs(key_y[keys][None, :] - (c + off[fingers])[:, None])   # (5, K)
-            thumb_rows = np.isin(fingers, list(_THUMBS))
-            cost[thumb_rows] += black_thumb_weight * is_black[keys][None, :]
-            rows, cols = _lsa(cost)
+            _, _, c, rows, cols = _fit_hand(
+                keys, fingers, off, key_y, is_black, black_thumb_weight,
+                balance_weight, usage, sticky_weight, key_owner)
+            hand_y[hi] = c
             for r, cidx in zip(rows, cols):
                 f = int(fingers[r]); k = int(keys[cidx])
                 finger_key[t, f] = k
                 finger_active[t, f] = True
+                usage[f] += 1.0
+                key_owner.setdefault(k, f)
     return FingeringPlan(finger_key=finger_key, finger_active=finger_active, home_key=home)
 
 
@@ -405,3 +516,99 @@ def plan_fingering_ot(
               f"and were dropped (>10-key polyphony).")
     return FingeringPlan(finger_key=finger_key, finger_active=finger_active,
                          home_key=home)
+
+
+def plan_fingering_traj(key_activation: np.ndarray, *, finger_offsets=None,
+                        swap_hands: bool = False, black_thumb_weight: float = 0.03,
+                        exclude_fingers=(L_THUMB, R_THUMB),
+                        hand_speed_m_s: float = 1.5, control_dt: float = 0.05,
+                        repeat_penalty: float = 0.0) -> FingeringPlan:
+    """Trajectory-tracking assignment: score fingers from where the hand ACTUALLY
+    is, not from a pose re-centred on this step's notes.
+
+    `plan_fingering_hand` re-centres the hand on the notes before assigning, so
+    for a single note the centroid equals that note and the cost collapses to
+    each finger's own offset from the palm. The two centre fingers then win
+    every time by construction -- measured on nettspend, middle + ring took 62%
+    of the workload while the little fingers took 14%.
+
+    Here each hand carries its position across steps. A note is scored against
+    where each finger currently sits, so a note left of the hand naturally goes
+    to a left-side finger. After assigning, the hand moves toward the position
+    that puts the assigned fingers on their keys, rate-limited to
+    ``hand_speed_m_s * control_dt`` -- the same constraint the rail servo has,
+    so the plan and the servo agree instead of fighting.
+
+    ``exclude_fingers`` never receive notes. The thumbs are excluded by default:
+    measured on this embodiment, a thumb at its joint limit reaches only the key
+    top (+0.0 cm) and cannot depress a key at all, so any note assigned to one
+    is unplayable.
+    """
+    if _lsa is None:  # pragma: no cover
+        raise RuntimeError("plan_fingering_traj needs scipy (linear_sum_assignment).")
+    off = (DEFAULT_FINGER_OFFSETS if finger_offsets is None
+           else np.asarray(finger_offsets, dtype=np.float64))
+    T = key_activation.shape[0]
+    key_y = geom.key_local_top_positions()[:, 1]
+    is_black = geom.KEY_IS_BLACK
+    finger_key = np.full((T, NUM_FINGERS), -1, dtype=np.int64)
+    finger_active = np.zeros((T, NUM_FINGERS), dtype=bool)
+    home = _home_keys()
+    low_group, high_group = ((_RIGHT_FINGERS, _LEFT_FINGERS) if swap_hands
+                             else (_LEFT_FINGERS, _RIGHT_FINGERS))
+    banned = set(int(f) for f in exclude_fingers)
+    max_step = float(hand_speed_m_s) * float(control_dt)
+    # each hand starts centred on its own home keys
+    hand_y = {}
+    for keys_group in (low_group, high_group):
+        g = tuple(int(f) for f in keys_group)
+        hand_y[g] = float(np.mean([key_y[home[f]] - off[f] for f in g]))
+    last_key = {f: None for f in range(NUM_FINGERS)}
+    last_step = {f: -10 ** 6 for f in range(NUM_FINGERS)}
+
+    for t in range(T):
+        active = np.sort(np.nonzero(key_activation[t])[0])
+        if active.size == 0:
+            continue
+        split = _balanced_split(active)
+        low = [int(k) for k in active if k < split]
+        high = [int(k) for k in active if k >= split]
+        low, high = _rebalance(low, high)
+        for keys, fingers in ((low, low_group), (high, high_group)):
+            g = tuple(int(f) for f in fingers)
+            usable = [f for f in g if f not in banned]
+            if not keys or not usable:
+                continue
+            keys_a = np.array(keys)
+            if len(keys_a) > len(usable):
+                idx = np.linspace(0, len(keys_a) - 1, len(usable)).round().astype(int)
+                keys_a = keys_a[idx]
+            fa = np.array(usable)
+            # cost from where each finger IS right now
+            finger_pos = hand_y[g] + off[fa]
+            cost = np.abs(key_y[keys_a][None, :] - finger_pos[:, None])
+            thumb_rows = np.isin(fa, list(_THUMBS))
+            if thumb_rows.any():
+                cost[thumb_rows] += black_thumb_weight * is_black[keys_a][None, :]
+            if repeat_penalty > 0.0:
+                for r, f in enumerate(fa):
+                    for c, k in enumerate(keys_a):
+                        if last_key[int(f)] is not None and last_key[int(f)] != int(k) \
+                           and t - last_step[int(f)] <= 2:
+                            cost[r, c] += repeat_penalty
+            rows, cols = _lsa(cost)
+            assigned = []
+            for r, c in zip(rows, cols):
+                f = int(fa[r]); k = int(keys_a[c])
+                finger_key[t, f] = k
+                finger_active[t, f] = True
+                last_key[f] = k
+                last_step[f] = t
+                assigned.append((f, k))
+            if assigned:
+                # where the palm would need to be for these fingers to be on
+                # their keys; move toward it at the rail's real speed limit
+                target = float(np.mean([key_y[k] - off[f] for f, k in assigned]))
+                delta = np.clip(target - hand_y[g], -max_step, max_step)
+                hand_y[g] = hand_y[g] + delta
+    return FingeringPlan(finger_key=finger_key, finger_active=finger_active, home_key=home)

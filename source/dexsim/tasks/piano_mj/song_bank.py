@@ -65,8 +65,36 @@ class SongBank:
             onsets.append(np.concatenate([ons.astype(np.float32), pad.copy()], 0))
             method = getattr(cfg, "fingering_method", "heuristic")
             ot_kw = {}
-            if method == "hand" and finger_offsets is not None:
+            if method == "hand" and getattr(cfg, "exclude_thumbs", False):
+                from dexsim.piano.fingering import L_THUMB, R_THUMB
+                ot_kw["exclude_fingers"] = (L_THUMB, R_THUMB)
+            if method == "hand" and float(getattr(cfg, "balance_weight", 0.0)) > 0:
+                ot_kw["balance_weight"] = float(cfg.balance_weight)
+            if method == "hand" and float(getattr(cfg, "hand_tol", 0.0)) > 0:
+                ot_kw["hand_tol"] = float(cfg.hand_tol)
+            if method == "hand":
+                ot_kw["stagger_steps"] = int(getattr(cfg, "stagger_steps", 2))
+            if method in ("hand", "seq") and getattr(cfg, "hand_split_key", None) is not None:
+                # seq (2026-09-27, v15): the whole-song planner used to pick its own
+                # split and put key 40 (C#4) on the LEFT THUMB (0.11-0.17 recall in
+                # v13/v14 vs 0.43 on the right hand in v12). Hard boundary now.
+                ot_kw["split_key"] = int(cfg.hand_split_key)
+            if method == "hand" and float(getattr(cfg, "sticky_weight", 0.0)) > 0:
+                ot_kw["sticky_weight"] = float(cfg.sticky_weight)
+            if method == "seq":
+                ot_kw["stagger_steps"] = int(getattr(cfg, "stagger_steps", 4))
+                ot_kw["base_offset"] = abs(float(cfg.right_base_pos[1]))
+                ot_kw["rail_limit"] = float(cfg.rail_limit)
+                for k in ("reach_tol", "reach_max", "thumb_reach_max", "travel_weight", "move_cost",
+                          "drop_cost", "min_hand_sep", "switch_penalty", "switch_window", "keep_held"):
+                    v = getattr(cfg, "seq_" + k, None)
+                    if v is not None:
+                        ot_kw[k] = v
+            if method in ("hand", "traj", "seq") and finger_offsets is not None:
                 ot_kw["finger_offsets"] = finger_offsets
+            if method == "traj":
+                ot_kw["control_dt"] = float(getattr(cfg, "control_dt", 0.05))
+                ot_kw["hand_speed_m_s"] = float(getattr(cfg, "rail_speed", 1.5))
             if method == "ot" and getattr(cfg, "fold_to_reach", False):
                 # home every finger inside its hand's window so the nearest-
                 # finger matching spreads the notes over all five fingers
@@ -74,6 +102,8 @@ class SongBank:
                     tuple(cfg.left_key_window), tuple(cfg.right_key_window))
             plan = plan_fingering(act, method=method, swap_hands=self.swap_hands, **ot_kw)
             pfk, pfa = plan.finger_key.copy(), plan.finger_active.copy()
+            if hasattr(plan, "palm_y"):
+                self.seq_palm = plan.palm_y          # (T, 2) key-frame palm plan (seq method)
             if getattr(cfg, "remap_thumb_to_middle", False):
                 for th, mid in ((0, 2), (5, 7)):
                     mv = pfa[:, th] & ~pfa[:, mid]
@@ -106,6 +136,14 @@ class SongBank:
             pst[:, s:] = self.onset[:, :-s]
             ow = np.maximum(ow, np.maximum(fut, pst))
         self.onset_win = ow
+        # onset grid dilated by +/- onset_window_steps for the onset REWARD
+        Wr = int(getattr(cfg, "onset_window_steps", 0))
+        orw = self.onset.copy()
+        for s_ in range(1, Wr + 1):
+            fut = np.zeros_like(self.onset); fut[:, :-s_] = self.onset[:, s_:]
+            pst = np.zeros_like(self.onset); pst[:, s_:] = self.onset[:, :-s_]
+            orw = np.maximum(orw, np.maximum(fut, pst))
+        self.onset_reward_grid = orw
 
         mode = getattr(cfg, "key_weight_mode", "none")
         if mode != "none":
@@ -150,7 +188,11 @@ class SongBank:
                   f"(fold_to_reach={cfg.fold_to_reach})")
             return out
 
-        song = load_song(cfg.midi_path, control_dt=cfg.control_dt)
+        speed = float(getattr(cfg, "song_speed", 1.0))
+        song = load_song(cfg.midi_path, control_dt=cfg.control_dt, tempo_scale=speed)
+        if speed != 1.0:
+            print(f"[PianoMjEnv] '{song.name}' at {speed:g}x tempo: "
+                  f"{song.num_steps} steps = {song.duration_s:.1f}s")
         act, ons = _fold(song.key_activation, song.onsets)
         if cfg.fold_to_reach:
             print(f"[PianoMjEnv] folded '{song.name}' into reach: "
@@ -212,6 +254,7 @@ class SongBank:
         N, T, F = self.finger_key.shape
         self.finger_next_onset = np.full((N, T, F), T, dtype=np.int64)
         self.finger_release = np.zeros((N, T, F), dtype=np.int64)
+        self.finger_onset_age = np.full((N, T, F), T, dtype=np.int64)   # steps since the finger's current note began
         self.hand_events = []
         for n in range(N):
             fa, fk = self.finger_active[n], self.finger_key[n]
@@ -239,6 +282,7 @@ class SongBank:
                     self.finger_next_onset[n, t, f] = nxt - t
                 for st, e in notes:
                     self.finger_release[n, st:e + 1, f] = e - np.arange(st, e + 1)
+                    self.finger_onset_age[n, st:e + 1, f] = np.arange(0, e + 1 - st)
             self.hand_events.append([sorted(ev) for ev in events])
 
     def _build_pedal_goal(self, cfg) -> np.ndarray:
@@ -249,7 +293,7 @@ class SongBank:
         key_y = geometry.key_local_top_positions()[:, 1]
         span = float(getattr(cfg, "pedal_goal_span", 0.14))
         out = np.zeros((N, T), dtype=np.float32)
-        mid = NUM_KEYS // 2
+        mid = int(getattr(cfg, "hand_split_key", None) or NUM_KEYS // 2)
         for n in range(N):
             g = self.goal[n] > 0.5
             for t in range(T):

@@ -7,13 +7,19 @@ ckpt, midi = sys.argv[1], sys.argv[2]; fing = sys.argv[3] if len(sys.argv) > 3 e
 cfg = PianoMjEnvCfg(); cfg.midi_path = midi; cfg.episode_length_s = 65.0; cfg.fingering_method = fing; cfg.random_song_start = False   # diagnose the WHOLE song from step 0
 if len(sys.argv) > 4 and sys.argv[4] == "legacy_reach": cfg.rail_limit = 0.12; cfg.arm_action_scale = 0.12; cfg.fold_to_reach = True; cfg.obs_mode = "global"; cfg.rail_follow = False; cfg.sustain_pedal = False; cfg.rail_stiffness, cfg.rail_damping, cfg.rail_force = 1200.0, 120.0, 500.0
 if len(sys.argv) > 4 and sys.argv[4] == "global": cfg.obs_mode = "global"
+for _a in sys.argv[4:]:
+    if _a.startswith("speed="): cfg.song_speed = float(_a[6:])   # e.g. speed=0.5 -- must match the training run
+    if _a.startswith("split="): cfg.hand_split_key = None if int(_a[6:]) < 0 else int(_a[6:])   # split=-1: free seq split (v13/v14 ckpts)
+    if _a.startswith("keep_held="): cfg.seq_keep_held = bool(int(_a[10:]))                          # keep_held=0: v13/v14 seq output pass
+    if _a == "no_ego_finger_obs": cfg.ego_finger_obs = False
+    if _a == "no_ego_rail_obs": cfg.ego_rail_obs = False             # 2026-09-23 local 1173-dim layout
 cfg.__post_init__()
 venv = PianoMjVecEnv(cfg, num_envs=1, threads=1); env = venv.envs[0]
 rl_env = make_rsl_rl_env(venv, device="cpu")
 from rsl_rl.runners import OnPolicyRunner
 from dexsim.tasks.piano_mj.ppo_cfg import piano_ppo_cfg
 tcfg = piano_ppo_cfg(obs_groups={"actor": ["policy"], "critic": ["policy", "critic_priv"]})
-runner = OnPolicyRunner(rl_env, tcfg, log_dir=None, device="cpu"); runner.load(ckpt)
+runner = OnPolicyRunner(rl_env, tcfg, log_dir=None, device="cpu"); runner.load(ckpt, map_location="cpu")
 policy = runner.get_inference_policy(device="cpu")
 T = int(venv.bank.song_lens[0])
 obs = rl_env.get_observations()
@@ -65,3 +71,31 @@ print(f"note length (steps): hit median {np.median(durs_hit):.0f}, missed median
 # chords: notes per step when goal present
 npg = G.sum(1)[G.any(1)]
 print(f"chord size when goal present: mean {npg.mean():.2f}, max {npg.max()};  steps with goal: {G.any(1).sum()}/{len(G)}")
+# --- jump brushes: wrong keys sounded on the travel path just before a same-hand jump lands ---
+# (2026-09-25) In v10 90% of false onsets were within 0.3 s of a >=5-key jump of the same
+# hand and lay between the two keys: the finger descends while the rail servo is still moving.
+half = 5
+def _hand_of_onset(t, k):
+    fs = [h for h in range(2) for f in range(half) if FA[t, h*half+f] and FK[t, h*half+f] == k]
+    return fs[0] if fs else (0 if k < 42 else 1)
+S_on = S & ~np.vstack([np.zeros((1, 88), bool), S[:-1]])
+def _is_goal(t, k):
+    return any(0 <= t + d < len(G) and G[t + d, k] for d in (-1, 0, 1))
+false_on = [(t, k) for t, k in zip(*np.nonzero(S_on)) if not _is_goal(t, k)]
+last = [None, None]; jumps = []
+for t, k in zip(*np.nonzero(on)):
+    h = _hand_of_onset(t, k)
+    if last[h] is not None and abs(k - last[h][1]) >= 5 and t > last[h][0]:
+        jumps.append((t, h, last[h][1], k))
+    last[h] = (t, k)
+W = 6   # 0.3 s before landing (+1 step after)
+brushed = set(); jumps_hit = 0; by_size = {}
+for tl, h, k0, k1 in jumps:
+    fs = [(t, k) for t, k in false_on if tl - W <= t <= tl + 1 and min(k0, k1) - 1 <= k <= max(k0, k1) + 1]
+    if fs: jumps_hit += 1
+    brushed.update(fs)
+    b = min(abs(k1 - k0) // 5 * 5, 20); by_size.setdefault(b, [0, 0]); by_size[b][0] += 1; by_size[b][1] += len(fs)
+nf = len(false_on)
+print(f"\njump brushes: false onsets {nf}, on a jump path within 0.3 s of landing {len(brushed)} ({len(brushed)/max(nf,1):.0%});"
+      f"  jumps>=5 keys {len(jumps)}, with >=1 brush {jumps_hit}")
+print("  by jump size:", "  ".join(f">={b}: {n} jumps/{c} brushes" for b, (n, c) in sorted(by_size.items())))

@@ -48,8 +48,10 @@ Two Shadow Hands, each with one world-Y prismatic `railJoint` (±0.32 m,
 `rail_limit`), palm-down over the flipped piano, fingers toward the keys.
 24 joints/hand; 20 position actuators/hand (the four `*J0` distal pairs are
 tendon-coupled, as on the real hand) + 1 rail ⇒ 42 actuators, plus the
-sustain pedal ⇒ **43-dim action**. Observations: see `PianoMjEnvCfg.ego_obs_dim`
-for the current egocentric layout (1175 dims by default).
+10 per-finger HOLD actions (v14) ⇒ **52-dim action** (43 with the old
+sustain pedal instead). Observations: see `PianoMjEnvCfg.ego_obs_dim` for the
+egocentric layout (1272 dims by default; 1235 for v13 checkpoints; `ego_finger_obs`
+/ `ego_rail_obs` off gives the 1173-dim local layout of 2026-09-23).
 
 Naming: Menagerie's real Shadow names are renamed to the repo convention
 (`rh_FFJ4→robot0_FFJ3`, `rh_WRJ1→robot0_WRJ0`, …, see

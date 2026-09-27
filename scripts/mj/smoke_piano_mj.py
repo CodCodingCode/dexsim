@@ -50,7 +50,8 @@ def main():
     m, d = env.model, env.data
     print(f"[1] scene compiled in {time.time() - t0:.1f}s: nq={m.nq} nv={m.nv} "
           f"nu={m.nu} nbody={m.nbody}")
-    n_act = cfg.action_space - (1 if cfg.sustain_pedal else 0)
+    n_act = (cfg.action_space - (1 if cfg.sustain_pedal else 0)
+             - (10 if getattr(cfg, "hold_per_finger", False) else 0))   # pedal + per-finger holds are not actuators
     assert m.nu == n_act, (m.nu, n_act)
 
     # --- [2] locked ready pose geometry ------------------------------------
@@ -116,7 +117,7 @@ def main():
         # ego layout: check the per-hand window is the K keys nearest each palm
         Ke = cfg.ego_keys
         D = len(env.hand_qadr[0])
-        o = 2 * D + (2 * D if cfg.ego_hand_vel else 0) + 2
+        o = 2 * D + (2 * D if cfg.ego_hand_vel else 0) + (2 if cfg.ego_rail_obs else 0)
         if cfg.ego_all_keys:
             assert np.allclose(obs[o:o + 88], env.data.qpos[env.key_qadr]), "88-key chunk != qpos"
             o += 88

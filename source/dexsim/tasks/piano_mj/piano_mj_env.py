@@ -1,6 +1,6 @@
 """MuJoCo env for two Shadow Hands sliding along independent Y rails.
 
-The task recipe, on plain MuJoCo (CPU):
+Direct port of the Isaac ``PianoEnv`` recipe onto plain MuJoCo (CPU):
 
   * **Residual action** over the 🔒 locked ready pose: zero action holds the
     ready hover; the policy learns pressing as a residual on the 42 position
@@ -80,7 +80,7 @@ class PianoMjEnv:
         self._cache_indices()
         self._build_ready_state()
 
-        # per-actuator residual scale: gentle rail, generous hand
+        # per-actuator residual scale: gentle rail, generous hand (== Isaac)
         scale = np.empty(m.nu, dtype=np.float64)
         for i in range(m.nu):
             name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
@@ -111,9 +111,13 @@ class PianoMjEnv:
             idle_hover_z_only=cfg.idle_hover_z_only,
         )
 
-        # RECALL-GATED ANNEALING (press-discovery curriculum):
+        # RECALL-GATED ANNEALING (press-discovery curriculum, == Isaac PianoEnv):
         # hold false-press at false_press_start (energy at 0) until this env's
         # recall EMA >= the gate, then ramp both to their cfg finals.
+        self._leap_s = 0.0                      # leap curriculum progress 0 -> 1
+        self._leap_moving = np.zeros(2, bool)   # per hand: rail travelling this step
+        self._leap_scaffold = bool(getattr(cfg, "random_song_start", True))  # training envs only
+        self._rail_dadr = None
         self._anneal = bool(getattr(cfg, "anneal_false_press", False))
         if self._anneal:
             self._fp_final = float(cfg.false_press_weight)
@@ -130,7 +134,7 @@ class PianoMjEnv:
             self._en_rate = self._en_final / _steps
 
         # static left/right key split for the per-hand F1 diagnostic
-        split = (cfg.left_key_window[1] + cfg.right_key_window[0]) / 2.0
+        split = (int(getattr(cfg, "hand_split_key", None) or NUM_KEYS // 2) - 1)  # v11: keys > split are right-hand
         kidx = np.arange(NUM_KEYS)
         self.left_key_mask = (kidx <= split).astype(np.float32)
         self.right_key_mask = (kidx > split).astype(np.float32)
@@ -146,9 +150,13 @@ class PianoMjEnv:
         self.key_sounding = np.zeros(NUM_KEYS, dtype=bool)
         self._just_struck = np.zeros(NUM_KEYS, dtype=bool)
         self.prev_actions = np.zeros(cfg.action_space, dtype=np.float64)
+        self.hold_owner = np.full(NUM_FINGERS, -1, dtype=np.int64)   # key each finger last struck
+        self.hold_cmd = np.zeros(NUM_FINGERS, dtype=bool)             # hold bits from the action
+        self._a_filt = np.zeros(cfg.action_space, dtype=np.float64)
         # adaptive key weighting: per-key recall EMA (starts at 0 = every key
         # still "unlearned" = full weight). NOT reset per episode on purpose.
         self._key_recall_ema = np.zeros(NUM_KEYS, dtype=np.float64)
+        self._finger_recall_ema = np.zeros(NUM_FINGERS, dtype=np.float64)
         self._key_weight_s = 0.0
         self.pedal_down = False
         self._action_jerk = 0.0
@@ -209,18 +217,17 @@ class PianoMjEnv:
         self.tip_bodies = np.concatenate([m.site_bodyid[sites]
                                           for sites in self.tip_sites])
         self.hand_root = [int(m.body_rootid[self.palm_body[h]]) for h in range(2)]
-        # same-hand contact penalty: body -> finger id (hand*5 + [th,ff,mf,rf,lf])
-        # for every finger-segment body (knuckle..distal, lf metacarpal); -1
-        # for palm/wrist/forearm/keys/world.
+        # body id -> finger slot (0-4 left th/ff/mf/rf/lf, 5-9 right), -1 for
+        # palm/wrist/keys; used by the same-hand finger-contact penalty.
         self.body_finger = np.full(m.nbody, -1, dtype=int)
-        fingers = ("th", "ff", "mf", "rf", "lf")
+        _fingers = ("th", "ff", "mf", "rf", "lf")
         for b in range(m.nbody):
-            name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) or ""
+            _name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) or ""
             for h, p in enumerate(_HAND_PREFIXES):
-                if name.startswith(p + "robot0_"):
-                    seg = name[len(p) + len("robot0_"):]
-                    for fi, f in enumerate(fingers):
-                        if seg.startswith(f):
+                if _name.startswith(p + "robot0_"):
+                    _seg = _name[len(p) + len("robot0_"):]
+                    for fi, f in enumerate(_fingers):
+                        if _seg.startswith(f):
                             self.body_finger[b] = h * 5 + fi
         # keys every per-key OBSERVATION chunk is sliced to (reward/F1 use all 88)
         self.obs_key_ids = np.array(self.cfg.obs_key_indices(), dtype=int)
@@ -297,8 +304,10 @@ class PianoMjEnv:
         self._just_struck[:] = False
         self._prev_sounding = np.zeros_like(self.key_sounding)
         self.prev_actions[:] = 0.0
+        self._a_filt[:] = 0.0
         self._action_jerk = 0.0
         self._rail_ema[:] = 0.0
+        self.hold_owner[:] = -1; self.hold_cmd[:] = False
         self.pedal_down = False
         return self._get_obs()
 
@@ -309,6 +318,14 @@ class PianoMjEnv:
                     -1.0, 1.0)
         self._action_jerk = float(np.abs(a - self.prev_actions).mean())
         self.prev_actions = a.copy()
+        tau = float(getattr(cfg, "action_filter_tau", 0.0))
+        if tau > 0.0:
+            alpha = float(np.exp(-cfg.control_dt / tau))
+            self._a_filt = alpha * self._a_filt + (1.0 - alpha) * a
+            a = self._a_filt.copy()
+        if getattr(cfg, "hold_per_finger", False):
+            self.hold_cmd = a[-NUM_FINGERS:] > float(getattr(cfg, "hold_threshold", 0.5))
+            a = a[:-NUM_FINGERS]
         if getattr(cfg, "sustain_pedal", False):
             self.pedal_down = bool(a[-1] > float(getattr(cfg, "pedal_threshold", 0.0)))
             a = a[:-1]                                # actuators only from here
@@ -331,6 +348,17 @@ class PianoMjEnv:
                     if not fa[h * 5 + fi]:
                         cols = self._finger_flex_acts[h][fi]
                         ctrl[cols] += cfg.idle_finger_curl
+        # LEAP CURRICULUM scaffold: lift every finger of a travelling hand
+        if self._rail_dadr is None:
+            self._rail_dadr = [int(self.model.jnt_dofadr[self._joint_of_qadr(q)]) for q in self.rail_qadr]
+        rail_v = np.abs(self.data.qvel[self._rail_dadr])
+        self._leap_moving = rail_v > float(getattr(cfg, "leap_move_speed", 0.10))
+        lift = float(getattr(cfg, "leap_lift", 0.0)) * (1.0 - self._leap_s)
+        if lift > 0.0 and self._leap_scaffold:
+            for h in range(2):
+                if self._leap_moving[h]:
+                    for fi in range(5):
+                        ctrl[self._finger_flex_acts[h][fi]] += lift
         np.clip(ctrl, self.ctrl_lo, self.ctrl_hi, out=ctrl)
         self.data.ctrl[:] = ctrl
 
@@ -343,7 +371,7 @@ class PianoMjEnv:
         reward, logs = self._compute_reward_and_logs(a)
         obs = self._get_obs()
 
-        # dones: song end / timeout -> truncation; blow-up -> termination
+        # dones (== Isaac: song end / timeout -> truncation; blow-up -> termination)
         self.episode_step += 1
         song_len = int(self.bank.song_lens[self.song_id])
         song_done = self.song_step >= song_len - 1
@@ -363,6 +391,8 @@ class PianoMjEnv:
             logs["keyw/min_recall_ema"] = float(self._key_recall_ema[used].min()) if used.any() else 0.0
             logs["keyw/mean_recall_ema"] = float(self._key_recall_ema[used].mean()) if used.any() else 0.0
             logs["keyw/ramp"] = float(getattr(self, "_key_weight_s", 0.0))
+            if getattr(cfg, "finger_weight_adaptive", False):
+                logs["keyw/lf_recall_ema"] = float(0.5 * (self._finger_recall_ema[4] + self._finger_recall_ema[9]))
         return obs, reward, terminated, truncated, logs
 
     # ------------------------------------------------------- rail servo
@@ -372,19 +402,80 @@ class PianoMjEnv:
         T = self.bank.finger_key.shape[1]
         t = min(int(t), T - 1)
         sl = slice(5 * h, 5 * h + 5)
-        fa = self.bank.finger_active[self.song_id, t, sl]
+        fa = self.bank.finger_active[self.song_id, t, sl].copy()
         if not fa.any():
             return None
+        if getattr(self.cfg, "rail_target_newest", False):
+            age = self.bank.finger_onset_age[self.song_id, t, sl]
+            fa &= (age == age[fa].min())                   # newest note(s) only
         fk = self.bank.finger_key[self.song_id, t, sl][fa]
         fidx = np.arange(5 * h, 5 * h + 5)[fa]
-        return float((key_y[fk] - (tip_y[fidx] - palm_y[h])).mean())
+        # rail_target_newest has already narrowed this to one onset group, which
+        # is at most two fingers, so mean / midpoint / minimax all coincide here.
+        want = key_y[fk] - (tip_y[fidx] - palm_y[h])   # palm y each finger needs
+        return float(want.mean())
 
     def _apply_rail_follow(self, ctrl):
         if getattr(self.cfg, "rail_leave_early", False):
             return self._apply_rail_leave_early(ctrl)
         return self._apply_rail_centroid(ctrl)
 
+    def _plan_palm_world(self):
+        """(T, 2) planned palm world-Y from the seq planner, or None. Also caches
+        per hand the index of the next step at which the plan's palm changes."""
+        if getattr(self, "_plan_palm_w", None) is None:
+            plan = getattr(self.bank, "seq_palm", None)
+            if plan is None:
+                return None
+            off = float(np.mean(self.key_y - geometry.key_local_top_positions()[:, 1]))
+            pw = np.asarray(plan, dtype=np.float64) + off
+            T = pw.shape[0]
+            nxt = np.full((T, 2), T, dtype=np.int64)
+            for h in range(2):
+                last = T
+                for t in range(T - 2, -1, -1):
+                    if abs(pw[t + 1, h] - pw[t, h]) > 1e-9:
+                        last = t + 1
+                    nxt[t, h] = last
+            self._plan_palm_w, self._plan_next = pw, nxt
+        return self._plan_palm_w
+
+    def _apply_rail_follow_plan(self, ctrl, plan):
+        """v14 servo: target the planned palm; leave for the plan's NEXT palm
+        when the time left is <= the travel time (same leave-early rule)."""
+        cfg = self.cfg
+        T = plan.shape[0]
+        t0 = min(self.song_step, T - 1)
+        palm_y = self.data.xpos[self.palm_body, 1]
+        mid = 0.5 * (float(cfg.left_base_pos[1]) + float(cfg.right_base_pos[1]))
+        for h in range(2):
+            base_y = float((cfg.left_base_pos, cfg.right_base_pos)[h][1])
+            y = float(plan[t0, h])
+            t_next = int(self._plan_next[t0, h])
+            if t_next < T:
+                y_next = float(plan[t_next, h])
+                travel = abs(y_next - palm_y[h]) / max(float(cfg.rail_speed), 1e-3) \
+                         + float(cfg.rail_settle_s)
+                sl = slice(5 * h, 5 * h + 5)
+                tt = min(t0, self.bank.finger_key.shape[1] - 1)
+                fa_h = self.bank.finger_active[self.song_id, tt, sl]
+                age_h = self.bank.finger_onset_age[self.song_id, tt, sl]
+                dwell_ok = (not fa_h.any()) or (int(age_h[fa_h].min()) >= int(getattr(cfg, "rail_min_dwell_steps", 0)))
+                if (t_next - t0) * cfg.control_dt <= travel and dwell_ok:
+                    y = y_next
+            if getattr(cfg, "lane_clamp", True):
+                y = min(y, mid) if base_y <= mid else max(y, mid)
+            tgt = y - base_y
+            sm = float(getattr(cfg, "arm_smooth", 0.0))
+            self._rail_ema[h] = sm * self._rail_ema[h] + (1.0 - sm) * tgt
+            i_act = self.rail_act[h]
+            ctrl[i_act] = np.clip(self._rail_ema[h] + ctrl[i_act], self.ctrl_lo[i_act], self.ctrl_hi[i_act])
+
     def _apply_rail_leave_early(self, ctrl):
+        if getattr(self.cfg, "rail_follow_plan", False):
+            plan = self._plan_palm_world()
+            if plan is not None:
+                return self._apply_rail_follow_plan(ctrl, plan)
         """Rail servo that leaves for the next onset early enough to arrive on
         time (see PianoMjEnvCfg.rail_leave_early)."""
         cfg = self.cfg
@@ -406,9 +497,14 @@ class PianoMjEnv:
                     travel = abs(y_next - palm_y[h]) / max(float(cfg.rail_speed), 1e-3) \
                              + float(cfg.rail_settle_s)
                     lead_ok = (t_next - t0) * cfg.control_dt <= travel
+            # age of the hand's newest onset group (steps since it began)
+            sl = slice(5 * h, 5 * h + 5)
+            fa_h = self.bank.finger_active[sid, min(t0, self.bank.finger_key.shape[1] - 1), sl]
+            age_h = self.bank.finger_onset_age[sid, min(t0, self.bank.finger_key.shape[1] - 1), sl]
+            dwell_ok = (not fa_h.any()) or (int(age_h[fa_h].min()) >= int(getattr(cfg, "rail_min_dwell_steps", 0)))
             if y_cur is None:
                 y = y_next if y_next is not None else base_y   # idle: pre-position
-            elif lead_ok:
+            elif lead_ok and dwell_ok:
                 y = y_next                                      # leave now or be late
             else:
                 y = y_cur
@@ -421,7 +517,7 @@ class PianoMjEnv:
             ctrl[i_act] = np.clip(self._rail_ema[h] + ctrl[i_act], self.ctrl_lo[i_act], self.ctrl_hi[i_act])
 
     def _apply_rail_centroid(self, ctrl):
-        """Analytic 1-DoF rail servo: slide each
+        """Analytic 1-DoF twin of the Isaac WristPoseIK arm servo: slide each
         rail so the hand centers on the world-Y centroid of the keys it must
         play over the next ``arm_lookahead`` steps (EMA-smoothed, lane-clamped)."""
         cfg = self.cfg
@@ -474,13 +570,31 @@ class PianoMjEnv:
         released = frac < cfg.key_release_frac
         if self.pedal_down:                           # sustain: nothing releases
             released = np.zeros_like(released)
+        if getattr(cfg, "hold_per_finger", False):
+            new = struck & ~self.key_sounding
+            if new.any():                          # who struck it: nearest tip, lowest over the key
+                tips = self._fingertips_world(); key_top = self._key_top_world()
+                tol = float(getattr(cfg, "hold_owner_tol", 0.015))
+                for k in np.nonzero(new)[0]:
+                    dy = np.abs(tips[:, 1] - key_top[k, 1]); dz = tips[:, 2] - key_top[k, 2]
+                    cand = np.nonzero(dy < tol)[0]
+                    if cand.size:
+                        self.hold_owner[int(cand[np.argmin(dz[cand])])] = int(k)
+            held = np.zeros(NUM_KEYS, dtype=bool)
+            own = self.hold_owner[self.hold_cmd & (self.hold_owner >= 0)]
+            held[own] = True
+            released = released & ~held
+        if getattr(cfg, "score_sustain", False):
+            # per-note sustain from the score: a sounding GOAL key keeps ringing
+            # until its goal ends (v14; replaces the all-or-nothing pedal)
+            released = released & ~(self.key_sounding & (self._goal_now() > 0.5))
         self.key_sounding = (self.key_sounding | struck) & ~released
 
     def _key_pressed_fraction(self) -> np.ndarray:
         """(88,) velocity-gated sounding fraction at the control boundary.
         With substep_strike_detect the latch has already been advanced inside
-        the decimation loop; otherwise the gate is evaluated once per control
-        step here. Also computes the rising-edge onset diagnostic."""
+        the decimation loop; otherwise this applies the Isaac control-rate
+        semantics. Also computes the rising-edge onset diagnostic."""
         if not getattr(self.cfg, "substep_strike_detect", True):
             self._update_strike_latch()
         angle = self.data.qpos[self.key_qadr]
@@ -565,7 +679,8 @@ class PianoMjEnv:
         parts = [d.qpos[self.hand_qadr[0]], d.qpos[self.hand_qadr[1]]]
         if getattr(cfg, "ego_hand_vel", False):
             parts += [d.qvel[self.hand_dadr[0]], d.qvel[self.hand_dadr[1]]]
-        parts.append(d.qpos[self.rail_qadr])                                  # (2,) rail pos
+        if getattr(cfg, "ego_rail_obs", True):
+            parts.append(d.qpos[self.rail_qadr])                              # (2,) rail pos (dup of qpos[0])
         key_q, key_v = d.qpos[self.key_qadr], d.qvel[self.key_dadr]
         snd = self.key_sounding.astype(np.float32)
         if getattr(cfg, "ego_all_keys", False):
@@ -614,6 +729,18 @@ class PianoMjEnv:
         if getattr(cfg, "sustain_pedal", False):
             parts.append(np.array([1.0 if self.pedal_down else 0.0,
                                    float(self.bank.pedal_goal[sid, t0])]))
+        if getattr(cfg, "hold_per_finger", False):
+            own = self.hold_owner; has = own >= 0; safe = np.where(has, own, 0)
+            ringing = has & self.key_sounding[safe]
+            holding = ringing & self.hold_cmd
+            g_now = self.bank.goal[sid, t0] > 0.5
+            is_goal = has & g_now[safe]
+            capi = int(cap)
+            gwin = self.bank.goal[sid, t0:t0 + capi + 1][:, safe] > 0.5       # (<=cap+1, 10)
+            gwin = np.concatenate([gwin, np.zeros((1, NUM_FINGERS), bool)], 0)
+            t_end = np.argmin(gwin, axis=0).astype(np.float64)               # first non-goal step
+            t_end = np.where(is_goal, np.minimum(t_end, cap) / cap, 1.0)
+            parts += [holding.astype(np.float32), is_goal.astype(np.float32), t_end]
         if getattr(cfg, "obs_prev_action", False):
             parts.append(self.prev_actions)
         obs = np.concatenate([np.asarray(p, dtype=np.float32).reshape(-1) for p in parts])
@@ -694,8 +821,7 @@ class PianoMjEnv:
         """Number of distinct (finger, finger) pairs of the SAME hand pressed
         together with more than cfg.same_hand_contact_force N (contact force
         magnitude summed over the pair's contacts), from the current MjData.
-        Segments of one finger (proximal vs distal when curled) and
-        finger-vs-palm never count."""
+        Segments of one finger and finger-vs-palm never count."""
         thresh = float(getattr(self.cfg, "same_hand_contact_force", 2.0))
         m, d = self.model, self.data
         force = {}
@@ -728,7 +854,9 @@ class PianoMjEnv:
         mode = getattr(cfg, "key_weight_mode", "none")
         if mode == "none":
             return None
-        w = self.bank.goal_w[self.song_id, self.song_step]              # (88,)
+        w = self.bank.goal_w[self.song_id, self.song_step].copy()       # (88,)
+        g0 = goal > 0.5
+        w[g0] = np.maximum(w[g0], float(getattr(cfg, "key_weight_min_static", 0.0)))
         if mode == "adaptive":
             g = goal > 0.5
             if g.any():
@@ -737,6 +865,15 @@ class PianoMjEnv:
                 self._key_recall_ema[g] = b * self._key_recall_ema[g] + (1.0 - b) * hit[g]
             floor = float(cfg.key_weight_floor)
             w = w * (floor + (1.0 - floor) * (1.0 - self._key_recall_ema))
+        if getattr(cfg, "finger_weight_adaptive", False):
+            fa = self.bank.finger_active[self.song_id, self.song_step]
+            fk = self.bank.finger_key[self.song_id, self.song_step]
+            b = float(cfg.key_weight_beta); ff = float(cfg.finger_weight_floor)
+            hit = (pressed >= self.reward_cfg.press_threshold)
+            for f in np.nonzero(fa)[0]:
+                k = int(fk[f])
+                self._finger_recall_ema[f] = b * self._finger_recall_ema[f] + (1.0 - b) * float(hit[k])
+                w[k] = w[k] * (ff + (1.0 - ff) * (1.0 - self._finger_recall_ema[f]))
         if getattr(cfg, "key_weight_ramp", False):
             # blend from uniform (s=0) to full weighting (s=1) as recall rises;
             # uses the anneal's recall EMA when annealing, else the mean per-key EMA
@@ -764,9 +901,7 @@ class PianoMjEnv:
             raw = np.clip(self.data.qpos[self.key_qadr] / KEY_SOUND_ANGLE, 0.0, 2.0)
             raw = np.nan_to_num(raw, nan=0.0, posinf=2.0, neginf=0.0).astype(np.float32)
             raw = np.maximum(raw, pressed)            # sustained goal keys count as down
-            # max with the latch: a goal key sustained by the pedal (physically
-            # up, still ringing) earns full credit -- the finger may leave
-            reward_pressed = np.where(goal > 0.5, np.maximum(raw, pressed), pressed)
+            reward_pressed = np.where(goal > 0.5, raw, pressed)
         else:
             reward_pressed = pressed
         goal_w = self._goal_weight_now(goal, pressed)
@@ -796,8 +931,9 @@ class PianoMjEnv:
         # (independent of the table so online/offline modes see the same target)
         press_tgt = key_top[self.bank.finger_home].copy()
         press_tgt[:, 2] += geometry.HOVER_CLEARANCE
-        r_onset = float(onset_reward(pressed, self._onset_now(), self.reward_cfg,
-                                     goal_weight=goal_w))
+        onset_grid = getattr(self.bank, "onset_reward_grid", self.bank.onset)
+        r_onset = float(onset_reward(pressed, onset_grid[self.song_id, self.song_step],
+                                     self.reward_cfg, goal_weight=goal_w))
 
         # idle-finger hover shaping
         if self.reward_cfg.idle_hover_weight > 0.0:
@@ -808,8 +944,8 @@ class PianoMjEnv:
             r_hover = 0.0
 
         r_jerk = -float(getattr(cfg, "jerk_weight", 0.0)) * self._action_jerk
-        n_fc = self._same_hand_finger_contacts()
-        r_fc = -float(getattr(cfg, "same_hand_contact_weight", 0.0)) * n_fc
+        w_fc = float(getattr(cfg, "same_hand_contact_weight", 0.0))
+        r_fc = -w_fc * self._same_hand_finger_contacts() if w_fc > 0 else 0.0
         r_pedal = 0.0
         if getattr(cfg, "sustain_pedal", False):
             pg = float(self.bank.pedal_goal[self.song_id, self.song_step])
@@ -842,9 +978,24 @@ class PianoMjEnv:
         n_played = played_on.sum()
         on_timing = float((played_on * near).sum() / n_played) if n_played > 0 else 0.0
 
+        # LEAP CURRICULUM penalty: false key-steps under a travelling hand
+        split = int(getattr(cfg, "hand_split_key", None) or NUM_KEYS // 2)
+        key_hand = (np.arange(NUM_KEYS) >= split).astype(int)
+        moving_false = float(((pressed >= 0.5) & (goal < 0.5) & self._leap_moving[key_hand]).sum())
+        r_leap = -float(getattr(cfg, "leap_penalty_weight", 0.0)) * self._leap_s * moving_false
+        if self._anneal and self._anneal_ema >= float(self.cfg.anneal_recall_gate):
+            self._leap_s = min(1.0, self._leap_s + 1.0 / max(1, int(getattr(cfg, "leap_anneal_steps", 2000))))
         g = lambda x: float(np.clip(np.nan_to_num(x), -10.0, 10.0))
-        reward = (g(r_key) + g(r_finger) + g(r_onset) + g(r_hover) + g(r_jerk)
-                  + g(r_pedal) + g(r_fc))
+        r_hold = 0.0; n_hold = 0.0
+        if getattr(cfg, "hold_per_finger", False):
+            own = self.hold_owner; has = own >= 0; safe = np.where(has, own, 0)
+            ringing = has & self.key_sounding[safe]
+            n_hold = float((ringing & self.hold_cmd).sum())
+            if ringing.any():
+                want = goal[safe] > 0.5
+                r_hold = float(getattr(cfg, "hold_goal_weight", 0.0)) * float(
+                    (self.hold_cmd[ringing] == want[ringing]).mean())
+        reward = g(r_key) + g(r_finger) + g(r_onset) + g(r_hover) + g(r_jerk) + g(r_pedal) + g(r_leap) + g(r_hold) + g(r_fc)
         self._last_r_pedal = float(r_pedal)
         reward = float(np.clip(reward, -10.0, 10.0))
 
@@ -864,7 +1015,12 @@ class PianoMjEnv:
             "reward/idle_hover": g(r_hover),
             "reward/jerk_pen": g(r_jerk),
             "reward/finger_contact_pen": g(r_fc),
-            "play/finger_contacts": float(n_fc),
+            "reward/leap_pen": g(r_leap),
+            "reward/hold": g(r_hold),
+            "play/holds": n_hold,
+            "curriculum/leap_s": float(self._leap_s),
+            "leap/moving_false": moving_false,
+            "leap/hands_moving": float(self._leap_moving.sum()),
             "reward/total": reward,
         }
         logs.update(online_logs)

@@ -133,13 +133,17 @@ class PianoSong:
 
 
 def load_song(path: str | Path, control_dt: float = 0.05,
-              trim_silence: bool = True) -> PianoSong:
+              trim_silence: bool = True, tempo_scale: float = 1.0) -> PianoSong:
     """Load a MIDI file and sample it onto a `control_dt` grid.
 
     Args:
         path: a .mid / .midi file.
         control_dt: seconds per control step (e.g. 0.05 -> 20 Hz).
         trim_silence: drop leading silence so the song starts at step 0.
+        tempo_scale: playback speed, 1.0 = as written, 0.5 = half speed (every
+            note lasts twice as many control steps). Slows a song that is
+            physically too fast for the rig without touching the control rate
+            (the rail servo needs ~0.2 s = 4 steps to move and settle).
     """
     import pretty_midi
 
@@ -157,9 +161,14 @@ def load_song(path: str | Path, control_dt: float = 0.05,
     if not notes:
         raise ValueError(f"No (non-drum) notes found in {path}")
 
+    if not tempo_scale > 0:
+        raise ValueError(f"tempo_scale must be > 0, got {tempo_scale}")
+    # sample the MIDI timeline on a grid of control_dt * tempo_scale seconds;
+    # the env plays one grid cell per control step, so < 1 stretches the song.
+    grid_dt = control_dt * tempo_scale
     t0 = min(n.start for n in notes) if trim_silence else 0.0
     t_end = max(n.end for n in notes) - t0
-    num_steps = int(np.ceil(t_end / control_dt)) + 1
+    num_steps = int(np.ceil(t_end / grid_dt)) + 1
 
     key_activation = np.zeros((num_steps, NUM_KEYS), dtype=bool)
     onsets = np.zeros((num_steps, NUM_KEYS), dtype=bool)
@@ -167,8 +176,8 @@ def load_song(path: str | Path, control_dt: float = 0.05,
         k = midi_to_key(n.pitch)
         if k < 0:
             continue
-        s = int(round((n.start - t0) / control_dt))
-        e = int(round((n.end - t0) / control_dt))
+        s = int(round((n.start - t0) / grid_dt))
+        e = int(round((n.end - t0) / grid_dt))
         s = max(0, min(s, num_steps - 1))
         e = max(s + 1, min(e, num_steps))
         key_activation[s:e, k] = True
@@ -180,7 +189,7 @@ def load_song(path: str | Path, control_dt: float = 0.05,
         for cc in inst.control_changes:
             if cc.number != 64:
                 continue
-            step = int(round((cc.time - t0) / control_dt))
+            step = int(round((cc.time - t0) / grid_dt))
             if 0 <= step < num_steps:
                 sustain[step:] = cc.value >= 64
 

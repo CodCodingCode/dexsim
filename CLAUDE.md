@@ -24,31 +24,56 @@ edit these unless the user explicitly asks in a new request.
 
 ## Task setup that matters
 
+- **Versions.** The trained recipes are documented in `docs/README_v13.md`
+  (whole-song `seq` planner + pose G) and `docs/README_v14.md` (per-finger
+  HOLD actions, plan-following rail servo, planned-finger reward); the box
+  patch/launch/verify scripts they came from are in `scripts/box/`. This
+  tree IS that code (merged 2026-09-27) plus the v15 changes below.
+- **v15 changes (2026-09-27, not yet trained, `docs/README_v15.md`).**
+  (1) the `seq` planner honours `hand_split_key` (one-sided: keys >= 40 must
+  go right; the right hand may still reach lower) -> key 40 lands on the
+  right index instead of the left thumb (0.11-0.17 recall in v13/v14 vs 0.43
+  on the right in v12). (2) `seq_keep_held`: an onset group with nothing for
+  a hand no longer wipes that hand's held notes (unassigned key-steps 1370
+  -> 985 on nettspend). (3) `--std_cap_start/end/final`: a decaying upper
+  bound on the actor's action std (v12's learned std GREW 0.50 -> 0.67; the
+  greedy policy scored 0.05 above the noisy one). Replaying v13/v14
+  checkpoints needs `split=-1 keep_held=0` (diag) or
+  `--hand_split_key -1 --seq_keep_held 0` (play).
+- **song_speed.** cfg / `--song_speed` / diag `speed=` stretches a song
+  that is too fast for the rig (0.5 = half tempo, control rate unchanged).
 - **Rails.** `rail_limit = 0.32` m: each hand covers its half of the keyboard
   (left keys 0–53, right 33–87). `arm_action_scale` must equal `rail_limit` so
   the policy's ±1 rail action reaches the rail ends. `fold_to_reach` is OFF:
   songs train at their real pitches. `--legacy_reach` restores the old
   ±0.12 m rails + folding for checkpoints trained before 2026-09-10.
-- **Fingering.** `fingering_method="hand"` (default): hand-relative
-  assignment by measured fingertip offsets, the only planner consistent
-  with a moving hand. `ot` (nearest-finger) produced the folded 0.84 result.
+- **Fingering.** `fingering_method="hand"` is the cfg default, but every
+  run since v13 trains with `--fingering seq` (`dexsim.piano.fingering_seq`):
+  a whole-song Viterbi over palm positions, fingers by offset, dropped
+  notes re-issued `stagger_steps` later. `hand` re-centres the palm every
+  step (one finger ended up playing 74% of the right hand's onsets).
 - **Rail servo.** `rail_follow=True` + `rail_leave_early`: a scripted servo
   does the travel (leaves for the next onset when time-left <= travel
   time), the policy keeps a `rail_residual` of 5 cm. Rail gains are stiff
   (6000 N/m, 2 kN). Policy-driven rails never learned to travel.
-- **Sustain pedal.** Last action dim (43 total). While > 0, sounding keys
-  keep sounding after the finger lifts. Needed because held bass notes
-  overlap far-away notes of the same hand (35% of nettspend's goal steps).
+- **Sustain.** v14 (`hold_per_finger=True`, default): 10 HOLD actions, one
+  per finger -- while hold_f > 0.5 the key finger f most recently struck
+  keeps ringing after it lifts. `sustain_pedal=False` by default (the old
+  all-or-nothing pedal was used as a clear button: 102 lifts / 64 s in
+  v13). Actions: 42 actuators + 10 holds = 52 (+1 if the pedal is on).
 - **PPO.** `entropy_coef` 0.001 (0.006 let the action std run 0.5 -> 1.5
   over 3000 iters and flattened F1).
-- **Observation.** `obs_mode="ego"` (default, 316 dims): everything
-  key-related is relative to the hand -- the 12 keys nearest each palm
-  (offset, angle, vel, sounding), per-finger target-minus-tip and timing,
-  per-hand upcoming notes, rail positions, pedal state, previous action.
-  Sized in `PianoMjEnvCfg.ego_obs_dim`; the assembly order in
-  `PianoMjEnv._get_obs_ego` must match it. `global` is the old per-key
-  layout. Critic gets `critic_priv` (fingertip forces, collision flag) via
-  rsl_rl obs_groups -- asymmetric actor-critic.
+- **Observation.** `obs_mode="ego"` (default, 1272 dims with the v14
+  hold block; 1235 for v13 checkpoints with `hold_per_finger=False,
+  sustain_pedal=True`): everything key-related is relative to the hand --
+  the 12 keys nearest each palm (offset, angle, vel, sounding), per-finger
+  target-minus-tip and timing, per-hand upcoming notes, hold state,
+  previous action. `ego_finger_obs` (60 dims) and `ego_rail_obs` (2 dims,
+  a duplicate of the rail qpos) are ON because every box checkpoint trained
+  with them; `--no_ego_finger_obs --no_ego_rail_obs` gives the 1173-dim
+  local layout of 2026-09-23. Sized in `PianoMjEnvCfg.ego_obs_dim`; the
+  assembly order in `PianoMjEnv._get_obs_ego` must match it. Critic gets
+  `critic_priv` via rsl_rl obs_groups -- asymmetric actor-critic.
 - **Vec env.** Always train with `--workers N` (`PianoMjSubprocVecEnv`). The
   threaded env is GIL-bound at ~400 steps/s.
 - **Metric.** Judge runs by deterministic-rollout F1
