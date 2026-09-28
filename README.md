@@ -6,11 +6,28 @@ MIDI song with PPO, from scratch. Success is measured by the
 
 Results so far on `results/nettspend - we not like you (1).mid`:
 
-| | deterministic F1 | notes |
-|---|---|---|
-| folded into two 8-key windows (2026-09-10) | **0.84** | `results/nettspend_ot_a100/` -- the song transposed to fit; not the real track |
-| real song, full keyboard, v2 (2026-09-12) | **0.44** | `results/nettspend_fullkeyboard_v2/` -- limited by held bass notes needing a pedal |
-| real song + sustain pedal | in progress | run `nettspend_pedal_a100` |
+Version history (2026, deterministic whole-song F1 from
+`scripts/mj/diag_rollout.py`; v10 onward live as `patch_vN.py` trees on the
+training box, not yet in master):
+
+| version | dates | key change | det. F1 |
+|---|---|---|---|
+| folded baseline | Sep 10 | OT fingering, ±0.12 m rails, song transposed | 0.84 |
+| v1 | Sep 10-11 | unfold: ±0.32 m rails, rail servo, hand-relative fingering, ego obs | 0.34 |
+| v2 | Sep 11-12 | entropy 0.006 to 0.001, stiff leave-early servo | 0.44 |
+| RP1M A/B | Sep 12-13 | random song start, whole-song episodes, position gate, online fingering reward | 0.52 |
+| v3 | Sep 12-13 | sustain pedal action + geometry pedal goal | 0.52 |
+| v4 | Sep 14-15 | "nostay" changes, 16-hour run | 0.50 |
+| v5 | Sep 15-16 | pedal-aware planner, chord stagger, onset window, action filter | 0.673 |
+| v6 | Sep 15-16 | tight fingering falloff, per-finger weights, moved press points | 0.34 (failed) |
+| v7 | Sep 17 | sticky finger ownership | 0.59 (killed) |
+| v8 | Sep 23-24 | hands 3 cm deeper over the keys | 0.678 |
+| v9 | Sep 23-24 | pose G ready pose | 0.556 (killed) |
+| v10 | Sep 24 | 4-step chord roll + 4-step onset window, 7000 iters | 0.750 |
+| v11 | Sep 25-26 | pedal span 0.07, key 40 to right hand, weight floor 0.10 | 0.702 |
+| v12 | Sep 25-26 | v11 + leap curriculum | 0.775 (best) |
+| v13 | Sep 27 | v12 + whole-song "seq" planner + pose G | 0.709 (killed) |
+| v14 | Sep 27, running | v13 + per-finger hold actions + servo follows plan | 0.631 at iter 594 |
 
 ## Quickstart
 
