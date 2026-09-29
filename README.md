@@ -8,7 +8,8 @@ Results so far on `results/nettspend - we not like you (1).mid`:
 
 Version history (2026, deterministic whole-song F1 from
 `scripts/mj/diag_rollout.py`; v10 onward live as `patch_vN.py` trees on the
-training box, not yet in master):
+training box, not in master's sources; the v15 tree is snapshotted in
+`experiments/v15_mask_big/`):
 
 | version | dates | key change | det. F1 |
 |---|---|---|---|
@@ -27,7 +28,8 @@ training box, not yet in master):
 | v11 | Sep 25-26 | pedal span 0.07, key 40 to right hand, weight floor 0.10 | 0.702 |
 | v12 | Sep 25-26 | v11 + leap curriculum | 0.775 (best) |
 | v13 | Sep 27 | v12 + whole-song "seq" planner + pose G | 0.709 (killed) |
-| v14 | Sep 27, running | v13 + per-finger hold actions + servo follows plan | 0.631 at iter 594 |
+| v14 | Sep 27-29 | v13 + per-finger hold actions + servo follows plan | 0.725 (killed at 5530) |
+| v15 | Sep 28-29, running | v14 + per-(finger,key) reach mask, thumbs excluded, 1024-512-256 MLP | **0.803** at iter 5346 |
 
 ## Quickstart
 
